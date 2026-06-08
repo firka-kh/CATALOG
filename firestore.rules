@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { 
+      allow read, write: if false; 
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['id', 'name']) && 
+             data.keys().size() <= 20 &&
+             data.id is string && data.id.size() <= 128 && data.id.matches('^[a-zA-Z0-9_\\-]+$') &&
+             data.name is string && data.name.size() <= 250 &&
+             (data.get('price', 0) is number && data.get('price', 0) >= 0) &&
+             (data.get('priceSupplier1', 0) is number && data.get('priceSupplier1', 0) >= 0) &&
+             (data.get('priceSupplier2', 0) is number && data.get('priceSupplier2', 0) >= 0) &&
+             (data.get('priceSupplier3', 0) is number && data.get('priceSupplier3', 0) >= 0) &&
+             (data.get('category', '') is string && data.get('category', '').size() <= 100) &&
+             (data.get('description', '') is string && data.get('description', '').size() <= 4000) &&
+             (data.get('imageBase64', '') is string && data.get('imageBase64', '').size() <= 10485760) &&
+             (data.get('mimeType', '') is string && data.get('mimeType', '').size() <= 50) &&
+             (data.get('region', '') is string && data.get('region', '').size() <= 100) &&
+             (data.get('district', '') is string && data.get('district', '').size() <= 100) &&
+             (data.get('sphere', '') is string && data.get('sphere', '').size() <= 100) &&
+             (data.get('unit', '') is string && data.get('unit', '').size() <= 50);
+    }
+    
+    function isValidId(id) { 
+        return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+
+    function incoming() { 
+      return request.resource.data; 
+    }
+    
+    match /products/{productId} {
+      allow read: if true; 
+      allow create: if isValidId(productId) && isValidProduct(incoming());
+      allow delete: if isValidId(productId); 
+      allow update: if isValidId(productId) && isValidProduct(incoming());
+    }
+    
+    match /settings/{docId} {
+      allow read, write: if true; // In a real app we'd restrict write, but keeping simple for this catalog tool with no auth
+    }
+
+    match /telegram_users/{userId} {
+      allow read, write: if true; 
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import { initializeApp } from "firebase/app";
 import {
-  getFirestore,
+  initializeFirestore,
   collection,
   query,
   where,
@@ -62,7 +62,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+const db = initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId);
 
 const token = "8983529729:AAGNc2kvtXQgP0qCin4E_Dzwr4FHiYOv3KU";
 

@@ -641,8 +641,8 @@ export function CartModal({
                       <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
                       Автовыбор цен
                     </span>
-                    {"Система автоматически добавит каждый товар у поставщика с "}
-                    {selectedRegion ? `меньшей ценой для региона ${selectedRegion}.` : "наименьшей ценой среди всех регионов."}
+                    <span>Система автоматически добавит каждый товар у поставщика с </span>
+                    <span>{selectedRegion ? `меньшей ценой для региона ${selectedRegion}.` : "наименьшей ценой среди всех регионов."}</span>
                   </div>
 
                   <button

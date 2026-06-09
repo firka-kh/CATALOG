@@ -66,22 +66,31 @@ const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 const token = "8983529729:AAGNc2kvtXQgP0qCin4E_Dzwr4FHiYOv3KU";
 
-let bot: TelegramBot | null = null;
+export let bot: TelegramBot | null = null;
 try {
-  bot = new TelegramBot(token, { polling: true });
-
-  bot.on('polling_error', (error: any) => {
-    if (error?.code !== 'ETELEGRAM') {
-       console.log("Polling error:", error.message);
-    }
-  });
+  const useWebhook = process.env.BOT_WEBHOOK_URL !== undefined;
+  
+  if (useWebhook) {
+      bot = new TelegramBot(token, { webHook: true });
+      bot.setWebHook(process.env.BOT_WEBHOOK_URL!);
+      console.log("Telegram Bot running in Webhook mode:", process.env.BOT_WEBHOOK_URL);
+  } else {
+      bot = new TelegramBot(token, { polling: true });
+      console.log("Telegram Bot running in Polling mode.");
+      
+      bot.on('polling_error', (error: any) => {
+        if (error?.code !== 'ETELEGRAM') {
+           console.log("Polling error:", error.message);
+        }
+      });
+  }
 
   // Graceful shutdown to prevent polling conflicts
   process.once('SIGINT', () => {
-    if (bot) bot.stopPolling();
+    if (bot && !useWebhook) bot.stopPolling();
   });
   process.once('SIGTERM', () => {
-    if (bot) bot.stopPolling();
+    if (bot && !useWebhook) bot.stopPolling();
   });
 } catch (e) {
   console.error("Bot initialization error:", e);

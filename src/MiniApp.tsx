@@ -10,7 +10,7 @@ export default function MiniApp() {
   const [cart, setCart] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
   const [globalDict, setGlobalDict] = useState<any>({});
-  const [region, setRegion] = useState("Душанбе");
+  const [region, setRegion] = useState("");
   const [sphere, setSphere] = useState("");
 
   const tg = (window as any).Telegram?.WebApp;
@@ -187,7 +187,7 @@ export default function MiniApp() {
                onChange={(e) => handleSetRegion(e.target.value)}
                className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-blue-500"
              >
-               <option value="" disabled>Регион</option>
+               <option value="" disabled>Выбрать регион</option>
                {(globalDict.regions || []).map((r: string) => (
                  <option key={r} value={r}>{r}</option>
                ))}

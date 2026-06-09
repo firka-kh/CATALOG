@@ -4,12 +4,36 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import google from "googlethis";
 import dotenv from "dotenv";
-import "./bot.ts";
+import { bot } from "./bot.ts";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+// Webhook endpoint for Telegram
+app.post("/api/bot-webhook", express.json(), (req, res) => {
+  if (bot) {
+    bot.processUpdate(req.body);
+  }
+  res.sendStatus(200);
+});
+
+// Setup webhook URL (can be called manually when deploying to Cloud Run)
+app.get("/api/set-bot-webhook", (req, res) => {
+  const url = req.query.url;
+  if (!url || typeof url !== 'string') {
+     res.status(400).send("Provide ?url=https://YOUR_DOMAIN/api/bot-webhook");
+     return;
+  }
+  if (bot) {
+     bot.setWebHook(url).then(() => {
+        res.send(`Webhook set successfully to ${url}`);
+     }).catch(err => res.status(500).send(String(err)));
+  } else {
+     res.status(500).send("Bot not initialized");
+  }
+});
 
 // Increase limit to handle base64 images
 app.use(express.json({ limit: '50mb' }));

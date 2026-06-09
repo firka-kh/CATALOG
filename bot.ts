@@ -278,7 +278,7 @@ if (bot) {
       bot?.sendMessage(chatId, "Действие отменено.", {
         reply_markup: {
           keyboard: [
-            [{ text: "🛍 Открыть Каталог", web_app: { url: "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
+            [{ text: "🛍 Открыть Каталог", web_app: { url: process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
             [{ text: "🛠 Панель администратора" }]
           ],
           resize_keyboard: true
@@ -637,7 +637,7 @@ if (bot) {
         {
           reply_markup: {
             keyboard: [
-              [{ text: "🛍 Открыть Каталог", web_app: { url: "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
+              [{ text: "🛍 Открыть Каталог", web_app: { url: process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
               [{ text: "🛠 Панель администратора" }]
             ],
             resize_keyboard: true
@@ -688,7 +688,7 @@ if (bot) {
       bot?.sendMessage(chatId, "Ваша сессия истекла. Пожалуйста, зайдите в панель администратора заново: '🛠 Панель администратора'.", {
         reply_markup: {
           keyboard: [
-            [{ text: "🛍 Открыть Каталог", web_app: { url: "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
+            [{ text: "🛍 Открыть Каталог", web_app: { url: process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
             [{ text: "🛠 Панель администратора" }]
           ],
           resize_keyboard: true

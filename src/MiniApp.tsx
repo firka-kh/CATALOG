@@ -221,6 +221,18 @@ export default function MiniApp() {
       </div>
 
       <div className="space-y-4">
+        {(!region) && (
+          <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+             <MapPin className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+             <p className="text-gray-500 dark:text-gray-400 font-medium">Пожалуйста, выберите регион для просмотра товаров.</p>
+          </div>
+        )}
+        {(region && filteredProducts.length === 0) && (
+          <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+             <Search className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+             <p className="text-gray-500 dark:text-gray-400 font-medium">Товары не найдены</p>
+          </div>
+        )}
         {filteredProducts.map(p => (
           <div key={p.id} className="flex gap-4 p-3 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 items-center">
             {p.imageBase64 ? (

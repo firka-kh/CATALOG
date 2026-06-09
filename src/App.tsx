@@ -875,7 +875,7 @@ export default function App() {
                 startNum++;
 
                 const newProduct: Product = {
-                  id: Math.random().toString(36).substring(2, 11),
+                  id: newProductCode,
                   code: newProductCode,
                   name: item.name || "Unknown Product",
                   description: item.description || "",
@@ -1804,12 +1804,6 @@ export default function App() {
         fallbackReg,
       );
 
-    const productId =
-      editingProductId ||
-      "manual_" +
-        Date.now().toString() +
-        Math.random().toString(36).substr(2, 5);
-
     let nextCode = manualForm.code;
     if (!editingProductId) {
       if (!manualForm.code) { // Only generate if user didn't explicitly set one
@@ -1827,6 +1821,8 @@ export default function App() {
         nextCode = existing.code;
       }
     }
+
+    const productId = editingProductId || nextCode;
 
     const productData: Product = {
       id: productId,

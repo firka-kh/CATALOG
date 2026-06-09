@@ -577,7 +577,7 @@ if (bot) {
       try {
         const nextCode = await generateNextProductCode(db);
         
-        const productId = "manual_" + Date.now().toString() + Math.random().toString(36).substr(2, 5);
+        const productId = nextCode;
         
         const finalPrices: any = {
              supplier1: {},

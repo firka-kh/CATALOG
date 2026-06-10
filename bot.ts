@@ -597,6 +597,7 @@ if (bot) {
 
         const finalProduct = {
           id: productId,
+          code: nextCode,
           name: product.name,
           description: product.description,
           unit: product.unit,

@@ -666,24 +666,9 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMoreProducts) {
-          setQueryLimit((prev) => prev + 15);
-        }
-      },
-      { threshold: 0.1 },
-    );
-
-    if (loaderRef.current) observer.observe(loaderRef.current);
-    return () => observer.disconnect();
-  }, [hasMoreProducts, products]);
-
-  useEffect(() => {
     let q = query(
       collection(db, "products"),
-      orderBy("createdAt", "desc"),
-      limit(queryLimit),
+      orderBy("createdAt", "desc")
     );
 
     // Server-side filtering
@@ -701,8 +686,7 @@ export default function App() {
          collection(db, "products"),
          ...conditions,
          where("code", ">=", codeOrId),
-         where("code", "<=", codeOrId + "\uf8ff"),
-         limit(queryLimit),
+         where("code", "<=", codeOrId + "\uf8ff")
        );
     } else {
        if (debouncedSearchName) {
@@ -718,15 +702,13 @@ export default function App() {
            q = query(
              collection(db, "products"),
              ...conditions,
-             orderBy("name"),
-             limit(queryLimit),
+             orderBy("name")
            );
          } else {
            q = query(
              collection(db, "products"),
              ...conditions,
-             orderBy("createdAt", "desc"),
-             limit(queryLimit)
+             orderBy("createdAt", "desc")
            );
          }
        }
@@ -780,14 +762,13 @@ export default function App() {
         });
         // Removed dynamic code generation, relying on database
         setProducts(prods);
-        setHasMoreProducts(snapshot.docs.length >= queryLimit);
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, "products");
       },
     );
     return () => unsub();
-  }, [queryLimit, debouncedSearchName, selectedSphere]);
+  }, [debouncedSearchName, debouncedSearchCode, selectedSphere]);
 
   useEffect(() => {
     localStorage.setItem("catalog_region", selectedRegion);
@@ -2785,19 +2766,10 @@ export default function App() {
 
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
                 <div className="flex items-center gap-4">
-                  <span>Отображено {displayProducts.length} элементов</span>
+                  <span>Всего {displayProducts.length} элементов</span>
                 </div>
                 <div className="flex gap-2 items-center">
-                  {hasMoreProducts && (
-                    <div
-                      ref={loaderRef}
-                      className="flex items-center gap-2 text-indigo-500"
-                    >
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Загрузка...</span>
-                    </div>
-                  )}
-                  {!hasMoreProducts && products.length > 0 && (
+                  {products.length > 0 && (
                     <span className="text-slate-400">Все товары загружены</span>
                   )}
                 </div>

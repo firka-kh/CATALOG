@@ -1,4 +1,4 @@
-import { doc, getDocs, collection, query, orderBy, limit, Firestore, runTransaction } from "firebase/firestore";
+import { doc, getDocs, collection, query, orderBy, limit, Firestore, runTransaction, setDoc } from "firebase/firestore";
 
 export async function generateNextProductCode(db: Firestore): Promise<string> {
   const counterRef = doc(db, "counters", "products");
@@ -18,30 +18,32 @@ export async function generateNextProductCode(db: Firestore): Promise<string> {
     console.warn("Could not fetch max existing code:", e);
   }
 
+  let baseNextNum = maxExisting + 1;
+
   try {
     const nextCodeStr = await runTransaction(db, async (transaction) => {
       const counterDoc = await transaction.get(counterRef);
-      let nextNum = 1;
+      let txNextNum = baseNextNum;
       
       if (counterDoc.exists()) {
         const data = counterDoc.data();
-        if (data && typeof data.lastNum === "number") {
-          nextNum = data.lastNum + 1;
+        if (data && typeof data.lastNum === "number" && data.lastNum >= txNextNum) {
+          txNextNum = data.lastNum + 1;
         }
       }
 
-      // Force the counter ahead if we have a larger existing code
-      if (maxExisting >= nextNum) {
-        nextNum = maxExisting + 1;
-      }
-
-      transaction.set(counterRef, { lastNum: nextNum });
-      return String(nextNum).padStart(4, "0");
+      transaction.set(counterRef, { lastNum: txNextNum });
+      return String(txNextNum).padStart(4, "0");
     });
     return nextCodeStr;
   } catch (error) {
     console.error("Transaction failed: ", error);
-    return "M" + Math.random().toString(36).substr(2, 4).toUpperCase();
+    try {
+       await setDoc(counterRef, { lastNum: baseNextNum }, { merge: true });
+    } catch (e) {
+       console.error("Fallback setDoc failed: ", e);
+    }
+    return String(baseNextNum).padStart(4, "0");
   }
 }
 

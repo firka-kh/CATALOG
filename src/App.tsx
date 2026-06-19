@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Product } from "./types";
 import { downloadCatalogExcel } from "./lib/excelExport";
+import { downloadPriceEditExcel, importPriceEditExcel } from "./lib/priceExcelSync";
 import {
   Loader2,
   Package,
@@ -664,6 +665,8 @@ export default function App() {
     () => localStorage.getItem("catalog_admin") === "true",
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const priceExcelInputRef = useRef<HTMLInputElement>(null);
+  const [isImportingPrices, setIsImportingPrices] = useState(false);
 
   useEffect(() => {
     let q = query(
@@ -1432,6 +1435,42 @@ export default function App() {
         window.print();
       }
     }, 100);
+  };
+
+  const handleExportPriceExcel = async () => {
+    if (!selectedRegion) {
+       alert("Выберите регион перед выгрузкой");
+       return;
+    }
+    if (!selectedSphere) {
+       alert("Выберите сферу перед выгрузкой");
+       return;
+    }
+    try {
+      await downloadPriceEditExcel(products, globalDict.suppliers, selectedRegion, selectedSphere);
+    } catch (e) {
+      console.error(e);
+      alert("Ошибка при выгрузке Excel");
+    }
+  };
+
+  const handleImportPriceExcel = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    
+    try {
+      setIsImportingPrices(true);
+      const res = await importPriceEditExcel(file);
+      alert(`Успешно обновлено товаров: ${res.updated}`);
+    } catch (e: any) {
+      console.error(e);
+      alert("Ошибка импорта: " + (e.message || "Неизвестная ошибка"));
+    } finally {
+      setIsImportingPrices(false);
+      if (priceExcelInputRef.current) {
+        priceExcelInputRef.current.value = "";
+      }
+    }
   };
 
   const handleExport = async () => {
@@ -2209,9 +2248,39 @@ export default function App() {
               </div>
               <div className="flex gap-2">
                 {isAdminMode && !isTabletMode && (
-                  <button
-                    onClick={handleOpenManualModal}
-                    disabled={isUploadBlocked}
+                  <>
+                    <input
+                      type="file"
+                      accept=".xlsx, .xls"
+                      className="hidden"
+                      ref={priceExcelInputRef}
+                      onChange={(e) => handleImportPriceExcel(e.target.files)}
+                    />
+                    <button
+                      onClick={handleExportPriceExcel}
+                      className="flex items-center gap-2 px-3 py-2 rounded-md shadow-sm transition-colors text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50"
+                      title="Выгрузить шаблон цен"
+                    >
+                      <Download className="w-4 h-4" />
+                      Цены
+                    </button>
+                    <button
+                      onClick={() => priceExcelInputRef.current?.click()}
+                      disabled={isImportingPrices}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md shadow-sm transition-colors text-sm font-medium border mr-2 ${
+                        isImportingPrices
+                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-wait"
+                          : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                      }`}
+                      title="Загрузить обновленные цены"
+                    >
+                      {isImportingPrices ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
+                      Обновить цены
+                    </button>
+
+                    <button
+                      onClick={handleOpenManualModal}
+                      disabled={isUploadBlocked}
                     className={`flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 ${
                       isUploadBlocked
                         ? "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -2224,6 +2293,7 @@ export default function App() {
                     <Plus className="w-4 h-4" />
                     Добавить вручную
                   </button>
+                  </>
                 )}
                 <div className="p-1 bg-white border border-slate-200 rounded-md flex">
                   <button className="p-1.5 bg-slate-100 rounded text-slate-900 shadow-sm">

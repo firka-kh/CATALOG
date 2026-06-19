@@ -544,7 +544,7 @@ export default function App() {
     description: string;
     price: string;
     category: string;
-    sphere: string;
+    spheres: string[];
     imageBase64: string;
     mimeType: string;
     unit: string;
@@ -563,7 +563,7 @@ export default function App() {
     description: "",
     price: "",
     category: "",
-    sphere: "",
+    spheres: [],
     imageBase64: "",
     mimeType: "",
     unit: "шт.",
@@ -682,9 +682,6 @@ export default function App() {
     
     if (debouncedSearchCode) {
        const codeOrId = debouncedSearchCode.trim().replace(/^#/, "");
-       if (selectedSphere) {
-         conditions.push(where("sphere", "==", selectedSphere));
-       }
        q = query(
          collection(db, "products"),
          ...conditions,
@@ -695,9 +692,6 @@ export default function App() {
        if (debouncedSearchName) {
          conditions.push(where("name", ">=", debouncedSearchName));
          conditions.push(where("name", "<=", debouncedSearchName + "\uf8ff"));
-       }
-       if (selectedSphere) {
-         conditions.push(where("sphere", "==", selectedSphere));
        }
 
        if (conditions.length > 0) {
@@ -759,6 +753,7 @@ export default function App() {
             imageBase64: data.imageBase64,
             mimeType: data.mimeType,
             sphere: data.sphere,
+            spheres: data.spheres,
             unit: data.unit || "шт.",
             createdAt: data.createdAt,
           });
@@ -1442,10 +1437,6 @@ export default function App() {
        alert("Выберите регион перед выгрузкой");
        return;
     }
-    if (!selectedSphere) {
-       alert("Выберите сферу перед выгрузкой");
-       return;
-    }
     try {
       await downloadPriceEditExcel(products, globalDict.suppliers, selectedRegion, selectedSphere);
     } catch (e) {
@@ -1485,9 +1476,11 @@ export default function App() {
         "region_supplier_sphere",
       ].includes(exportScope)
     ) {
-      exportProducts = exportProducts.filter(
-        (p) => !selectedSphere || p.sphere === selectedSphere,
-      );
+      exportProducts = exportProducts.filter((p) => {
+        if (!selectedSphere) return true;
+        const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+        return prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
+      });
     }
 
     if (exportProducts.length === 0) {
@@ -1596,8 +1589,7 @@ export default function App() {
       description: "",
       price: "",
       category: "",
-      region: selectedRegion || "",
-      sphere: selectedSphere || "",
+      spheres: selectedSphere ? [selectedSphere] : [],
       imageBase64: "",
       mimeType: "",
       unit: "шт.",
@@ -1680,7 +1672,11 @@ export default function App() {
       description: product.description || "",
       price: product.price !== undefined ? product.price.toString() : "",
       category: product.category || "",
-      sphere: product.sphere || "",
+      spheres: product.spheres && product.spheres.length > 0
+          ? product.spheres
+          : product.sphere
+            ? [product.sphere]
+            : [],
       imageBase64: product.imageBase64 || "",
       mimeType: product.mimeType || "",
       unit: currentUnit,
@@ -1752,8 +1748,8 @@ export default function App() {
     e.preventDefault();
     if (isSavingManual) return;
 
-    if (!manualForm.sphere) {
-      alert("Пожалуйста, выберите Сферу.");
+    if (!manualForm.spheres || manualForm.spheres.length === 0) {
+      alert("Пожалуйста, выберите минимум одну Сферу.");
       return;
     }
 
@@ -1858,7 +1854,8 @@ export default function App() {
       prices: pricesData,
       imageBase64: manualForm.imageBase64,
       mimeType: manualForm.mimeType,
-      sphere: manualForm.sphere,
+      sphere: manualForm.spheres[0] || "",
+      spheres: manualForm.spheres,
       unit: manualForm.unit || "шт.",
       createdAt: manualForm.createdAt || Date.now(),
     };
@@ -1872,7 +1869,7 @@ export default function App() {
         description: "",
         price: "",
         category: "",
-        sphere: "",
+        spheres: [],
         imageBase64: "",
         mimeType: "",
         unit: "шт.",
@@ -1903,9 +1900,14 @@ export default function App() {
   const uniqueSpheres = Array.from(
     new Set([
       ...globalDict.spheres,
-      ...products.map((p) => p.sphere).filter(Boolean),
+      ...products.flatMap((p) => p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : [])),
     ]),
-  ).sort();
+  ).sort((a, b) => {
+    if (!a && !b) return 0;
+    if (!a) return 1;
+    if (!b) return -1;
+    return a.localeCompare(b);
+  });
 
   const handleOpenGenerateIdsModal = () => {
     setDeleteAllCode("");
@@ -1983,7 +1985,11 @@ export default function App() {
       }
       // All products are now global. No region filter required.
       // Sphere filter still applies
-      if (selectedSphere && p.sphere !== selectedSphere) return false;
+      if (selectedSphere) {
+          const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+          const isMatch = prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
+          if (!isMatch) return false;
+      }
       return true;
     })
     .sort((a, b) => {
@@ -2617,12 +2623,12 @@ export default function App() {
                               {selectedRegion || "Все регионы"}
                             </div>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-4 py-4 max-w-[120px] truncate">
                             <div
-                              className="text-xs font-medium text-slate-600"
-                              title={p.sphere}
+                              className="text-xs font-medium text-slate-600 truncate"
+                              title={p.spheres?.join(", ") || p.sphere}
                             >
-                              {p.sphere || "—"}
+                              {(p.spheres && p.spheres.length > 0) ? p.spheres.join(", ") : (p.sphere || "—")}
                             </div>
                           </td>
                           {isAdminMode && (
@@ -3341,36 +3347,42 @@ export default function App() {
                   {isCustomSphere ? (
                     <input
                       type="text"
-                      value={manualForm.sphere}
+                      value={manualForm.spheres.join(", ")}
                       onChange={(e) =>
                         setManualForm((prev) => ({
                           ...prev,
-                          sphere: e.target.value,
+                          spheres: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
                         }))
                       }
                       className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                       required
-                      placeholder="Введите сферу..."
+                      placeholder="Введите сферы через запятую..."
                     />
                   ) : (
-                    <select
-                      value={manualForm.sphere}
-                      onChange={(e) =>
-                        setManualForm((prev) => ({
-                          ...prev,
-                          sphere: e.target.value,
-                        }))
-                      }
-                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    >
-                      <option value="">Выберите сферу...</option>
+                    <div className="flex flex-col gap-2 max-h-40 overflow-y-auto border border-slate-300 rounded-md p-2 bg-white shadow-sm">
                       {uniqueSpheres.map((s) => (
-                        <option key={s} value={s}>
+                        <label key={s} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                          <input
+                            type="checkbox"
+                            checked={manualForm.spheres.includes(s)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setManualForm((prev) => {
+                                const newSpheres = checked
+                                  ? [...prev.spheres, s]
+                                  : prev.spheres.filter((sphere) => sphere !== s);
+                                return { ...prev, spheres: newSpheres };
+                              });
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                          />
                           {s}
-                        </option>
+                        </label>
                       ))}
-                    </select>
+                      {uniqueSpheres.length === 0 && (
+                        <span className="text-slate-400 p-2 text-xs text-center">Нет доступных сфер</span>
+                      )}
+                    </div>
                   )}
                 </div>
 
@@ -3956,7 +3968,10 @@ export default function App() {
           products={(() => {
             let filtered = products;
             if (exportScope === "sphere" || exportScope === "region_sphere") {
-              filtered = filtered.filter((p) => p.sphere === selectedSphere);
+              filtered = filtered.filter((p) => {
+                  const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+                  return prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
+              });
             }
             return filtered;
           })().map((p) => {

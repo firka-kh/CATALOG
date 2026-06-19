@@ -18,6 +18,7 @@ export interface Product {
     imageBase64: string;
     mimeType: string;
     sphere?: string;
+    spheres?: string[];
     unit?: string;
     createdAt?: number;
 }

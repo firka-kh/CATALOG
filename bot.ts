@@ -562,17 +562,19 @@ if (bot) {
 
     if (userState.state === "WAITING_SPHERE") {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      const sphere =
+      const sphereText =
         text === "/skip" || text === "Общее (пропустить)"
           ? "Общее"
           : text.trim();
-      userState.tempProductData.sphere = sphere;
+      const spheresList = sphereText.split(",").map(s => s.trim()).filter(Boolean);
+      userState.tempProductData.sphere = spheresList[0] || "Общее";
+      userState.tempProductData.spheres = spheresList;
       userState.tempProductData.photos = [];
       userState.state = "WAITING_PHOTO_PRODUCT";
       userStates.set(chatId, userState);
       bot?.sendMessage(
         chatId,
-        `Сфера "${sphere}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+        `Сфера "${sphereText}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
         {
           reply_markup: {
             keyboard: [
@@ -744,6 +746,7 @@ if (bot) {
           description: product.description,
           unit: product.unit,
           sphere: product.sphere,
+          spheres: product.spheres || (product.sphere ? [product.sphere] : []),
           category: "Без категории",
           imageBase64: product.imageBase64 || "",
           price: isSupplier ? 0 : price, // Global catalog price
@@ -1406,17 +1409,17 @@ if (bot) {
 
       const spheresSet = new Set<string>();
       cartItems.forEach((i) => {
-        let s = i.product.sphere;
-        if (!s) s = "Общее";
-        spheresSet.add(s);
+        const pSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
+        pSpheres.forEach(s => spheresSet.add(s));
       });
 
       let overallExcelTotal = 0;
 
       for (const sphere of Array.from(spheresSet)) {
-        const itemsInSphere = cartItems.filter(
-          (i) => (i.product.sphere || "Общее") === sphere,
-        );
+        const itemsInSphere = cartItems.filter(i => {
+           const iSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
+           return iSpheres.includes(sphere);
+        });
         if (itemsInSphere.length === 0) continue;
 
         // Sphere row

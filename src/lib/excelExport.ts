@@ -34,12 +34,14 @@ export async function downloadCatalogExcel(products: Product[], suppliers?: stri
 
   const summaryProductsGrouped: Record<string, Product[]> = {};
   for (const p of products) {
-      const sphere = p.sphere || "-";
-      const key = `${sphere.toUpperCase()}`;
-      if (!summaryProductsGrouped[key]) {
-          summaryProductsGrouped[key] = [];
+      const pSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : [p.sphere || "-"];
+      for (const sphere of pSpheres) {
+          const key = `${sphere.toUpperCase()}`;
+          if (!summaryProductsGrouped[key]) {
+              summaryProductsGrouped[key] = [];
+          }
+          summaryProductsGrouped[key].push(p);
       }
-      summaryProductsGrouped[key].push(p);
   }
 
   let rowCounter = 1;
@@ -112,11 +114,13 @@ export async function downloadCatalogExcel(products: Product[], suppliers?: stri
   // Group products by Sphere
   const groupedProducts: Record<string, Product[]> = {};
   for (const p of products) {
-      const sphere = p.sphere || "Общее";
-      if (!groupedProducts[sphere]) {
-          groupedProducts[sphere] = [];
+      const spheresToGroup = p.spheres && p.spheres.length > 0 ? p.spheres : [p.sphere || "Общее"];
+      for (const sphere of spheresToGroup) {
+          if (!groupedProducts[sphere]) {
+              groupedProducts[sphere] = [];
+          }
+          groupedProducts[sphere].push(p);
       }
-      groupedProducts[sphere].push(p);
   }
 
   for (const [sphere, prods] of Object.entries(groupedProducts)) {
@@ -270,15 +274,17 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number) {
 
   const spheresSet = new Set<string>();
   cart.forEach((i) => {
-    let s = i.product.sphere;
-    if (!s) s = "Общее";
-    spheresSet.add(s);
+    const pSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
+    pSpheres.forEach(s => spheresSet.add(s));
   });
 
   let overallExcelTotal = 0;
 
   for (const sphere of Array.from(spheresSet)) {
-    const itemsInSphere = cart.filter(i => (i.product.sphere || "Общее") === sphere);
+    const itemsInSphere = cart.filter(i => {
+        const iSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
+        return iSpheres.includes(sphere);
+    });
     if (itemsInSphere.length === 0) continue;
 
     const sRow = summaryWs.addRow(["", sphere, "", "", "", ""]);

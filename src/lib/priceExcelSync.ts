@@ -40,13 +40,17 @@ export async function downloadPriceEditExcel(
   ws.getColumn(9).width = 15; // Пост 3
 
   for (const p of products) {
-    if (sphere && p.sphere !== sphere) continue;
+    if (sphere) {
+        const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+        const isMatch = prodSpheres.some(s => s === sphere || s.includes(sphere) || sphere.includes(s));
+        if (!isMatch) continue;
+    }
 
     ws.addRow([
       p.id, // Column A (ID)
       p.code || "",
       p.name || "",
-      p.sphere || "",
+      (p.spheres && p.spheres.length > 0) ? p.spheres.join(", ") : (p.sphere || ""),
       region || "",
       p.unit || "",
       p.prices?.supplier2?.[region] !== undefined

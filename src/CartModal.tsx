@@ -562,7 +562,7 @@ export function CartModal({
                                 </span>
                               )}
                               <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-mono select-none">
-                                {p.sphere || "Каталог"}
+                                {(p.spheres && p.spheres.length > 0) ? p.spheres.join(", ") : (p.sphere || "Каталог")}
                               </span>
                             </div>
                           </button>
@@ -842,8 +842,8 @@ export function CartModal({
                           </span>
                         </span>
                        )}
-                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium text-[11px]">
-                        {item.product.sphere}
+                      <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium text-[11px] truncate max-w-full">
+                        {item.product.spheres && item.product.spheres.length > 0 ? item.product.spheres.join(", ") : item.product.sphere}
                       </span>
                     </div>
                   </div>

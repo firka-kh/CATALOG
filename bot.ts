@@ -10,7 +10,7 @@ import {
   getDoc,
   setDoc,
   orderBy,
-  limit
+  limit,
 } from "firebase/firestore";
 import fs from "fs";
 import os from "os";
@@ -46,7 +46,9 @@ async function ensureFont() {
 
         return Promise.all([
           new Promise<void>((resolve) => writer.on("finish", () => resolve())),
-          new Promise<void>((resolve) => writerBold.on("finish", () => resolve())),
+          new Promise<void>((resolve) =>
+            writerBold.on("finish", () => resolve()),
+          ),
         ]);
       })();
     }
@@ -62,34 +64,41 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const db = initializeFirestore(app, { experimentalForceLongPolling: true }, firebaseConfig.firestoreDatabaseId);
+const db = initializeFirestore(
+  app,
+  { experimentalForceLongPolling: true },
+  firebaseConfig.firestoreDatabaseId,
+);
 
 const token = "8983529729:AAGNc2kvtXQgP0qCin4E_Dzwr4FHiYOv3KU";
 
 export let bot: TelegramBot | null = null;
 try {
   const useWebhook = process.env.BOT_WEBHOOK_URL !== undefined;
-  
+
   if (useWebhook) {
-      bot = new TelegramBot(token, { webHook: true });
-      bot.setWebHook(process.env.BOT_WEBHOOK_URL!);
-      console.log("Telegram Bot running in Webhook mode:", process.env.BOT_WEBHOOK_URL);
+    bot = new TelegramBot(token, { webHook: true });
+    bot.setWebHook(process.env.BOT_WEBHOOK_URL!);
+    console.log(
+      "Telegram Bot running in Webhook mode:",
+      process.env.BOT_WEBHOOK_URL,
+    );
   } else {
-      bot = new TelegramBot(token, { polling: true });
-      console.log("Telegram Bot running in Polling mode.");
-      
-      bot.on('polling_error', (error: any) => {
-        if (error?.code !== 'ETELEGRAM') {
-           console.log("Polling error:", error.message);
-        }
-      });
+    bot = new TelegramBot(token, { polling: true });
+    console.log("Telegram Bot running in Polling mode.");
+
+    bot.on("polling_error", (error: any) => {
+      if (error?.code !== "ETELEGRAM") {
+        console.log("Polling error:", error.message);
+      }
+    });
   }
 
   // Graceful shutdown to prevent polling conflicts
-  process.once('SIGINT', () => {
+  process.once("SIGINT", () => {
     if (bot && !useWebhook) bot.stopPolling();
   });
-  process.once('SIGTERM', () => {
+  process.once("SIGTERM", () => {
     if (bot && !useWebhook) bot.stopPolling();
   });
 } catch (e) {
@@ -151,7 +160,15 @@ function getGenAI() {
   return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 }
 
-type BotState = "IDLE" | "WAITING_PASSWORD" | "ADMIN_MENU" | "WAITING_REGION" | "WAITING_SPHERE" | "WAITING_PHOTO_PRODUCT" | "WAITING_PHOTO_SPEC" | "WAITING_PRICE";
+type BotState =
+  | "IDLE"
+  | "WAITING_PASSWORD"
+  | "ADMIN_MENU"
+  | "WAITING_REGION"
+  | "WAITING_SPHERE"
+  | "WAITING_PHOTO_PRODUCT"
+  | "WAITING_PHOTO_SPEC"
+  | "WAITING_PRICE";
 interface UserState {
   state: BotState;
   tempProductData?: any;
@@ -165,69 +182,90 @@ const SECRET_CODE = "@020779@";
 
 if (bot) {
   const processedMessageIds = new Set<string>();
-  const lastProcessedPayload = new Map<number, { text: string; time: number }>();
+  const lastProcessedPayload = new Map<
+    number,
+    { text: string; time: number }
+  >();
 
   // Add listener for photos to handle WAITING_PHOTO states
   bot.on("photo", async (msg) => {
     const chatId = msg.chat.id;
     const userState = userStates.get(chatId) || { state: "IDLE" };
-    
-    if ((!adminUsers.has(chatId) && !supplierUsers.has(chatId)) || (userState.state !== "WAITING_PHOTO_PRODUCT" && userState.state !== "WAITING_PHOTO_SPEC")) {
-      return; 
+
+    if (
+      (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) ||
+      (userState.state !== "WAITING_PHOTO_PRODUCT" &&
+        userState.state !== "WAITING_PHOTO_SPEC")
+    ) {
+      return;
     }
 
     try {
       // Get highest resolution photo (last element in array)
       const photo = msg.photo![msg.photo!.length - 1];
       const fileLink = await bot?.getFileLink(photo.file_id);
-      
+
       if (!fileLink) throw new Error("Could not get file link");
 
       if (userState.state === "WAITING_PHOTO_PRODUCT") {
-         bot?.sendMessage(chatId, "⏳ Обрабатываю фото товара...");
-         const response = await axios.get(fileLink, { responseType: "arraybuffer" });
-         const imageBuffer = Buffer.from(response.data, "binary");
-         const base64Image = "data:image/jpeg;base64," + imageBuffer.toString("base64");
-         
-         userState.tempProductData.imageBase64 = base64Image;
-         userState.state = "WAITING_PHOTO_SPEC";
-         userStates.set(chatId, userState);
-         
-         bot?.sendMessage(chatId, `✅ Фото товара успешно сохранено.\n\nТеперь отправьте фото спецификации (коробку, характеристики, этикетку) для распознавания.\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`, {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔍 Распознать", callback_data: "recognize" }], 
-              [{ text: "❌ Отмена", callback_data: "cancel" }]
-            ]
-          }
-         });
+        bot?.sendMessage(chatId, "⏳ Обрабатываю фото товара...");
+        const response = await axios.get(fileLink, {
+          responseType: "arraybuffer",
+        });
+        const imageBuffer = Buffer.from(response.data, "binary");
+        const base64Image =
+          "data:image/jpeg;base64," + imageBuffer.toString("base64");
+
+        userState.tempProductData.imageBase64 = base64Image;
+        userState.state = "WAITING_PHOTO_SPEC";
+        userStates.set(chatId, userState);
+
+        bot?.sendMessage(
+          chatId,
+          `✅ Фото товара успешно сохранено.\n\nТеперь отправьте фото спецификации (коробку, характеристики, этикетку) для распознавания.\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔍 Распознать", callback_data: "recognize" }],
+                [{ text: "❌ Отмена", callback_data: "cancel" }],
+              ],
+            },
+          },
+        );
       } else if (userState.state === "WAITING_PHOTO_SPEC") {
-         if (!userState.tempProductData.photos) {
-            userState.tempProductData.photos = [];
-         }
-         userState.tempProductData.photos.push(fileLink);
+        if (!userState.tempProductData.photos) {
+          userState.tempProductData.photos = [];
+        }
+        userState.tempProductData.photos.push(fileLink);
 
-         if (msg.caption) {
-           if (!userState.tempProductData.textSpecs) {
-             userState.tempProductData.textSpecs = "";
-           }
-           userState.tempProductData.textSpecs += "\n" + msg.caption;
-         }
+        if (msg.caption) {
+          if (!userState.tempProductData.textSpecs) {
+            userState.tempProductData.textSpecs = "";
+          }
+          userState.tempProductData.textSpecs += "\n" + msg.caption;
+        }
 
-         userStates.set(chatId, userState);
-  
-         bot?.sendMessage(chatId, `📸 Принято фото спецификации (${userState.tempProductData.photos.length} шт.)${msg.caption ? " и текстовое описание" : ""}. Если есть еще, отправляйте. Если всё — жмите «🔍 Распознать»`, {
-           reply_markup: {
-             inline_keyboard: [
-               [{ text: "🔍 Распознать", callback_data: "recognize" }], 
-               [{ text: "❌ Отмена", callback_data: "cancel" }]
-             ]
-           }
-         });
+        userStates.set(chatId, userState);
+
+        bot?.sendMessage(
+          chatId,
+          `📸 Принято фото спецификации (${userState.tempProductData.photos.length} шт.)${msg.caption ? " и текстовое описание" : ""}. Если есть еще, отправляйте. Если всё — жмите «🔍 Распознать»`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔍 Распознать", callback_data: "recognize" }],
+                [{ text: "❌ Отмена", callback_data: "cancel" }],
+              ],
+            },
+          },
+        );
       }
     } catch (e: any) {
       console.error(e);
-      bot?.sendMessage(chatId, "⚠️ Ошибка при загрузке фото. Попробуйте еще раз.");
+      bot?.sendMessage(
+        chatId,
+        "⚠️ Ошибка при загрузке фото. Попробуйте еще раз.",
+      );
     }
   });
 
@@ -235,11 +273,19 @@ if (bot) {
     const chatId = query.message?.chat.id;
     if (!chatId) return;
     bot?.answerCallbackQuery(query.id);
-    
+
     if (query.data === "recognize") {
-      (bot as any)?.emit("message", { chat: { id: chatId }, text: "🔍 Распознать", message_id: query.message?.message_id || Date.now() });
+      (bot as any)?.emit("message", {
+        chat: { id: chatId },
+        text: "🔍 Распознать",
+        message_id: query.message?.message_id || Date.now(),
+      });
     } else if (query.data === "cancel") {
-      (bot as any)?.emit("message", { chat: { id: chatId }, text: "❌ Отмена", message_id: query.message?.message_id || Date.now() });
+      (bot as any)?.emit("message", {
+        chat: { id: chatId },
+        text: "❌ Отмена",
+        message_id: query.message?.message_id || Date.now(),
+      });
     }
   });
 
@@ -247,18 +293,19 @@ if (bot) {
     // Ignore messages with photos if we process them in "photo" handler
     if (msg.photo) return;
     // Unique key: messageId + text to prevent duplicate processing from double-clicks or retries
-    const payloadForDedup = msg.text || (msg.web_app_data ? msg.web_app_data.data : "");
+    const payloadForDedup =
+      msg.text || (msg.web_app_data ? msg.web_app_data.data : "");
     const uniqueKey = `${msg.message_id}_${payloadForDedup}`;
     if (processedMessageIds.has(uniqueKey)) return;
-    
+
     // Also ignore identical messages received within 3 seconds (handles button double-clicks)
     const ts = Date.now();
     const last = lastProcessedPayload.get(msg.chat.id);
     if (last && last.text === payloadForDedup && ts - last.time < 3000) {
-      return; 
+      return;
     }
     lastProcessedPayload.set(msg.chat.id, { text: payloadForDedup, time: ts });
-    
+
     processedMessageIds.add(uniqueKey);
     // basic cleanup to prevent memory leak
     if (processedMessageIds.size > 1000) {
@@ -270,7 +317,7 @@ if (bot) {
     let text = msg.text || "";
 
     if (msg.web_app_data) {
-       text = msg.web_app_data.data;
+      text = msg.web_app_data.data;
     }
 
     if (text === "/cancel" || text === "❌ Отмена") {
@@ -278,11 +325,20 @@ if (bot) {
       bot?.sendMessage(chatId, "Действие отменено.", {
         reply_markup: {
           keyboard: [
-            [{ text: "🛍 Открыть Каталог", web_app: { url: process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
-            [{ text: "🛠 Панель администратора" }]
+            [
+              {
+                text: "🛍 Открыть Каталог",
+                web_app: {
+                  url:
+                    process.env.MINI_APP_URL ||
+                    "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+                },
+              },
+            ],
+            [{ text: "🛠 Панель администратора" }],
           ],
-          resize_keyboard: true
-        }
+          resize_keyboard: true,
+        },
       });
       return;
     }
@@ -291,55 +347,76 @@ if (bot) {
 
     if (text === "/admin") {
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
-      bot?.sendMessage(chatId, "Введите секретный код администратора или поставщика:", {
-        reply_markup: {
-          keyboard: [[{ text: "❌ Отмена" }]],
-          resize_keyboard: true
-        }
-      });
+      bot?.sendMessage(
+        chatId,
+        "Введите секретный код администратора или поставщика:",
+        {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        },
+      );
       return;
     }
 
     if (userState.state === "WAITING_PASSWORD") {
       const globalDict = await getGlobalDict();
-      
+
       let isSupplier = false;
       let matchedSupplierId = "";
       const supplierCodes = globalDict.supplierCodes || {};
       for (const [supId, code] of Object.entries(supplierCodes)) {
         if (code === text) {
-           isSupplier = true;
-           matchedSupplierId = supId;
-           break;
+          isSupplier = true;
+          matchedSupplierId = supId;
+          break;
         }
       }
 
       if (text === SECRET_CODE) {
         adminUsers.add(chatId);
         userStates.set(chatId, { state: "ADMIN_MENU" });
-        bot?.sendMessage(chatId, "✅ Доступ разрешен.\n\nПанель администратора открыта.", {
-          reply_markup: {
-            keyboard: [[{ text: "➕ Добавить товар" }], [{ text: "❌ Отмена" }]],
-            resize_keyboard: true
-          }
-        });
+        bot?.sendMessage(
+          chatId,
+          "✅ Доступ разрешен.\n\nПанель администратора открыта.",
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "➕ Добавить товар" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
       } else if (isSupplier) {
         supplierUsers.set(chatId, matchedSupplierId);
         userStates.set(chatId, { state: "ADMIN_MENU" });
-        
+
         let supplierName = "";
         const supIdx = matchedSupplierId.replace("supplier", "");
-        if (supIdx === "2" && globalDict.suppliers[0]) supplierName = globalDict.suppliers[0];
-        else if (supIdx === "3" && globalDict.suppliers[1]) supplierName = globalDict.suppliers[1];
-        else if (supIdx === "4" && globalDict.suppliers[2]) supplierName = globalDict.suppliers[2];
+        if (supIdx === "2" && globalDict.suppliers[0])
+          supplierName = globalDict.suppliers[0];
+        else if (supIdx === "3" && globalDict.suppliers[1])
+          supplierName = globalDict.suppliers[1];
+        else if (supIdx === "4" && globalDict.suppliers[2])
+          supplierName = globalDict.suppliers[2];
         else supplierName = `Поставщик ${supIdx}`;
 
-        bot?.sendMessage(chatId, `✅ Доступ разрешен.\n\nВы авторизованы как ${supplierName}.`, {
-          reply_markup: {
-            keyboard: [[{ text: "➕ Добавить товар" }], [{ text: "❌ Отмена" }]],
-            resize_keyboard: true
-          }
-        });
+        bot?.sendMessage(
+          chatId,
+          `✅ Доступ разрешен.\n\nВы авторизованы как ${supplierName}.`,
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "➕ Добавить товар" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
       } else {
         userStates.delete(chatId);
         bot?.sendMessage(chatId, "❌ Неверный код. Доступ закрыт.");
@@ -349,61 +426,85 @@ if (bot) {
 
     if (userState.state === "ADMIN_MENU" && text === "➕ Добавить товар") {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      
+
       const supplierId = supplierUsers.get(chatId) || "";
 
       if (adminUsers.has(chatId)) {
-        userStates.set(chatId, { state: "WAITING_SPHERE", tempProductData: { supplierId: "", region: "" } });
+        userStates.set(chatId, {
+          state: "WAITING_SPHERE",
+          tempProductData: { supplierId: "", region: "" },
+        });
         bot?.sendMessage(chatId, "⏳ Загружаю список сфер...");
-        
-        let spheresProps: string[] = ["Водоснабжение", "Электрика", "Вентиляция", "Отопление", "Канализация"];
+
+        let spheresProps: string[] = [
+          "Водоснабжение",
+          "Электрика",
+          "Вентиляция",
+          "Отопление",
+          "Канализация",
+        ];
         try {
-           const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-           if (dictDoc.exists()) {
-               const dictData = dictDoc.data();
-               if (dictData.spheres && Array.isArray(dictData.spheres) && dictData.spheres.length > 0) {
-                   spheresProps = dictData.spheres;
-               }
-           }
+          const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
+          if (dictDoc.exists()) {
+            const dictData = dictDoc.data();
+            if (
+              dictData.spheres &&
+              Array.isArray(dictData.spheres) &&
+              dictData.spheres.length > 0
+            ) {
+              spheresProps = dictData.spheres;
+            }
+          }
         } catch (e) {
-           console.error("Error loading spheres", e);
+          console.error("Error loading spheres", e);
         }
-        
-        const keyboardRows = spheresProps.map(s => [{ text: s }]);
+
+        const keyboardRows = spheresProps.map((s) => [{ text: s }]);
         keyboardRows.push([{ text: "Общее (пропустить)" }]);
         keyboardRows.push([{ text: "❌ Отмена" }]);
 
-        bot?.sendMessage(chatId, "Выберите сферу товара из списка ниже или введите своё название текстом:", {
-           reply_markup: {
+        bot?.sendMessage(
+          chatId,
+          "Выберите сферу товара из списка ниже или введите своё название текстом:",
+          {
+            reply_markup: {
               keyboard: keyboardRows,
-              resize_keyboard: true
-           }
-        });
+              resize_keyboard: true,
+            },
+          },
+        );
       } else {
-        userStates.set(chatId, { state: "WAITING_REGION", tempProductData: { supplierId } });
+        userStates.set(chatId, {
+          state: "WAITING_REGION",
+          tempProductData: { supplierId },
+        });
         bot?.sendMessage(chatId, "⏳ Загружаю список регионов...");
-        
+
         let regionsProps: string[] = ["Душанбе"];
         try {
-           const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-           if (dictDoc.exists()) {
-               const dictData = dictDoc.data();
-               if (dictData.regions && Array.isArray(dictData.regions) && dictData.regions.length > 0) {
-                   regionsProps = dictData.regions;
-               }
-           }
+          const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
+          if (dictDoc.exists()) {
+            const dictData = dictDoc.data();
+            if (
+              dictData.regions &&
+              Array.isArray(dictData.regions) &&
+              dictData.regions.length > 0
+            ) {
+              regionsProps = dictData.regions;
+            }
+          }
         } catch (e) {
-           console.error("Error loading regions", e);
+          console.error("Error loading regions", e);
         }
-        
-        const keyboardRows = regionsProps.map(r => [{ text: r }]);
+
+        const keyboardRows = regionsProps.map((r) => [{ text: r }]);
         keyboardRows.push([{ text: "❌ Отмена" }]);
 
         bot?.sendMessage(chatId, "Выберите регион:", {
-           reply_markup: {
-              keyboard: keyboardRows,
-              resize_keyboard: true
-           }
+          reply_markup: {
+            keyboard: keyboardRows,
+            resize_keyboard: true,
+          },
         });
       }
       return;
@@ -411,68 +512,99 @@ if (bot) {
 
     if (userState.state === "WAITING_REGION") {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      
+
       const region = text.trim();
       userState.tempProductData.region = region;
       userState.state = "WAITING_SPHERE";
       userStates.set(chatId, userState);
-      
+
       bot?.sendMessage(chatId, "⏳ Загружаю список сфер...");
-      
-      let spheresProps: string[] = ["Водоснабжение", "Электрика", "Вентиляция", "Отопление", "Канализация"];
+
+      let spheresProps: string[] = [
+        "Водоснабжение",
+        "Электрика",
+        "Вентиляция",
+        "Отопление",
+        "Канализация",
+      ];
       try {
-         const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-         if (dictDoc.exists()) {
-             const dictData = dictDoc.data();
-             if (dictData.spheres && Array.isArray(dictData.spheres) && dictData.spheres.length > 0) {
-                 spheresProps = dictData.spheres;
-             }
-         }
+        const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
+        if (dictDoc.exists()) {
+          const dictData = dictDoc.data();
+          if (
+            dictData.spheres &&
+            Array.isArray(dictData.spheres) &&
+            dictData.spheres.length > 0
+          ) {
+            spheresProps = dictData.spheres;
+          }
+        }
       } catch (e) {
-         console.error("Error loading spheres", e);
+        console.error("Error loading spheres", e);
       }
-      
-      const keyboardRows = spheresProps.map(s => [{ text: s }]);
+
+      const keyboardRows = spheresProps.map((s) => [{ text: s }]);
       keyboardRows.push([{ text: "Общее (пропустить)" }]);
       keyboardRows.push([{ text: "❌ Отмена" }]);
 
-      bot?.sendMessage(chatId, "Выберите сферу товара из списка ниже или введите своё название текстом:", {
-         reply_markup: {
+      bot?.sendMessage(
+        chatId,
+        "Выберите сферу товара из списка ниже или введите своё название текстом:",
+        {
+          reply_markup: {
             keyboard: keyboardRows,
-            resize_keyboard: true
-         }
-      });
+            resize_keyboard: true,
+          },
+        },
+      );
       return;
     }
 
     if (userState.state === "WAITING_SPHERE") {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      const sphere = (text === "/skip" || text === "Общее (пропустить)") ? "Общее" : text.trim();
+      const sphere =
+        text === "/skip" || text === "Общее (пропустить)"
+          ? "Общее"
+          : text.trim();
       userState.tempProductData.sphere = sphere;
       userState.tempProductData.photos = [];
       userState.state = "WAITING_PHOTO_PRODUCT";
       userStates.set(chatId, userState);
-      bot?.sendMessage(chatId, `Сфера "${sphere}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`, {
-        reply_markup: {
-          keyboard: [[{ text: "Пропустить фото товара" }], [{ text: "❌ Отмена" }]],
-          resize_keyboard: true
-        }
-      });
+      bot?.sendMessage(
+        chatId,
+        `Сфера "${sphere}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+        {
+          reply_markup: {
+            keyboard: [
+              [{ text: "Пропустить фото товара" }],
+              [{ text: "❌ Отмена" }],
+            ],
+            resize_keyboard: true,
+          },
+        },
+      );
       return;
     }
 
-    if (userState.state === "WAITING_PHOTO_PRODUCT" && text === "Пропустить фото товара") {
+    if (
+      userState.state === "WAITING_PHOTO_PRODUCT" &&
+      text === "Пропустить фото товара"
+    ) {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
       userState.state = "WAITING_PHOTO_SPEC";
       userStates.set(chatId, userState);
-      bot?.sendMessage(chatId, `Теперь отправьте фото спецификации (коробку, характеристики, этикетку) для распознавания.\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`, {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔍 Распознать", callback_data: "recognize" }], 
-            [{ text: "❌ Отмена", callback_data: "cancel" }]
-          ]
-        }
-      });
+      bot?.sendMessage(
+        chatId,
+        `Теперь отправьте фото спецификации (коробку, характеристики, этикетку) для распознавания.\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔍 Распознать", callback_data: "recognize" }],
+              [{ text: "❌ Отмена", callback_data: "cancel" }],
+            ],
+          },
+        },
+      );
       return;
     }
 
@@ -490,16 +622,23 @@ if (bot) {
       try {
         const ai = getGenAI();
         if (!ai) {
-          bot?.sendMessage(chatId, "❌ Ошибка: API ключ Gemini не настроен на сервере.");
+          bot?.sendMessage(
+            chatId,
+            "❌ Ошибка: API ключ Gemini не настроен на сервере.",
+          );
           return;
         }
 
         const inlineDataParts = [];
         for (const fileLink of photos) {
-          const response = await axios.get(fileLink, { responseType: "arraybuffer" });
+          const response = await axios.get(fileLink, {
+            responseType: "arraybuffer",
+          });
           const imageBuffer = Buffer.from(response.data, "binary");
           const base64Image = imageBuffer.toString("base64");
-          inlineDataParts.push({ inlineData: { mimeType: "image/jpeg", data: base64Image } });
+          inlineDataParts.push({
+            inlineData: { mimeType: "image/jpeg", data: base64Image },
+          });
         }
 
         const prompt = `
@@ -518,16 +657,14 @@ if (bot) {
           contents: [
             {
               role: "user",
-              parts: [
-                { text: prompt },
-                ...inlineDataParts
-              ]
-            }
+              parts: [{ text: prompt }, ...inlineDataParts],
+            },
           ],
           config: {
-            systemInstruction: "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. STRICTLY NO BRANDS OR MANUFACTURERS: Do NOT mention any brand, model, or manufacturer name anywhere in 'name' or 'description'.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
+            systemInstruction:
+              "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. STRICTLY NO BRANDS OR MANUFACTURERS: Do NOT mention any brand, model, or manufacturer name anywhere in 'name' or 'description'.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
             responseMimeType: "application/json",
-          }
+          },
         });
 
         const textRes = genAIResponse.text || "{}";
@@ -539,27 +676,29 @@ if (bot) {
           description: parsed.description || "",
           unit: parsed.unit || "шт.",
           code: Math.random().toString(36).substring(2, 8).toUpperCase(), // Temporary random code
-          prices: {} // will be populated
+          prices: {}, // will be populated
         };
 
         userState.state = "WAITING_PRICE";
         userStates.set(chatId, userState);
 
-        const preview = adminUsers.has(chatId) 
+        const preview = adminUsers.has(chatId)
           ? `✅ Распознано:\n\n*Название:* ${parsed.name}\n*Спецификация:* ${parsed.description}\n*Единица:* ${parsed.unit}\n\nТеперь отправьте базовую цену (Главный каталог) в виде числа (в сомони).`
           : `✅ Спецификация распознана!\n\nТеперь отправьте вашу цену для этого товара (в сомони).`;
 
-        bot?.sendMessage(chatId, preview, { 
+        bot?.sendMessage(chatId, preview, {
           parse_mode: "Markdown",
           reply_markup: {
-             keyboard: [[{ text: "❌ Отмена" }]],
-             resize_keyboard: true
-          }
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
         });
-
       } catch (e) {
         console.error(e);
-        bot?.sendMessage(chatId, "⚠️ Ошибка при распознавании. Попробуйте еще раз или напишите /cancel.");
+        bot?.sendMessage(
+          chatId,
+          "⚠️ Ошибка при распознавании. Попробуйте еще раз или напишите /cancel.",
+        );
       }
       return;
     }
@@ -568,31 +707,34 @@ if (bot) {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
       const price = parseFloat(text.replace(",", "."));
       if (isNaN(price) || price < 0) {
-        bot?.sendMessage(chatId, "Пожалуйста, отправьте корректное число для цены (например: 100.50).");
+        bot?.sendMessage(
+          chatId,
+          "Пожалуйста, отправьте корректное число для цены (например: 100.50).",
+        );
         return;
       }
-      
+
       const product = userState.tempProductData;
-      
+
       try {
         const nextCode = await generateNextProductCode(db);
-        
+
         const productId = nextCode;
-        
+
         const finalPrices: any = {
-             supplier1: {},
-             supplier2: {},
-             supplier3: {},
-             supplier4: {}
+          supplier1: {},
+          supplier2: {},
+          supplier3: {},
+          supplier4: {},
         };
-        
+
         const isSupplier = supplierUsers.has(chatId);
         if (isSupplier) {
-           const supId = product.supplierId || "";
-           const reg = product.region || "Душанбе";
-           if (finalPrices[supId]) {
-              finalPrices[supId][reg] = price;
-           }
+          const supId = product.supplierId || "";
+          const reg = product.region || "Душанбе";
+          if (finalPrices[supId]) {
+            finalPrices[supId][reg] = price;
+          }
         }
 
         const finalProduct = {
@@ -602,30 +744,39 @@ if (bot) {
           description: product.description,
           unit: product.unit,
           sphere: product.sphere,
-          code: nextCode,
           category: "Без категории",
           imageBase64: product.imageBase64 || "",
           price: isSupplier ? 0 : price, // Global catalog price
           prices: finalPrices,
-          createdAt: Date.now()
+          createdAt: Date.now(),
         };
 
-        if (product.imageBase64 && product.imageBase64.startsWith("data:image")) {
+        if (
+          product.imageBase64 &&
+          product.imageBase64.startsWith("data:image")
+        ) {
           const mime = product.imageBase64.split(";")[0].split(":")[1];
           (finalProduct as any).mimeType = mime;
         }
 
         await setDoc(doc(db, "products", productId), finalProduct);
         userStates.set(chatId, { state: "ADMIN_MENU" });
-        bot?.sendMessage(chatId, `✅ Товар успешно добавлен!\nID товара: ${nextCode}`, {
-          reply_markup: {
-            keyboard: [[{ text: "➕ Добавить товар" }], [{ text: "❌ Отмена" }]],
-            resize_keyboard: true
-          }
-        });
-      } catch(e) {
-         bot?.sendMessage(chatId, "⚠️ Ошибка при сохранении в базу данных.");
-         console.error(e);
+        bot?.sendMessage(
+          chatId,
+          `✅ Товар успешно добавлен!\nID товара: ${nextCode}`,
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "➕ Добавить товар" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+      } catch (e) {
+        bot?.sendMessage(chatId, "⚠️ Ошибка при сохранении в базу данных.");
+        console.error(e);
       }
       return;
     }
@@ -638,78 +789,131 @@ if (bot) {
         {
           reply_markup: {
             keyboard: [
-              [{ text: "🛍 Открыть Каталог", web_app: { url: process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
-              [{ text: "🛠 Панель администратора" }]
+              [
+                {
+                  text: "🛍 Открыть Каталог",
+                  web_app: {
+                    url:
+                      process.env.MINI_APP_URL ||
+                      "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+                  },
+                },
+              ],
+              [{ text: "🛠 Панель администратора" }],
             ],
-            resize_keyboard: true
-          }
-        }
+            resize_keyboard: true,
+          },
+        },
       );
       return;
     }
 
     if (text === "🛠 Панель администратора") {
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
-      bot?.sendMessage(chatId, "Введите секретный код администратора или поставщика:", {
-        reply_markup: {
-          keyboard: [[{ text: "❌ Отмена" }]],
-          resize_keyboard: true
-        }
-      });
+      bot?.sendMessage(
+        chatId,
+        "Введите секретный код администратора или поставщика:",
+        {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        },
+      );
       return;
     }
 
     if (userState.state !== "IDLE") {
-      if (userState.state === "WAITING_PHOTO_SPEC" && text !== "🔍 Распознать" && text !== "❌ Отмена" && text !== "➕ Добавить товар") {
-         if (!userState.tempProductData.textSpecs) {
-           userState.tempProductData.textSpecs = "";
-         }
-         userState.tempProductData.textSpecs += "\n" + text;
-         bot?.sendMessage(chatId, "✅ Текстовое описание добавлено. Если это всё, отправьте ещё или нажмите '🔍 Распознать'", {
-           reply_markup: {
-             inline_keyboard: [
-               [{ text: "🔍 Распознать", callback_data: "recognize" }], 
-               [{ text: "❌ Отмена", callback_data: "cancel" }]
-             ]
-           }
-         });
-         return;
+      if (
+        userState.state === "WAITING_PHOTO_SPEC" &&
+        text !== "🔍 Распознать" &&
+        text !== "❌ Отмена" &&
+        text !== "➕ Добавить товар"
+      ) {
+        if (!userState.tempProductData.textSpecs) {
+          userState.tempProductData.textSpecs = "";
+        }
+        userState.tempProductData.textSpecs += "\n" + text;
+        bot?.sendMessage(
+          chatId,
+          "✅ Текстовое описание добавлено. Если это всё, отправьте ещё или нажмите '🔍 Распознать'",
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "🔍 Распознать", callback_data: "recognize" }],
+                [{ text: "❌ Отмена", callback_data: "cancel" }],
+              ],
+            },
+          },
+        );
+        return;
       }
 
-      let promptMessage = "Пожалуйста, используйте кнопки меню или нажмите '❌ Отмена', чтобы выйти.";
-      if (userState.state === "ADMIN_MENU") promptMessage = "Вы находитесь в панели администратора. Нажмите '➕ Добавить товар', чтобы добавить новый товар, или '❌ Отмена', чтобы выйти в обычный режим.";
-      if (userState.state === "WAITING_PHOTO_PRODUCT") promptMessage = "Вы добавляете товар. Пожалуйста, отправьте фото товара.";
-      if (userState.state === "WAITING_PHOTO_SPEC") promptMessage = "Отправьте фото спецификации, введите спецификацию текстом, или нажмите '🔍 Распознать'.";
-      
+      let promptMessage =
+        "Пожалуйста, используйте кнопки меню или нажмите '❌ Отмена', чтобы выйти.";
+      if (userState.state === "ADMIN_MENU")
+        promptMessage =
+          "Вы находитесь в панели администратора. Нажмите '➕ Добавить товар', чтобы добавить новый товар, или '❌ Отмена', чтобы выйти в обычный режим.";
+      if (userState.state === "WAITING_PHOTO_PRODUCT")
+        promptMessage =
+          "Вы добавляете товар. Пожалуйста, отправьте фото товара.";
+      if (userState.state === "WAITING_PHOTO_SPEC")
+        promptMessage =
+          "Отправьте фото спецификации, введите спецификацию текстом, или нажмите '🔍 Распознать'.";
+
       bot?.sendMessage(chatId, promptMessage);
       return;
     }
 
     if (text === "➕ Добавить товар" || text === "🔍 Распознать") {
-      bot?.sendMessage(chatId, "Ваша сессия истекла. Пожалуйста, зайдите в панель администратора заново: '🛠 Панель администратора'.", {
-        reply_markup: {
-          keyboard: [
-            [{ text: "🛍 Открыть Каталог", web_app: { url: process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app" } }],
-            [{ text: "🛠 Панель администратора" }]
-          ],
-          resize_keyboard: true
-        }
-      });
+      bot?.sendMessage(
+        chatId,
+        "Ваша сессия истекла. Пожалуйста, зайдите в панель администратора заново: '🛠 Панель администратора'.",
+        {
+          reply_markup: {
+            keyboard: [
+              [
+                {
+                  text: "🛍 Открыть Каталог",
+                  web_app: {
+                    url:
+                      process.env.MINI_APP_URL ||
+                      "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+                  },
+                },
+              ],
+              [{ text: "🛠 Панель администратора" }],
+            ],
+            resize_keyboard: true,
+          },
+        },
+      );
       return;
     }
 
-    const rawTokensText = (msg.web_app_data ? msg.web_app_data.data : text).trim();
+    const rawTokensText = (
+      msg.web_app_data ? msg.web_app_data.data : text
+    ).trim();
     if (!rawTokensText) return;
 
     const tokens = rawTokensText.split(/[\s,;\n\t]+/).filter(Boolean);
     const isWebApp = !!msg.web_app_data;
-    const isLikelySearch = isWebApp || (tokens.length > 0 && tokens.every(t => {
-      return /^#?[A-Za-z0-9_\-]+([\.\-][0-9]+)?$/.test(t) && (t.startsWith('#') || /[0-9]/.test(t));
-    }));
+    const isLikelySearch =
+      isWebApp ||
+      (tokens.length > 0 &&
+        tokens.every((t) => {
+          return (
+            /^#?[A-Za-z0-9_\-]+([\.\-][0-9]+)?$/.test(t) &&
+            (t.startsWith("#") || /[0-9]/.test(t))
+          );
+        }));
 
     if (!isLikelySearch) {
       // Just ignore normal text messages instead of complaining, or guide them.
-      bot?.sendMessage(chatId, "Для формирования корзины введите коды товаров через пробел. (Например: 0001.1 0002.5).");
+      bot?.sendMessage(
+        chatId,
+        "Для формирования корзины введите коды товаров через пробел. (Например: 0001.1 0002.5).",
+      );
       return;
     }
 
@@ -722,8 +926,8 @@ if (bot) {
       let qty = 1;
       const match = t.match(/^(.+?)[\.\-]([0-9]+)$/);
       if (match) {
-         code = match[1];
-         qty = parseInt(match[2], 10) || 1;
+        code = match[1];
+        qty = parseInt(match[2], 10) || 1;
       }
       requestedItems.push({ code, qty });
     }
@@ -731,7 +935,10 @@ if (bot) {
     bot?.sendMessage(chatId, `⏳ Ищу товары: ${requestedItems.length} шт...`);
 
     try {
-      const foundProducts = new Map<string, { product: any; quantity: number }>();
+      const foundProducts = new Map<
+        string,
+        { product: any; quantity: number }
+      >();
       const notFound = new Set<string>();
 
       for (const req of requestedItems) {
@@ -740,7 +947,10 @@ if (bot) {
           const docRef = doc(db, "products", req.code);
           const snap = await getDoc(docRef);
           if (snap.exists()) {
-            foundProducts.set(snap.id, { product: { id: snap.id, ...snap.data() }, quantity: req.qty });
+            foundProducts.set(snap.id, {
+              product: { id: snap.id, ...snap.data() },
+              quantity: req.qty,
+            });
             continue;
           }
 
@@ -752,7 +962,10 @@ if (bot) {
           const qSnap = await getDocs(q);
           if (!qSnap.empty) {
             const d = qSnap.docs[0];
-            foundProducts.set(d.id, { product: { id: d.id, ...d.data() }, quantity: req.qty });
+            foundProducts.set(d.id, {
+              product: { id: d.id, ...d.data() },
+              quantity: req.qty,
+            });
             continue;
           }
 
@@ -774,15 +987,17 @@ if (bot) {
       );
 
       const globalDict = await getGlobalDict();
-      
+
       let region = "Душанбе";
       let sphere = "";
       try {
-        const userDoc = await getDoc(doc(db, "telegram_users", chatId.toString()));
+        const userDoc = await getDoc(
+          doc(db, "telegram_users", chatId.toString()),
+        );
         if (userDoc.exists()) {
-           const userData = userDoc.data();
-           if (userData.region) region = userData.region;
-           if (userData.sphere) sphere = userData.sphere;
+          const userData = userDoc.data();
+          if (userData.region) region = userData.region;
+          if (userData.sphere) sphere = userData.sphere;
         }
       } catch (e) {
         console.error("Failed to load user info", e);
@@ -835,40 +1050,89 @@ if (bot) {
 
       const drawHeader = () => {
         // Title
-        docPdf.font(fontBoldPath).fontSize(20).text("ЛИСТ ВЫБОРКИ ТОВАРОВ", 40, 40);
-        
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(20)
+          .text("ЛИСТ ВЫБОРКИ ТОВАРОВ", 40, 40);
+
         // Subtitle
-        docPdf.font(fontPath).fontSize(10).fillColor("gray").text("Официальный каталог продукции", 40, 65);
-        
-        const dateStr = new Date().toLocaleDateString("ru-RU", { 
-            day: "2-digit", month: "2-digit", year: "numeric" 
+        docPdf
+          .font(fontPath)
+          .fontSize(10)
+          .fillColor("gray")
+          .text("Официальный каталог продукции", 40, 65);
+
+        const dateStr = new Date().toLocaleDateString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
         });
 
         // Top right text
-        docPdf.font(fontPath).fontSize(10).fillColor("#000000")
-            .text("Дата формирования: " + dateStr, 250, 40, { width: 300, align: "right" });
-            
-        docPdf.font(fontPath).fontSize(10).fillColor("gray")
-            .text("Документ сгенерирован автоматически", 250, 55, { width: 300, align: "right" });
+        docPdf
+          .font(fontPath)
+          .fontSize(10)
+          .fillColor("#000000")
+          .text("Дата формирования: " + dateStr, 250, 40, {
+            width: 300,
+            align: "right",
+          });
+
+        docPdf
+          .font(fontPath)
+          .fontSize(10)
+          .fillColor("gray")
+          .text("Документ сгенерирован автоматически", 250, 55, {
+            width: 300,
+            align: "right",
+          });
 
         // Horizontal line
-        docPdf.moveTo(40, 80).lineTo(550, 80).lineWidth(2).strokeColor("black").stroke();
+        docPdf
+          .moveTo(40, 80)
+          .lineTo(550, 80)
+          .lineWidth(2)
+          .strokeColor("black")
+          .stroke();
 
         // Selected suppliers box
-        const uniqueSuppliers = Array.from(new Set(cartItems.map(item => item.selectedSupplier))).map(sup => {
-            return sup === "supplier2" ? "Поставщик 1" : 
-                   sup === "supplier3" ? "Поставщик 2" :
-                   sup === "supplier4" ? "Поставщик 3" : "Логистика";
+        const uniqueSuppliers = Array.from(
+          new Set(cartItems.map((item) => item.selectedSupplier)),
+        ).map((sup) => {
+          return sup === "supplier2"
+            ? "Поставщик 1"
+            : sup === "supplier3"
+              ? "Поставщик 2"
+              : sup === "supplier4"
+                ? "Поставщик 3"
+                : "Логистика";
         });
-        
-        docPdf.roundedRect(40, 95, 510, 50, 5).lineWidth(1).strokeColor("#cbd5e1").stroke();
-        docPdf.font(fontBoldPath).fontSize(10).fillColor("#4f46e5").text("ВЫБРАННЫЕ ПОСТАВЩИКИ:", 50, 105);
-        docPdf.font(fontBoldPath).fontSize(10).fillColor("black").text(uniqueSuppliers.join(", "), 60, 122);
+
+        docPdf
+          .roundedRect(40, 95, 510, 50, 5)
+          .lineWidth(1)
+          .strokeColor("#cbd5e1")
+          .stroke();
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(10)
+          .fillColor("#4f46e5")
+          .text("ВЫБРАННЫЕ ПОСТАВЩИКИ:", 50, 105);
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(10)
+          .fillColor("black")
+          .text(uniqueSuppliers.join(", "), 60, 122);
 
         // Table Header
-        docPdf.moveTo(40, 160).lineTo(550, 160).lineWidth(2).strokeColor("black").stroke();
+        docPdf
+          .moveTo(40, 160)
+          .lineTo(550, 160)
+          .lineWidth(2)
+          .strokeColor("black")
+          .stroke();
         docPdf.font(fontBoldPath).fontSize(8).fillColor("black");
-        
+
         docPdf.text("№", 45, 170, { width: 25, align: "center" });
         docPdf.text("ФОТО", 70, 170, { width: 50, align: "center" });
         docPdf.text("НАИМЕНОВАНИЕ И\nОПИСАНИЕ", 130, 170, { width: 170 });
@@ -877,10 +1141,15 @@ if (bot) {
         docPdf.text("КОЛ-\nВО", 450, 170, { width: 30, align: "center" });
         docPdf.text("СУММА", 490, 170, { width: 50, align: "center" });
 
-        docPdf.moveTo(40, 195).lineTo(550, 195).lineWidth(2).strokeColor("black").stroke();
-        
+        docPdf
+          .moveTo(40, 195)
+          .lineTo(550, 195)
+          .lineWidth(2)
+          .strokeColor("black")
+          .stroke();
+
         return 205; // start Y for items
-      }
+      };
 
       let currentY = drawHeader();
       let totalSum = 0;
@@ -888,78 +1157,146 @@ if (bot) {
 
       for (const item of cartItems) {
         if (currentY > 750) {
-            docPdf.addPage();
-            currentY = drawHeader();
+          docPdf.addPage();
+          currentY = drawHeader();
         }
 
         const p = item.product;
-        const supName = item.selectedSupplier === "supplier2" ? "Поставщик 1" : 
-                        item.selectedSupplier === "supplier3" ? "Поставщик 2" :
-                        item.selectedSupplier === "supplier4" ? "Поставщик 3" : "Логистика";
+        const supName =
+          item.selectedSupplier === "supplier2"
+            ? "Поставщик 1"
+            : item.selectedSupplier === "supplier3"
+              ? "Поставщик 2"
+              : item.selectedSupplier === "supplier4"
+                ? "Поставщик 3"
+                : "Логистика";
         const sum = item.selectedPrice * item.quantity;
         totalSum += sum;
 
         const startY = currentY;
-        
+
         // Col 1: Index
-        docPdf.font(fontBoldPath).fontSize(8).text(i.toString(), 45, currentY, { width: 25, align: "center" });
-        
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(8)
+          .text(i.toString(), 45, currentY, { width: 25, align: "center" });
+
         // Col 2: Photo (placeholder text or just image if existing)
         let imageDrawn = false;
-        if (p.imageBase64 && typeof p.imageBase64 === 'string') {
-           try {
-               const base64Data = p.imageBase64.replace(/^data:image\/\w+;base64,/, "");
-               const imgBuffer = Buffer.from(base64Data, 'base64');
-               const jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
-               docPdf.image(jpegBuffer, 75, currentY, { fit: [40, 40], align: 'center', valign: 'center' });
-               imageDrawn = true;
-           } catch(e) {
-               console.warn("Could not parse image for PDF:", e);
-           }
+        if (p.imageBase64 && typeof p.imageBase64 === "string") {
+          try {
+            const base64Data = p.imageBase64.replace(
+              /^data:image\/\w+;base64,/,
+              "",
+            );
+            const imgBuffer = Buffer.from(base64Data, "base64");
+            const jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
+            docPdf.image(jpegBuffer, 75, currentY, {
+              fit: [40, 40],
+              align: "center",
+              valign: "center",
+            });
+            imageDrawn = true;
+          } catch (e) {
+            console.warn("Could not parse image for PDF:", e);
+          }
         }
-        if (!imageDrawn && p.photoUrl && p.photoUrl.startsWith('http')) {
-           try {
-               const imgRes = await axios.get(p.photoUrl, { responseType: 'arraybuffer' });
-               const jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
-               docPdf.image(jpegBuffer, 75, currentY, { fit: [40, 40], align: 'center', valign: 'center' });
-               imageDrawn = true;
-           } catch(e) {
-               console.warn("Could not fetch image for PDF:", p.photoUrl);
-           }
+        if (!imageDrawn && p.photoUrl && p.photoUrl.startsWith("http")) {
+          try {
+            const imgRes = await axios.get(p.photoUrl, {
+              responseType: "arraybuffer",
+            });
+            const jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
+            docPdf.image(jpegBuffer, 75, currentY, {
+              fit: [40, 40],
+              align: "center",
+              valign: "center",
+            });
+            imageDrawn = true;
+          } catch (e) {
+            console.warn("Could not fetch image for PDF:", p.photoUrl);
+          }
         }
         if (!imageDrawn) {
-            docPdf.font(fontPath).fontSize(8).fillColor("#94a3b8").text("Нет фото", 70, currentY, { width: 50, align: "center" });
+          docPdf
+            .font(fontPath)
+            .fontSize(8)
+            .fillColor("#94a3b8")
+            .text("Нет фото", 70, currentY, { width: 50, align: "center" });
         }
-        
+
         // Col 3: Title and Code
-        docPdf.font(fontBoldPath).fontSize(9).fillColor("black")
-            .text(p.name || "Без названия", 130, currentY, { width: 170 });
-        docPdf.font(fontPath).fontSize(8).fillColor("gray")
-            .text("Код: " + (p.code || p.id), 130, docPdf.y, { width: 170 });
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(9)
+          .fillColor("black")
+          .text(p.name || "Без названия", 130, currentY, { width: 170 });
+        docPdf
+          .font(fontPath)
+          .fontSize(8)
+          .fillColor("gray")
+          .text("Код: " + (p.code || p.id), 130, docPdf.y, { width: 170 });
 
         // Figure out row height based on how much text was written
         const textH = docPdf.y - startY;
         const finalRowH = Math.max(textH, imageDrawn ? 40 : 30);
 
         // Col 4: Region & Supplier
-        docPdf.font(fontBoldPath).fontSize(8).fillColor("black").text(region, 310, currentY, { width: 80 });
-        docPdf.font(fontPath).fontSize(7).fillColor("gray").text(supName, 310, currentY + 12, { width: 80 });
-        
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(8)
+          .fillColor("black")
+          .text(region, 310, currentY, { width: 80 });
+        docPdf
+          .font(fontPath)
+          .fontSize(7)
+          .fillColor("gray")
+          .text(supName, 310, currentY + 12, { width: 80 });
+
         // Col 5: Price
         if (item.selectedPrice > 0) {
-            docPdf.font(fontBoldPath).fontSize(8).fillColor("black").text(item.selectedPrice.toFixed(2), 400, currentY, { width: 40, align: "center" });
+          docPdf
+            .font(fontBoldPath)
+            .fontSize(8)
+            .fillColor("black")
+            .text(item.selectedPrice.toFixed(2), 400, currentY, {
+              width: 40,
+              align: "center",
+            });
         } else {
-            docPdf.font(fontPath).fontSize(8).fillColor("gray").text("-", 400, currentY, { width: 40, align: "center" });
+          docPdf
+            .font(fontPath)
+            .fontSize(8)
+            .fillColor("gray")
+            .text("-", 400, currentY, { width: 40, align: "center" });
         }
-        
+
         // Col 6: QTY
-        docPdf.font(fontPath).fontSize(8).fillColor("black").text(item.quantity.toString(), 450, currentY, { width: 30, align: "center" });
-        
+        docPdf
+          .font(fontPath)
+          .fontSize(8)
+          .fillColor("black")
+          .text(item.quantity.toString(), 450, currentY, {
+            width: 30,
+            align: "center",
+          });
+
         // Col 7: SUM
         if (item.selectedPrice > 0) {
-            docPdf.font(fontBoldPath).fontSize(8).fillColor("black").text(sum.toFixed(2), 490, currentY, { width: 50, align: "center" });
+          docPdf
+            .font(fontBoldPath)
+            .fontSize(8)
+            .fillColor("black")
+            .text(sum.toFixed(2), 490, currentY, {
+              width: 50,
+              align: "center",
+            });
         } else {
-            docPdf.font(fontPath).fontSize(8).fillColor("gray").text("-", 490, currentY, { width: 50, align: "center" });
+          docPdf
+            .font(fontPath)
+            .fontSize(8)
+            .fillColor("gray")
+            .text("-", 490, currentY, { width: 50, align: "center" });
         }
 
         currentY += finalRowH + 15;
@@ -968,21 +1305,45 @@ if (bot) {
 
       if (logisticsCost > 0) {
         if (currentY > 750) {
-           docPdf.addPage();
-           currentY = drawHeader();
+          docPdf.addPage();
+          currentY = drawHeader();
         }
-        docPdf.moveTo(40, currentY).lineTo(550, currentY).lineWidth(1).strokeColor("#e2e8f0").stroke();
+        docPdf
+          .moveTo(40, currentY)
+          .lineTo(550, currentY)
+          .lineWidth(1)
+          .strokeColor("#e2e8f0")
+          .stroke();
         currentY += 10;
-        docPdf.font(fontBoldPath).fontSize(10).fillColor("black").text(`Логистика (до ${region})`, 130, currentY, { width: 170 });
-        docPdf.text(logisticsCost.toFixed(2), 490, currentY, { width: 50, align: "center" });
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(10)
+          .fillColor("black")
+          .text(`Логистика (до ${region})`, 130, currentY, { width: 170 });
+        docPdf.text(logisticsCost.toFixed(2), 490, currentY, {
+          width: 50,
+          align: "center",
+        });
         totalSum += logisticsCost;
         currentY += 25;
       }
 
-      docPdf.moveTo(40, currentY).lineTo(550, currentY).lineWidth(2).strokeColor("black").stroke();
+      docPdf
+        .moveTo(40, currentY)
+        .lineTo(550, currentY)
+        .lineWidth(2)
+        .strokeColor("black")
+        .stroke();
       currentY += 10;
-      docPdf.font(fontBoldPath).fontSize(14).fillColor("black").text("ИТОГО:", 310, currentY, { width: 80, align: "right" });
-      docPdf.text(`${totalSum.toFixed(2)} с.`, 400, currentY, { width: 140, align: "right" });
+      docPdf
+        .font(fontBoldPath)
+        .fontSize(14)
+        .fillColor("black")
+        .text("ИТОГО:", 310, currentY, { width: 80, align: "right" });
+      docPdf.text(`${totalSum.toFixed(2)} с.`, 400, currentY, {
+        width: 140,
+        align: "right",
+      });
 
       docPdf.end();
       const pdfBuffer = await pdfPromise;
@@ -997,7 +1358,7 @@ if (bot) {
         { key: "unit", width: 15 },
         { key: "qty", width: 12 },
         { key: "price", width: 18 },
-        { key: "total", width: 20 }
+        { key: "total", width: 20 },
       ];
 
       ws.mergeCells("A1:F1");
@@ -1005,88 +1366,148 @@ if (bot) {
       titleCell.value = "Буҷети сармоягузорӣ";
       titleCell.font = { bold: true, size: 12 };
       titleCell.alignment = { horizontal: "center", vertical: "middle" };
-      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } }; // Light blueish
+      titleCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF4BA0DC" },
+      }; // Light blueish
       for (let c = 1; c <= 6; c++) {
-         ws.getCell(1, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        ws.getCell(1, c).border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
       }
 
-      const headerRow = ws.addRow(["#", "Ном ва хусусиятҳо", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);
+      const headerRow = ws.addRow([
+        "#",
+        "Ном ва хусусиятҳо",
+        "Воҳид",
+        "Миқдор",
+        "Нархи як воҳид*",
+        "Ҳамагӣ",
+      ]);
       headerRow.eachCell((cell) => {
-          cell.font = { bold: true };
-          cell.alignment = { horizontal: "center", vertical: "middle" };
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } };
-          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        cell.font = { bold: true };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF4BA0DC" },
+        };
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
       });
 
       const spheresSet = new Set<string>();
       cartItems.forEach((i) => {
-          let s = i.product.sphere;
-          if (!s) s = "Общее";
-          spheresSet.add(s);
+        let s = i.product.sphere;
+        if (!s) s = "Общее";
+        spheresSet.add(s);
       });
 
       let overallExcelTotal = 0;
 
       for (const sphere of Array.from(spheresSet)) {
-          const itemsInSphere = cartItems.filter(i => (i.product.sphere || "Общее") === sphere);
-          if (itemsInSphere.length === 0) continue;
+        const itemsInSphere = cartItems.filter(
+          (i) => (i.product.sphere || "Общее") === sphere,
+        );
+        if (itemsInSphere.length === 0) continue;
 
-          // Sphere row
-          const sRow = ws.addRow(["", sphere, "", "", "", ""]);
-          sRow.getCell(2).font = { bold: true, underline: true };
-          sRow.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
-          for (let c = 1; c <= 6; c++) {
-              sRow.getCell(c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-          }
-          
-          let sphereTotal = 0;
-          
-          itemsInSphere.forEach((item, idx) => {
-              const sum = item.quantity * item.selectedPrice;
-              sphereTotal += sum;
-              const r = ws.addRow([
-                  idx + 1,
-                  item.product.name + (item.product.description ? "\n" + item.product.description : ""),
-                  item.product.unit || "шт.",
-                  item.quantity,
-                  item.selectedPrice > 0 ? item.selectedPrice : "-",
-                  item.selectedPrice > 0 ? sum : "-"
-              ]);
-              r.eachCell((cell, colNumber) => {
-                  let horz: "left" | "center" | "right" = "right";
-                  if (colNumber === 1) horz = "center";
-                  if (colNumber === 2) horz = "left";
-                  if (colNumber === 3) horz = "center";
+        // Sphere row
+        const sRow = ws.addRow(["", sphere, "", "", "", ""]);
+        sRow.getCell(2).font = { bold: true, underline: true };
+        sRow.getCell(2).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+        for (let c = 1; c <= 6; c++) {
+          sRow.getCell(c).border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        }
 
-                  cell.alignment = { vertical: "middle", horizontal: horz, wrapText: true };
-                  cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-              });
+        let sphereTotal = 0;
+
+        itemsInSphere.forEach((item, idx) => {
+          const sum = item.quantity * item.selectedPrice;
+          sphereTotal += sum;
+          const r = ws.addRow([
+            idx + 1,
+            item.product.name +
+              (item.product.description ? "\n" + item.product.description : ""),
+            item.product.unit || "шт.",
+            item.quantity,
+            item.selectedPrice > 0 ? item.selectedPrice : "-",
+            item.selectedPrice > 0 ? sum : "-",
+          ]);
+          r.eachCell((cell, colNumber) => {
+            let horz: "left" | "center" | "right" = "right";
+            if (colNumber === 1) horz = "center";
+            if (colNumber === 2) horz = "left";
+            if (colNumber === 3) horz = "center";
+
+            cell.alignment = {
+              vertical: "middle",
+              horizontal: horz,
+              wrapText: true,
+            };
+            cell.border = {
+              top: { style: "thin" },
+              left: { style: "thin" },
+              bottom: { style: "thin" },
+              right: { style: "thin" },
+            };
           });
-          
-          overallExcelTotal += sphereTotal;
-          
-          // Subtotal row
-          const subRow = ws.addRow(["", "", "", "", "Ҷамъ", sphereTotal]);
-          subRow.eachCell((cell) => {
-              cell.alignment = { vertical: "middle", horizontal: "right" };
-              cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-          });
-          subRow.getCell(5).font = { bold: true };
+        });
+
+        overallExcelTotal += sphereTotal;
+
+        // Subtotal row
+        const subRow = ws.addRow(["", "", "", "", "Ҷамъ", sphereTotal]);
+        subRow.eachCell((cell) => {
+          cell.alignment = { vertical: "middle", horizontal: "right" };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+        subRow.getCell(5).font = { bold: true };
       }
 
       if (logisticsCost > 0) {
-          const logRow = ws.addRow(["", "Логистика", "", "", "", logisticsCost]);
-          overallExcelTotal += logisticsCost;
-          logRow.eachCell((cell) => {
-              cell.alignment = { vertical: "middle", horizontal: "right" };
-              cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-          });
+        const logRow = ws.addRow(["", "Логистика", "", "", "", logisticsCost]);
+        overallExcelTotal += logisticsCost;
+        logRow.eachCell((cell) => {
+          cell.alignment = { vertical: "middle", horizontal: "right" };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
       }
 
       const totalRow = ws.addRow(["", "", "", "", "Ҳамагӣ", overallExcelTotal]);
       totalRow.eachCell((cell) => {
-          cell.alignment = { vertical: "middle", horizontal: "right" };
-          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
       });
       totalRow.getCell(5).font = { bold: true };
       totalRow.getCell(6).font = { bold: true };
@@ -1104,7 +1525,11 @@ if (bot) {
         chatId,
         excelBuffer,
         {},
-        { filename: "Invoice.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+        {
+          filename: "Invoice.xlsx",
+          contentType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
       );
     } catch (e: any) {
       console.error(e);

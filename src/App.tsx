@@ -322,10 +322,7 @@ export default function App() {
   const [isAiSpheresModalOpen, setIsAiSpheresModalOpen] = useState(false);
   const [aiSpheresSearch, setAiSpheresSearch] = useState("");
 
-  const [aiSelectedRegions, setAiSelectedRegions] = useState<string[]>(() => {
-    const saved = localStorage.getItem("catalog_region");
-    return saved ? [saved] : [];
-  });
+  const [aiSelectedRegions, setAiSelectedRegions] = useState<string[]>([]);
   const [isAiRegionsModalOpen, setIsAiRegionsModalOpen] = useState(false);
   const [aiRegionsSearch, setAiRegionsSearch] = useState("");
 
@@ -337,15 +334,6 @@ export default function App() {
       });
     }
   }, [selectedSphere]);
-
-  useEffect(() => {
-    if (selectedRegion) {
-      setAiSelectedRegions((prev) => {
-        if (prev.includes(selectedRegion)) return prev;
-        return [...prev, selectedRegion];
-      });
-    }
-  }, [selectedRegion]);
   const [exportScope, setExportScope] = useState<
     | "all"
     | "sphere"

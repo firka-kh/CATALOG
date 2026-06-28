@@ -965,22 +965,40 @@ if (bot) {
           unit: parsed.unit || "шт.",
           code: Math.random().toString(36).substring(2, 8).toUpperCase(), // Temporary random code
           prices: {}, // will be populated
+          regionPrices: {},
+          currentPricingRegionIndex: 0,
         };
 
         userState.state = "WAITING_PRICE";
         userStates.set(chatId, userState);
 
-        const preview = adminUsers.has(chatId)
-          ? `✅ Распознано:\n\n*Название:* ${parsed.name}\n*Спецификация:* ${parsed.description}\n*Единица:* ${parsed.unit}\n\nТеперь отправьте базовую цену (Главный каталог) в виде числа (в сомони).`
-          : `✅ Спецификация распознана!\n\nТеперь отправьте вашу цену для этого товара (в сомони).`;
+        const regions = userState.tempProductData.regions || [];
+        if (regions.length > 0) {
+          const currentRegion = regions[0];
+          const preview = `✅ Спецификация распознана!\n\n*Название:* ${parsed.name}\n*Спецификация:* ${parsed.description}\n*Единица:* ${parsed.unit}\n\nТеперь укажите цену для региона *${currentRegion}* (или отправьте 0 / Нажмите «⏩ Пропустить регион»):`;
+          bot?.sendMessage(chatId, preview, {
+            parse_mode: "Markdown",
+            reply_markup: {
+              keyboard: [
+                [{ text: "⏩ Пропустить регион" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          });
+        } else {
+          const preview = adminUsers.has(chatId)
+            ? `✅ Распознано:\n\n*Название:* ${parsed.name}\n*Спецификация:* ${parsed.description}\n*Единица:* ${parsed.unit}\n\nТеперь отправьте базовую цену (Главный каталог) в виде числа (в сомони).`
+            : `✅ Спецификация распознана!\n\nТеперь отправьте вашу цену для этого товара (в сомони).`;
 
-        bot?.sendMessage(chatId, preview, {
-          parse_mode: "Markdown",
-          reply_markup: {
-            keyboard: [[{ text: "❌ Отмена" }]],
-            resize_keyboard: true,
-          },
-        });
+          bot?.sendMessage(chatId, preview, {
+            parse_mode: "Markdown",
+            reply_markup: {
+              keyboard: [[{ text: "❌ Отмена" }]],
+              resize_keyboard: true,
+            },
+          });
+        }
       } catch (e) {
         console.error(e);
         bot?.sendMessage(
@@ -993,20 +1011,85 @@ if (bot) {
 
     if (userState.state === "WAITING_PRICE") {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      const price = parseFloat(text.replace(",", "."));
-      if (isNaN(price) || price < 0) {
-        bot?.sendMessage(
-          chatId,
-          "Пожалуйста, отправьте корректное число для цены (например: 100.50).",
-        );
-        return;
-      }
 
       const product = userState.tempProductData;
+      const regionsToSet = product.regions && product.regions.length > 0 ? product.regions : [];
 
+      let priceVal = 0;
+      let skipCurrentRegion = false;
+
+      if (regionsToSet.length > 0) {
+        const currentIndex = product.currentPricingRegionIndex || 0;
+        const currentRegion = regionsToSet[currentIndex];
+
+        if (text === "⏩ Пропустить регион") {
+          skipCurrentRegion = true;
+        } else {
+          priceVal = parseFloat(text.replace(",", "."));
+          if (isNaN(priceVal) || priceVal < 0) {
+            bot?.sendMessage(
+              chatId,
+              `Пожалуйста, отправьте корректное число для цены (например: 100.50) для региона *${currentRegion}* или нажмите «⏩ Пропустить регион»:`,
+              {
+                parse_mode: "Markdown",
+                reply_markup: {
+                  keyboard: [
+                    [{ text: "⏩ Пропустить регион" }],
+                    [{ text: "❌ Отмена" }],
+                  ],
+                  resize_keyboard: true,
+                },
+              }
+            );
+            return;
+          }
+        }
+
+        if (!product.regionPrices) {
+          product.regionPrices = {};
+        }
+
+        if (!skipCurrentRegion) {
+          product.regionPrices[currentRegion] = priceVal;
+        }
+
+        const nextIndex = currentIndex + 1;
+        product.currentPricingRegionIndex = nextIndex;
+        userStates.set(chatId, userState);
+
+        if (nextIndex < regionsToSet.length) {
+          const nextRegion = regionsToSet[nextIndex];
+          bot?.sendMessage(
+            chatId,
+            `Укажите цену для региона *${nextRegion}* (или отправьте 0 / Нажмите «⏩ Пропустить регион»):`,
+            {
+              parse_mode: "Markdown",
+              reply_markup: {
+                keyboard: [
+                  [{ text: "⏩ Пропустить регион" }],
+                  [{ text: "❌ Отмена" }],
+                ],
+                resize_keyboard: true,
+              },
+            }
+          );
+          return;
+        }
+      } else {
+        // No regions chosen - treat as global catalog price
+        priceVal = parseFloat(text.replace(",", "."));
+        if (isNaN(priceVal) || priceVal < 0) {
+          bot?.sendMessage(
+            chatId,
+            "Пожалуйста, отправьте корректное число для цены (например: 100.50).",
+          );
+          return;
+        }
+      }
+
+      // If we reach here, we have finished collecting prices! Now we save.
       try {
         const nextCode = await generateNextProductCode(db);
-
         const productId = nextCode;
 
         const finalPrices: any = {
@@ -1019,16 +1102,33 @@ if (bot) {
         const isSupplier = supplierUsers.has(chatId);
         const supplierIdToUse = isSupplier ? (product.supplierId || "") : "supplier1";
 
-        const regionsToSet = product.regions && product.regions.length > 0
-          ? product.regions
-          : (product.region ? [product.region] : []);
-
-        if (regionsToSet.length > 0) {
-          regionsToSet.forEach((reg: string) => {
-            if (finalPrices[supplierIdToUse]) {
-              finalPrices[supplierIdToUse][reg] = price;
+        // Populate regional prices
+        if (product.regionPrices && Object.keys(product.regionPrices).length > 0) {
+          Object.entries(product.regionPrices).forEach(([reg, val]) => {
+            if (typeof val === "number" && val > 0) {
+              if (finalPrices[supplierIdToUse]) {
+                finalPrices[supplierIdToUse][reg] = val;
+              }
             }
           });
+        } else if (regionsToSet.length > 0) {
+          // Fallback if we have regions but no specific regionPrices
+          regionsToSet.forEach((reg: string) => {
+            if (finalPrices[supplierIdToUse]) {
+              finalPrices[supplierIdToUse][reg] = priceVal;
+            }
+          });
+        }
+
+        // Determine main display price
+        let mainPrice = priceVal;
+        if (product.regionPrices && Object.keys(product.regionPrices).length > 0) {
+          const validPrices = Object.values(product.regionPrices).filter(
+            (v) => typeof v === "number" && v > 0
+          ) as number[];
+          if (validPrices.length > 0) {
+            mainPrice = validPrices[0];
+          }
         }
 
         const finalProduct = {
@@ -1042,7 +1142,7 @@ if (bot) {
           regions: regionsToSet,
           category: "Без категории",
           imageBase64: product.imageBase64 || "",
-          price: isSupplier ? 0 : price, // Global catalog price
+          price: isSupplier ? 0 : mainPrice, // Global catalog price
           prices: finalPrices,
           createdAt: Date.now(),
         };

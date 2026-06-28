@@ -35,25 +35,36 @@ export default function MiniApp() {
     return minP;
   };
 
+  // Load settings and user profile with real-time cached onSnapshot
   useEffect(() => {
-    let unmounted = false;
-    async function loadSettings() {
-      const gDoc = await getDoc(doc(db, "settings", "dictionaries"));
-      if (gDoc.exists() && !unmounted) {
-        setGlobalDict(gDoc.data() || {});
+    // 1. Listen to dictionaries document
+    const unsubDict = onSnapshot(doc(db, "settings", "dictionaries"), (snapshot) => {
+      if (snapshot.exists()) {
+        setGlobalDict(snapshot.data() || {});
       }
-      
-      const userId = tg?.initDataUnsafe?.user?.id;
-      if (userId) {
-         const uDoc = await getDoc(doc(db, "telegram_users", userId.toString()));
-         if (uDoc.exists() && !unmounted) {
-            if (uDoc.data().region) setRegion(uDoc.data().region);
-            if (uDoc.data().sphere) setSphere(uDoc.data().sphere);
-         }
-      }
+    }, (error) => {
+      console.error("Error listening to dictionaries:", error);
+    });
+
+    // 2. Listen to user profile document if user ID is available
+    let unsubUser: (() => void) | undefined;
+    const userId = tg?.initDataUnsafe?.user?.id;
+    if (userId) {
+      unsubUser = onSnapshot(doc(db, "telegram_users", userId.toString()), (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data?.region) setRegion(data.region);
+          if (data?.sphere) setSphere(data.sphere);
+        }
+      }, (error) => {
+        console.error("Error listening to user settings:", error);
+      });
     }
-    loadSettings();
-    return () => { unmounted = true; };
+
+    return () => {
+      unsubDict();
+      if (unsubUser) unsubUser();
+    };
   }, [tg?.initDataUnsafe?.user?.id]);
 
   const handleSetRegion = async (r: string) => {
@@ -167,14 +178,6 @@ export default function MiniApp() {
     return true;
   });
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[var(--tg-theme-bg-color)] text-[var(--tg-theme-text-color)]">
-        <Loader2 className="animate-spin w-8 h-8 text-blue-500" />
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
       <div className="sticky top-0 z-10 bg-[var(--tg-theme-bg-color,#f3f4f6)] pb-4 space-y-3">
@@ -227,13 +230,19 @@ export default function MiniApp() {
              <p className="text-gray-500 dark:text-gray-400 font-medium">Пожалуйста, выберите регион для просмотра товаров.</p>
           </div>
         )}
-        {(region && filteredProducts.length === 0) && (
+        {(region && loading) && (
+          <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+             <Loader2 className="animate-spin w-8 h-8 text-blue-500 mb-2" />
+             <p className="text-gray-500 dark:text-gray-400 text-sm">Загрузка каталога товаров...</p>
+          </div>
+        )}
+        {(region && !loading && filteredProducts.length === 0) && (
           <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
              <Search className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
              <p className="text-gray-500 dark:text-gray-400 font-medium">Товары не найдены</p>
           </div>
         )}
-        {filteredProducts.map(p => (
+        {(!loading) && filteredProducts.map(p => (
           <div key={p.id} className="flex gap-4 p-3 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 items-center">
             {p.imageBase64 ? (
               <img src={p.imageBase64} alt={p.name} className="w-20 h-20 object-cover rounded-xl shrink-0 border border-gray-100 dark:border-gray-700" />

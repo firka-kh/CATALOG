@@ -587,67 +587,70 @@ if (bot) {
       return;
     }
 
-    if (userState.state === "ADMIN_MENU" && text === "➕ Добавить товар") {
-      if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-
-      const supplierId = supplierUsers.get(chatId) || "";
-
-      if (adminUsers.has(chatId)) {
-        userStates.set(chatId, {
-          state: "WAITING_SPHERE",
-          tempProductData: { supplierId: "", region: "", spheres: [] },
-        });
-        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
-          reply_markup: {
-            keyboard: [[{ text: "❌ Отмена" }]],
-            resize_keyboard: true,
-          },
-        });
-
-        getSpheresList().then((spheresProps) => {
-          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
-          const replyMarkup = buildSpheresKeyboard(spheresProps, []);
-          
-          bot?.sendMessage(chatId, text, {
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          });
-        });
+    const isAuthorized = adminUsers.has(chatId) || supplierUsers.has(chatId);
+    if (text === "➕ Добавить товар") {
+      if (!isAuthorized) {
+        // Let it fall through to the "session expired" handler below
       } else {
-        userStates.set(chatId, {
-          state: "WAITING_REGION",
-          tempProductData: { supplierId },
-        });
-        bot?.sendMessage(chatId, "⏳ Загружаю список регионов...");
+        const supplierId = supplierUsers.get(chatId) || "";
 
-        let regionsProps: string[] = ["Душанбе"];
-        try {
-          const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-          if (dictDoc.exists()) {
-            const dictData = dictDoc.data();
-            if (
-              dictData.regions &&
-              Array.isArray(dictData.regions) &&
-              dictData.regions.length > 0
-            ) {
-              regionsProps = dictData.regions;
+        if (adminUsers.has(chatId)) {
+          userStates.set(chatId, {
+            state: "WAITING_SPHERE",
+            tempProductData: { supplierId: "", region: "", spheres: [] },
+          });
+          bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
+            reply_markup: {
+              keyboard: [[{ text: "❌ Отмена" }]],
+              resize_keyboard: true,
+            },
+          });
+
+          getSpheresList().then((spheresProps) => {
+            const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
+            const replyMarkup = buildSpheresKeyboard(spheresProps, []);
+            
+            bot?.sendMessage(chatId, text, {
+              parse_mode: "Markdown",
+              reply_markup: replyMarkup,
+            });
+          });
+        } else {
+          userStates.set(chatId, {
+            state: "WAITING_REGION",
+            tempProductData: { supplierId },
+          });
+          bot?.sendMessage(chatId, "⏳ Загружаю список регионов...");
+
+          let regionsProps: string[] = ["Душанбе"];
+          try {
+            const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
+            if (dictDoc.exists()) {
+              const dictData = dictDoc.data();
+              if (
+                dictData.regions &&
+                Array.isArray(dictData.regions) &&
+                dictData.regions.length > 0
+              ) {
+                regionsProps = dictData.regions;
+              }
             }
+          } catch (e) {
+            console.error("Error loading regions", e);
           }
-        } catch (e) {
-          console.error("Error loading regions", e);
+
+          const keyboardRows = regionsProps.map((r) => [{ text: r }]);
+          keyboardRows.push([{ text: "❌ Отмена" }]);
+
+          bot?.sendMessage(chatId, "Выберите регион:", {
+            reply_markup: {
+              keyboard: keyboardRows,
+              resize_keyboard: true,
+            },
+          });
         }
-
-        const keyboardRows = regionsProps.map((r) => [{ text: r }]);
-        keyboardRows.push([{ text: "❌ Отмена" }]);
-
-        bot?.sendMessage(chatId, "Выберите регион:", {
-          reply_markup: {
-            keyboard: keyboardRows,
-            resize_keyboard: true,
-          },
-        });
+        return;
       }
-      return;
     }
 
     if (userState.state === "WAITING_REGION") {
@@ -930,6 +933,43 @@ if (bot) {
     }
 
     if (text === "🛠 Панель администратора") {
+      if (adminUsers.has(chatId)) {
+        userStates.set(chatId, { state: "ADMIN_MENU" });
+        bot?.sendMessage(
+          chatId,
+          "🛠 Панель администратора открыта. Вы авторизованы как Администратор.",
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "➕ Добавить товар" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+        return;
+      }
+
+      if (supplierUsers.has(chatId)) {
+        userStates.set(chatId, { state: "ADMIN_MENU" });
+        const supplierId = supplierUsers.get(chatId) || "";
+        bot?.sendMessage(
+          chatId,
+          `🛠 Панель администратора открыта. Вы авторизованы как Поставщик (${supplierId}).`,
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "➕ Добавить товар" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+        return;
+      }
+
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,

@@ -348,16 +348,17 @@ if (bot) {
           "data:image/jpeg;base64," + imageBuffer.toString("base64");
 
         userState.tempProductData.imageBase64 = base64Image;
+        userState.tempProductData.productPhotoUrl = fileLink;
         userState.state = "WAITING_PHOTO_SPEC";
         userStates.set(chatId, userState);
 
         bot?.sendMessage(
           chatId,
-          `✅ Фото товара успешно сохранено.\n\nТеперь отправьте фото спецификации (коробку, характеристики, этикетку) для распознавания.\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`,
+          `✅ Фото товара успешно сохранено.\n\nЕсли на этом фото есть и товар, и спецификация (например, характеристики, коробка или этикетка на одном фото), вы можете нажать кнопку ниже, чтобы распознать товар по этому же фото.\n\nИначе, отправьте фото спецификации отдельно:\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`,
           {
             reply_markup: {
               inline_keyboard: [
-                [{ text: "🔍 Распознать", callback_data: "recognize" }],
+                [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
                 [{ text: "❌ Отмена", callback_data: "cancel" }],
               ],
             },
@@ -411,6 +412,22 @@ if (bot) {
         text: "🔍 Распознать",
         message_id: query.message?.message_id || Date.now(),
       });
+    } else if (query.data === "recognize_single_photo") {
+      bot?.answerCallbackQuery(query.id);
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_PHOTO_SPEC") {
+        if (userState.tempProductData && userState.tempProductData.productPhotoUrl) {
+          userState.tempProductData.photos = [userState.tempProductData.productPhotoUrl];
+          userStates.set(chatId, userState);
+          (bot as any)?.emit("message", {
+            chat: { id: chatId },
+            text: "🔍 Распознать",
+            message_id: query.message?.message_id || Date.now(),
+          });
+        } else {
+          bot?.sendMessage(chatId, "❌ Ошибка: Не удалось найти сохраненное фото товара.");
+        }
+      }
     } else if (query.data?.startsWith("toggle_region:")) {
       bot?.answerCallbackQuery(query.id);
       const regionName = query.data.split(":")[1];

@@ -19,6 +19,7 @@ export interface Product {
     mimeType: string;
     sphere?: string;
     spheres?: string[];
+    regions?: string[];
     unit?: string;
     createdAt?: number;
 }

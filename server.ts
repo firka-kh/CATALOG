@@ -83,7 +83,7 @@ app.post("/api/parse-product", async (req, res) => {
       },
       config: {
         systemInstruction:
-          "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. STRICTLY NO BRANDS OR MANUFACTURERS: Do NOT mention any brand, model, or manufacturer name anywhere in 'name' or 'description'.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
+          "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. BRANDS, MODELS, AND IDENTIFIERS MUST BE PRESERVED: If the photo or text mentions a specific brand, model name, manufacturer, abbreviation, or serial number, you MUST include it in the product 'name', formatted as '<Product type> - <Brand/Model>' (e.g., 'Дрель - Total 2020', 'Перфоратор - Makita HR2470', 'Кабель - ГОСТ 3х2.5'). Do NOT strip or generalize these names; include them so users can identify the exact model in the catalog.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -187,7 +187,7 @@ app.post("/api/normalize-name", async (req, res) => {
       });
     }
     parts.push({
-      text: `Analyze the provided product information (and image if available).\n\nCurrent Name: ${name}\nDescription: ${description || "N/A"}\nCategory: ${category || "N/A"}\n\nYour task is to redefine the product's Name to be clear, professional, concise, and in Russian. Remove any brand names, store codes, or excessive technical jargon from the name. Provide ONLY the new standardized name as a string.`,
+      text: `Analyze the provided product information (and image if available).\n\nCurrent Name: ${name}\nDescription: ${description || "N/A"}\nCategory: ${category || "N/A"}\n\nYour task is to redefine the product's Name to be clear, professional, concise, and in Russian. If a brand name, model name, manufacturer, abbreviation, or serial number is present, you MUST preserve it and include it in the format '<Product Type> - <Brand/Model>' (e.g., 'Дрель - Total 2020', 'Перфоратор - Makita HR2470', 'Дрель ударная - Bosch GSB 13 RE'). Provide ONLY the new standardized name as a string.`,
     });
 
     const response = await ai.models.generateContent({
@@ -197,7 +197,7 @@ app.post("/api/normalize-name", async (req, res) => {
       },
       config: {
         systemInstruction:
-          "You are a data entry and naming expert. Given a product's current description and name, generate a clear, concise, generic professional name (e.g., 'Дрель ударная электрическая' instead of 'Bosch GSB 13 RE Professional 600W'). Output only the name string.",
+          "You are a data entry and naming expert. Given a product's current description and name, generate a clear, concise, professional name. If a brand, model, or identifying text is present, preserve it and format the name as '<Product Type> - <Brand/Model>' (e.g., 'Дрель - Total 2020', 'Перфоратор - Makita HR2470'). Output only the name string.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,

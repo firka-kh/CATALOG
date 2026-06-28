@@ -322,6 +322,13 @@ export default function App() {
   const [isAiSpheresModalOpen, setIsAiSpheresModalOpen] = useState(false);
   const [aiSpheresSearch, setAiSpheresSearch] = useState("");
 
+  const [aiSelectedRegions, setAiSelectedRegions] = useState<string[]>(() => {
+    const saved = localStorage.getItem("catalog_region");
+    return saved ? [saved] : [];
+  });
+  const [isAiRegionsModalOpen, setIsAiRegionsModalOpen] = useState(false);
+  const [aiRegionsSearch, setAiRegionsSearch] = useState("");
+
   useEffect(() => {
     if (selectedSphere) {
       setAiSelectedSpheres((prev) => {
@@ -330,6 +337,15 @@ export default function App() {
       });
     }
   }, [selectedSphere]);
+
+  useEffect(() => {
+    if (selectedRegion) {
+      setAiSelectedRegions((prev) => {
+        if (prev.includes(selectedRegion)) return prev;
+        return [...prev, selectedRegion];
+      });
+    }
+  }, [selectedRegion]);
   const [exportScope, setExportScope] = useState<
     | "all"
     | "sphere"
@@ -902,6 +918,15 @@ export default function App() {
                   newProduct.sphere = aiSelectedSpheres[0];
                 }
 
+                if (aiSelectedRegions && aiSelectedRegions.length > 0) {
+                  newProduct.regions = aiSelectedRegions;
+                  aiSelectedRegions.forEach((reg) => {
+                    if (newProduct.prices && newProduct.prices[selectedSupplier]) {
+                      newProduct.prices[selectedSupplier]![reg] = priceVal;
+                    }
+                  });
+                }
+
                 try {
                   await setDoc(doc(db, "products", newProduct.id), newProduct);
                   parsedCount++;
@@ -933,7 +958,7 @@ export default function App() {
         fileInputRef.current.value = "";
       }
     },
-    [selectedRegion, selectedSupplier, aiSelectedSpheres],
+    [selectedRegion, selectedSupplier, aiSelectedSpheres, aiSelectedRegions],
   );
 
   const onDrop = (e: React.DragEvent) => {
@@ -2973,6 +2998,42 @@ export default function App() {
                   </div>
                 </button>
 
+                {/* Regions Multi-select for AI Uploader */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAiRegionsSearch("");
+                    setIsAiRegionsModalOpen(true);
+                  }}
+                  className="w-72 h-full border border-slate-200 rounded-xl p-3 bg-slate-50 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all text-left flex flex-col justify-between shrink-0 cursor-pointer group"
+                >
+                  <div className="w-full flex justify-between items-center select-none">
+                    <span className="text-xs font-bold text-slate-700">Регионы для ИИ-импорта</span>
+                    <span className="text-[10px] text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100 px-1.5 py-0.5 rounded-full font-bold">
+                      {aiSelectedRegions.length}
+                    </span>
+                  </div>
+                  <div className="flex-1 w-full overflow-hidden flex flex-wrap gap-1 items-center my-1 text-slate-500">
+                    {aiSelectedRegions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 max-h-[44px] overflow-hidden">
+                        {aiSelectedRegions.map((r) => (
+                          <span
+                            key={r}
+                            className="inline-block px-1.5 py-0.5 bg-white border border-slate-200 rounded text-[10px] text-slate-600 truncate max-w-[120px]"
+                          >
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-amber-600 font-medium leading-tight">Регионы не выбраны (Общее по сферам)</span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-indigo-600 font-semibold flex items-center gap-1 group-hover:text-indigo-700 select-none">
+                    <span>Нажмите, чтобы настроить регионы →</span>
+                  </div>
+                </button>
+
                 <div className="w-64 h-full relative flex flex-col gap-2">
                   <select
                     value={exportScope}
@@ -4223,6 +4284,150 @@ export default function App() {
               </span>
               <button
                 onClick={() => setIsAiSpheresModalOpen(false)}
+                className="px-5 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm text-sm"
+              >
+                Готово
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isAiRegionsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50/50">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">
+                  Выбор регионов для ИИ-импорта
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Товары, распознанные ИИ, получат указанные цены в выбранных здесь регионах. Если регион не выбран, товар внесется глобально по сферам.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsAiRegionsModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Controls (Search and Select all/none) */}
+            <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Поиск регионов..."
+                  value={aiRegionsSearch}
+                  onChange={(e) => setAiRegionsSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                {aiRegionsSearch && (
+                  <button
+                    onClick={() => setAiRegionsSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                  >
+                    Очистить
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filtered = uniqueRegions.filter((r) =>
+                      r.toLowerCase().includes(aiRegionsSearch.toLowerCase())
+                    );
+                    setAiSelectedRegions((prev) => {
+                      const next = [...prev];
+                      filtered.forEach((r) => {
+                        if (!next.includes(r)) next.push(r);
+                      });
+                      return next;
+                    });
+                  }}
+                  className="px-3 py-1.5 font-medium bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-md transition-colors border border-indigo-100"
+                >
+                  Выбрать все
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const filtered = uniqueRegions.filter((r) =>
+                      r.toLowerCase().includes(aiRegionsSearch.toLowerCase())
+                    );
+                    setAiSelectedRegions((prev) =>
+                      prev.filter((r) => !filtered.includes(r))
+                    );
+                  }}
+                  className="px-3 py-1.5 font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-md transition-colors border border-slate-200"
+                >
+                  Сбросить выбор
+                </button>
+              </div>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {(() => {
+                const filtered = uniqueRegions.filter((r) =>
+                  r.toLowerCase().includes(aiRegionsSearch.toLowerCase())
+                );
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-400 text-sm">
+                      Регионы по запросу "{aiRegionsSearch}" не найдены
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {filtered.map((r) => {
+                      const isChecked = aiSelectedRegions.includes(r);
+                      return (
+                        <label
+                          key={r}
+                          className={`flex items-center gap-3 p-3 rounded-xl border text-sm transition-all cursor-pointer select-none ${
+                            isChecked
+                              ? "bg-indigo-50/50 border-indigo-300 text-indigo-900 font-medium"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAiSelectedRegions((prev) => [...prev, r]);
+                              } else {
+                                setAiSelectedRegions((prev) =>
+                                  prev.filter((item) => item !== r)
+                                );
+                              }
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer shrink-0"
+                          />
+                          <span className="truncate" title={r}>
+                            {r}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="p-5 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+              <span className="text-xs text-slate-500 font-medium">
+                Выбрано регионов для импорта: <strong className="text-indigo-600 font-bold">{aiSelectedRegions.length}</strong>
+              </span>
+              <button
+                onClick={() => setIsAiRegionsModalOpen(false)}
                 className="px-5 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm text-sm"
               >
                 Готово

@@ -179,6 +179,58 @@ function buildSpheresKeyboard(spheresList: string[], selectedSpheres: string[]) 
   return { inline_keyboard: keyboard };
 }
 
+// Get Regions List Helper
+async function getRegionsList() {
+  let regionsProps: string[] = ["Душанбе"];
+  try {
+    const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
+    if (dictDoc.exists()) {
+      const dictData = dictDoc.data();
+      if (
+        dictData.regions &&
+        Array.isArray(dictData.regions) &&
+        dictData.regions.length > 0
+      ) {
+        regionsProps = dictData.regions;
+      }
+    }
+  } catch (e) {
+    console.error("Error loading regions", e);
+  }
+  return regionsProps;
+}
+
+// Build Regions Keyboard Helper
+function buildRegionsKeyboard(regionsList: string[], selectedRegions: string[]) {
+  const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+  
+  // Create a row for each region
+  regionsList.forEach((region) => {
+    const isSelected = selectedRegions.includes(region);
+    const icon = isSelected ? "✅" : "⬜";
+    keyboard.push([
+      {
+        text: `${icon} ${region}`,
+        callback_data: `toggle_region:${region}`,
+      },
+    ]);
+  });
+
+  // Action buttons
+  keyboard.push([
+    {
+      text: "📥 Подтвердить выбор",
+      callback_data: "done_regions",
+    },
+    {
+      text: "⏩ Пропустить регион",
+      callback_data: "skip_regions",
+    }
+  ]);
+
+  return { inline_keyboard: keyboard };
+}
+
 // Simple pricing logic duplication
 function getProductPriceForSupplierAndRegion(
   p: any,
@@ -238,6 +290,26 @@ const adminUsers = new Set<number>();
 const supplierUsers = new Map<number, string>();
 const SECRET_CODE = "@020779@";
 
+// Helper to ensure user role is restored from Firestore
+async function ensureUserRoleLoaded(chatId: number) {
+  if (adminUsers.has(chatId) || supplierUsers.has(chatId)) {
+    return;
+  }
+  try {
+    const userDoc = await getDoc(doc(db, "telegram_users", chatId.toString()));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      if (userData.role === "admin") {
+        adminUsers.add(chatId);
+      } else if (userData.role === "supplier" && userData.supplierId) {
+        supplierUsers.set(chatId, userData.supplierId);
+      }
+    }
+  } catch (e) {
+    console.error("Failed to restore user role from Firestore", e);
+  }
+}
+
 if (bot) {
   const processedMessageIds = new Set<string>();
   const lastProcessedPayload = new Map<
@@ -248,6 +320,7 @@ if (bot) {
   // Add listener for photos to handle WAITING_PHOTO states
   bot.on("photo", async (msg) => {
     const chatId = msg.chat.id;
+    await ensureUserRoleLoaded(chatId);
     const userState = userStates.get(chatId) || { state: "IDLE" };
 
     if (
@@ -338,6 +411,112 @@ if (bot) {
         text: "🔍 Распознать",
         message_id: query.message?.message_id || Date.now(),
       });
+    } else if (query.data?.startsWith("toggle_region:")) {
+      bot?.answerCallbackQuery(query.id);
+      const regionName = query.data.split(":")[1];
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_REGION") {
+        if (!userState.tempProductData.regions) {
+          userState.tempProductData.regions = [];
+        }
+        const index = userState.tempProductData.regions.indexOf(regionName);
+        if (index > -1) {
+          userState.tempProductData.regions.splice(index, 1);
+        } else {
+          userState.tempProductData.regions.push(regionName);
+        }
+        userStates.set(chatId, userState);
+
+        // Rebuild and edit message
+        getRegionsList().then((regionsList) => {
+          const selected = userState.tempProductData.regions || [];
+          const text = `*Выбор регионов для товара*\n\nВыбранные регионы: *${selected.join(", ") || "не выбраны"}*\n\nВыберите один или несколько регионов применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или выберите "Пропустить регион" чтобы внести товар глобально._`;
+          const replyMarkup = buildRegionsKeyboard(regionsList, selected);
+          
+          bot?.editMessageText(text, {
+            chat_id: chatId,
+            message_id: query.message?.message_id,
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          }).catch((err) => console.error("Error editing regions keyboard", err));
+        });
+      }
+    } else if (query.data === "done_regions") {
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_REGION") {
+        const selected = userState.tempProductData.regions || [];
+        if (selected.length === 0) {
+          bot?.answerCallbackQuery(query.id, {
+            text: "Пожалуйста, выберите хотя бы один регион или нажмите 'Пропустить регион'",
+            show_alert: true,
+          });
+          return;
+        }
+        bot?.answerCallbackQuery(query.id);
+
+        userState.tempProductData.region = selected[0] || "Душанбе";
+        userState.tempProductData.regions = selected;
+        userState.state = "WAITING_SPHERE";
+        userStates.set(chatId, userState);
+
+        // Update inline keyboard message to show final state
+        bot?.editMessageText(`✅ Выбраны регионы: *${selected.join(", ")}*`, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: "Markdown",
+        }).catch(() => {});
+
+        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        });
+
+        getSpheresList().then((spheresProps) => {
+          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
+          const replyMarkup = buildSpheresKeyboard(spheresProps, []);
+          
+          bot?.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          });
+        });
+      } else {
+        bot?.answerCallbackQuery(query.id);
+      }
+    } else if (query.data === "skip_regions") {
+      bot?.answerCallbackQuery(query.id);
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_REGION") {
+        userState.tempProductData.region = "";
+        userState.tempProductData.regions = [];
+        userState.state = "WAITING_SPHERE";
+        userStates.set(chatId, userState);
+
+        bot?.editMessageText(`✅ Регион: *Пропущен (Глобально)*`, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: "Markdown",
+        }).catch(() => {});
+
+        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        });
+
+        getSpheresList().then((spheresProps) => {
+          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
+          const replyMarkup = buildSpheresKeyboard(spheresProps, []);
+          
+          bot?.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          });
+        });
+      }
     } else if (query.data === "cancel") {
       bot?.answerCallbackQuery(query.id);
       (bot as any)?.emit("message", {
@@ -477,6 +656,7 @@ if (bot) {
     }
 
     const chatId = msg.chat.id;
+    await ensureUserRoleLoaded(chatId);
     let text = msg.text || "";
 
     if (msg.web_app_data) {
@@ -539,6 +719,12 @@ if (bot) {
 
       if (text === SECRET_CODE) {
         adminUsers.add(chatId);
+        await setDoc(
+          doc(db, "telegram_users", chatId.toString()),
+          { role: "admin", updatedAt: Date.now() },
+          { merge: true }
+        ).catch((err) => console.error("Error persisting admin role:", err));
+
         userStates.set(chatId, { state: "ADMIN_MENU" });
         bot?.sendMessage(
           chatId,
@@ -555,6 +741,12 @@ if (bot) {
         );
       } else if (isSupplier) {
         supplierUsers.set(chatId, matchedSupplierId);
+        await setDoc(
+          doc(db, "telegram_users", chatId.toString()),
+          { role: "supplier", supplierId: matchedSupplierId, updatedAt: Date.now() },
+          { merge: true }
+        ).catch((err) => console.error("Error persisting supplier role:", err));
+
         userStates.set(chatId, { state: "ADMIN_MENU" });
 
         let supplierName = "";
@@ -594,61 +786,27 @@ if (bot) {
       } else {
         const supplierId = supplierUsers.get(chatId) || "";
 
-        if (adminUsers.has(chatId)) {
-          userStates.set(chatId, {
-            state: "WAITING_SPHERE",
-            tempProductData: { supplierId: "", region: "", spheres: [] },
-          });
-          bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
-            reply_markup: {
-              keyboard: [[{ text: "❌ Отмена" }]],
-              resize_keyboard: true,
-            },
-          });
+        userStates.set(chatId, {
+          state: "WAITING_REGION",
+          tempProductData: { supplierId, regions: [], spheres: [] },
+        });
 
-          getSpheresList().then((spheresProps) => {
-            const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
-            const replyMarkup = buildSpheresKeyboard(spheresProps, []);
-            
-            bot?.sendMessage(chatId, text, {
-              parse_mode: "Markdown",
-              reply_markup: replyMarkup,
-            });
-          });
-        } else {
-          userStates.set(chatId, {
-            state: "WAITING_REGION",
-            tempProductData: { supplierId },
-          });
-          bot?.sendMessage(chatId, "⏳ Загружаю список регионов...");
+        bot?.sendMessage(chatId, "⏳ Загружаю список регионов...", {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        });
 
-          let regionsProps: string[] = ["Душанбе"];
-          try {
-            const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-            if (dictDoc.exists()) {
-              const dictData = dictDoc.data();
-              if (
-                dictData.regions &&
-                Array.isArray(dictData.regions) &&
-                dictData.regions.length > 0
-              ) {
-                regionsProps = dictData.regions;
-              }
-            }
-          } catch (e) {
-            console.error("Error loading regions", e);
-          }
-
-          const keyboardRows = regionsProps.map((r) => [{ text: r }]);
-          keyboardRows.push([{ text: "❌ Отмена" }]);
-
-          bot?.sendMessage(chatId, "Выберите регион:", {
-            reply_markup: {
-              keyboard: keyboardRows,
-              resize_keyboard: true,
-            },
+        getRegionsList().then((regionsProps) => {
+          const text = `*Выбор регионов для товара*\n\nВыбранные регионы: *не выбраны*\n\nВыберите один или несколько регионов применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или выберите "Пропустить регион" чтобы внести товар глобально по сферам._`;
+          const replyMarkup = buildRegionsKeyboard(regionsProps, []);
+          
+          bot?.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
           });
-        }
+        });
         return;
       }
     }
@@ -656,11 +814,18 @@ if (bot) {
     if (userState.state === "WAITING_REGION") {
       if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
 
-      const region = text.trim();
-      userState.tempProductData.region = region;
-      userState.tempProductData.spheres = [];
+      const customRegion = text.trim();
+      if (!userState.tempProductData.regions) {
+        userState.tempProductData.regions = [];
+      }
+      if (!userState.tempProductData.regions.includes(customRegion)) {
+        userState.tempProductData.regions.push(customRegion);
+      }
+      userState.tempProductData.region = customRegion;
       userState.state = "WAITING_SPHERE";
       userStates.set(chatId, userState);
+
+      bot?.sendMessage(chatId, `✅ Регион "${customRegion}" добавлен к выбору.`);
 
       bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
         reply_markup: {
@@ -785,7 +950,7 @@ if (bot) {
           ],
           config: {
             systemInstruction:
-              "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. STRICTLY NO BRANDS OR MANUFACTURERS: Do NOT mention any brand, model, or manufacturer name anywhere in 'name' or 'description'.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
+              "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. BRANDS, MODELS, AND IDENTIFIERS MUST BE PRESERVED: If the photo or text mentions a specific brand, model name, manufacturer, abbreviation, or serial number, you MUST include it in the product 'name', formatted as '<Product type> - <Brand/Model>' (e.g., 'Дрель - Total 2020', 'Перфоратор - Makita HR2470', 'Кабель - ГОСТ 3х2.5'). Do NOT strip or generalize these names; include them so users can identify the exact model in the catalog.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
             responseMimeType: "application/json",
           },
         });
@@ -852,12 +1017,18 @@ if (bot) {
         };
 
         const isSupplier = supplierUsers.has(chatId);
-        if (isSupplier) {
-          const supId = product.supplierId || "";
-          const reg = product.region || "Душанбе";
-          if (finalPrices[supId]) {
-            finalPrices[supId][reg] = price;
-          }
+        const supplierIdToUse = isSupplier ? (product.supplierId || "") : "supplier1";
+
+        const regionsToSet = product.regions && product.regions.length > 0
+          ? product.regions
+          : (product.region ? [product.region] : []);
+
+        if (regionsToSet.length > 0) {
+          regionsToSet.forEach((reg: string) => {
+            if (finalPrices[supplierIdToUse]) {
+              finalPrices[supplierIdToUse][reg] = price;
+            }
+          });
         }
 
         const finalProduct = {
@@ -868,6 +1039,7 @@ if (bot) {
           unit: product.unit,
           sphere: product.sphere,
           spheres: product.spheres || (product.sphere ? [product.sphere] : []),
+          regions: regionsToSet,
           category: "Без категории",
           imageBase64: product.imageBase64 || "",
           price: isSupplier ? 0 : price, // Global catalog price

@@ -121,6 +121,64 @@ async function getGlobalDict() {
   return { suppliers: [], regions: [], logisticsCosts: {} };
 }
 
+// Get Spheres List Helper
+async function getSpheresList() {
+  let spheresProps: string[] = [
+    "Водоснабжение",
+    "Электрика",
+    "Вентиляция",
+    "Отопление",
+    "Канализация",
+  ];
+  try {
+    const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
+    if (dictDoc.exists()) {
+      const dictData = dictDoc.data();
+      if (
+        dictData.spheres &&
+        Array.isArray(dictData.spheres) &&
+        dictData.spheres.length > 0
+      ) {
+        spheresProps = dictData.spheres;
+      }
+    }
+  } catch (e) {
+    console.error("Error loading spheres", e);
+  }
+  return spheresProps;
+}
+
+// Build Spheres Keyboard Helper
+function buildSpheresKeyboard(spheresList: string[], selectedSpheres: string[]) {
+  const keyboard: TelegramBot.InlineKeyboardButton[][] = [];
+  
+  // Create a row for each sphere
+  spheresList.forEach((sphere) => {
+    const isSelected = selectedSpheres.includes(sphere);
+    const icon = isSelected ? "✅" : "⬜";
+    keyboard.push([
+      {
+        text: `${icon} ${sphere}`,
+        callback_data: `toggle_sphere:${sphere}`,
+      },
+    ]);
+  });
+
+  // Action buttons
+  keyboard.push([
+    {
+      text: "📥 Подтвердить выбор",
+      callback_data: "done_spheres",
+    },
+    {
+      text: "⏩ Пропустить (Общее)",
+      callback_data: "skip_spheres",
+    }
+  ]);
+
+  return { inline_keyboard: keyboard };
+}
+
 // Simple pricing logic duplication
 function getProductPriceForSupplierAndRegion(
   p: any,
@@ -272,20 +330,125 @@ if (bot) {
   bot.on("callback_query", (query) => {
     const chatId = query.message?.chat.id;
     if (!chatId) return;
-    bot?.answerCallbackQuery(query.id);
 
     if (query.data === "recognize") {
+      bot?.answerCallbackQuery(query.id);
       (bot as any)?.emit("message", {
         chat: { id: chatId },
         text: "🔍 Распознать",
         message_id: query.message?.message_id || Date.now(),
       });
     } else if (query.data === "cancel") {
+      bot?.answerCallbackQuery(query.id);
       (bot as any)?.emit("message", {
         chat: { id: chatId },
         text: "❌ Отмена",
         message_id: query.message?.message_id || Date.now(),
       });
+    } else if (query.data?.startsWith("toggle_sphere:")) {
+      bot?.answerCallbackQuery(query.id);
+      const sphereName = query.data.split(":")[1];
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_SPHERE") {
+        if (!userState.tempProductData.spheres) {
+          userState.tempProductData.spheres = [];
+        }
+        const index = userState.tempProductData.spheres.indexOf(sphereName);
+        if (index > -1) {
+          userState.tempProductData.spheres.splice(index, 1);
+        } else {
+          userState.tempProductData.spheres.push(sphereName);
+        }
+        userStates.set(chatId, userState);
+
+        // Rebuild and edit message
+        getSpheresList().then((spheresList) => {
+          const selected = userState.tempProductData.spheres || [];
+          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *${selected.join(", ") || "не выбраны"}*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».`;
+          const replyMarkup = buildSpheresKeyboard(spheresList, selected);
+          
+          bot?.editMessageText(text, {
+            chat_id: chatId,
+            message_id: query.message?.message_id,
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          }).catch((err) => console.error("Error editing spheres keyboard", err));
+        });
+      }
+    } else if (query.data === "done_spheres") {
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_SPHERE") {
+        const selected = userState.tempProductData.spheres || [];
+        if (selected.length === 0) {
+          bot?.answerCallbackQuery(query.id, {
+            text: "Пожалуйста, выберите хотя бы одну сферу или нажмите 'Пропустить (Общее)'",
+            show_alert: true,
+          });
+          return;
+        }
+        bot?.answerCallbackQuery(query.id);
+
+        userState.tempProductData.sphere = selected[0] || "Общее";
+        userState.tempProductData.spheres = selected;
+        userState.tempProductData.photos = [];
+        userState.state = "WAITING_PHOTO_PRODUCT";
+        userStates.set(chatId, userState);
+
+        // Update inline keyboard message to show final state
+        bot?.editMessageText(`✅ Выбраны сферы: *${selected.join(", ")}*`, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: "Markdown",
+        }).catch(() => {});
+
+        bot?.sendMessage(
+          chatId,
+          `Сферы успешно сохранены.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "Пропустить фото товара" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+      } else {
+        bot?.answerCallbackQuery(query.id);
+      }
+    } else if (query.data === "skip_spheres") {
+      bot?.answerCallbackQuery(query.id);
+      const userState = userStates.get(chatId);
+      if (userState && userState.state === "WAITING_SPHERE") {
+        userState.tempProductData.sphere = "Общее";
+        userState.tempProductData.spheres = ["Общее"];
+        userState.tempProductData.photos = [];
+        userState.state = "WAITING_PHOTO_PRODUCT";
+        userStates.set(chatId, userState);
+
+        bot?.editMessageText(`✅ Выбрана сфера: *Общее*`, {
+          chat_id: chatId,
+          message_id: query.message?.message_id,
+          parse_mode: "Markdown",
+        }).catch(() => {});
+
+        bot?.sendMessage(
+          chatId,
+          `Выбрана общая сфера.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "Пропустить фото товара" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+      }
+    } else {
+      bot?.answerCallbackQuery(query.id);
     }
   });
 
@@ -432,47 +595,24 @@ if (bot) {
       if (adminUsers.has(chatId)) {
         userStates.set(chatId, {
           state: "WAITING_SPHERE",
-          tempProductData: { supplierId: "", region: "" },
+          tempProductData: { supplierId: "", region: "", spheres: [] },
         });
-        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...");
-
-        let spheresProps: string[] = [
-          "Водоснабжение",
-          "Электрика",
-          "Вентиляция",
-          "Отопление",
-          "Канализация",
-        ];
-        try {
-          const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-          if (dictDoc.exists()) {
-            const dictData = dictDoc.data();
-            if (
-              dictData.spheres &&
-              Array.isArray(dictData.spheres) &&
-              dictData.spheres.length > 0
-            ) {
-              spheresProps = dictData.spheres;
-            }
-          }
-        } catch (e) {
-          console.error("Error loading spheres", e);
-        }
-
-        const keyboardRows = spheresProps.map((s) => [{ text: s }]);
-        keyboardRows.push([{ text: "Общее (пропустить)" }]);
-        keyboardRows.push([{ text: "❌ Отмена" }]);
-
-        bot?.sendMessage(
-          chatId,
-          "Выберите сферу товара из списка ниже или введите своё название текстом:",
-          {
-            reply_markup: {
-              keyboard: keyboardRows,
-              resize_keyboard: true,
-            },
+        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
           },
-        );
+        });
+
+        getSpheresList().then((spheresProps) => {
+          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
+          const replyMarkup = buildSpheresKeyboard(spheresProps, []);
+          
+          bot?.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          });
+        });
       } else {
         userStates.set(chatId, {
           state: "WAITING_REGION",
@@ -515,48 +655,26 @@ if (bot) {
 
       const region = text.trim();
       userState.tempProductData.region = region;
+      userState.tempProductData.spheres = [];
       userState.state = "WAITING_SPHERE";
       userStates.set(chatId, userState);
 
-      bot?.sendMessage(chatId, "⏳ Загружаю список сфер...");
-
-      let spheresProps: string[] = [
-        "Водоснабжение",
-        "Электрика",
-        "Вентиляция",
-        "Отопление",
-        "Канализация",
-      ];
-      try {
-        const dictDoc = await getDoc(doc(db, "settings", "dictionaries"));
-        if (dictDoc.exists()) {
-          const dictData = dictDoc.data();
-          if (
-            dictData.spheres &&
-            Array.isArray(dictData.spheres) &&
-            dictData.spheres.length > 0
-          ) {
-            spheresProps = dictData.spheres;
-          }
-        }
-      } catch (e) {
-        console.error("Error loading spheres", e);
-      }
-
-      const keyboardRows = spheresProps.map((s) => [{ text: s }]);
-      keyboardRows.push([{ text: "Общее (пропустить)" }]);
-      keyboardRows.push([{ text: "❌ Отмена" }]);
-
-      bot?.sendMessage(
-        chatId,
-        "Выберите сферу товара из списка ниже или введите своё название текстом:",
-        {
-          reply_markup: {
-            keyboard: keyboardRows,
-            resize_keyboard: true,
-          },
+      bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
+        reply_markup: {
+          keyboard: [[{ text: "❌ Отмена" }]],
+          resize_keyboard: true,
         },
-      );
+      });
+
+      getSpheresList().then((spheresProps) => {
+        const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
+        const replyMarkup = buildSpheresKeyboard(spheresProps, []);
+        
+        bot?.sendMessage(chatId, text, {
+          parse_mode: "Markdown",
+          reply_markup: replyMarkup,
+        });
+      });
       return;
     }
 

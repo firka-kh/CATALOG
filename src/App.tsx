@@ -2253,7 +2253,7 @@ export default function App() {
                 </p>
               </div>
               <div className="flex gap-2">
-                {isAdminMode && !isTabletMode && (
+                {!isTabletMode && (
                   <>
                     <input
                       type="file"
@@ -2283,10 +2283,13 @@ export default function App() {
                       {isImportingPrices ? <Loader2 className="w-4 h-4 animate-spin" /> : <Package className="w-4 h-4" />}
                       Обновить цены
                     </button>
+                  </>
+                )}
 
-                    <button
-                      onClick={handleOpenManualModal}
-                      disabled={isUploadBlocked}
+                {isAdminMode && !isTabletMode && (
+                  <button
+                    onClick={handleOpenManualModal}
+                    disabled={isUploadBlocked}
                     className={`flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 ${
                       isUploadBlocked
                         ? "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -2299,7 +2302,6 @@ export default function App() {
                     <Plus className="w-4 h-4" />
                     Добавить вручную
                   </button>
-                  </>
                 )}
                 <div className="p-1 bg-white border border-slate-200 rounded-md flex">
                   <button className="p-1.5 bg-slate-100 rounded text-slate-900 shadow-sm">

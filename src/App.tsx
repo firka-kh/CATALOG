@@ -25,6 +25,7 @@ import {
   Wifi,
   WifiOff,
   CheckCircle,
+  Clock,
 } from "lucide-react";
 import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { generateNextProductCode } from "./lib/generateNextCode";
@@ -313,6 +314,20 @@ export default function App() {
   const [selectedSphere, setSelectedSphere] = useState(
     () => localStorage.getItem("catalog_sphere") || "",
   );
+  const [showOnlyNew, setShowOnlyNew] = useState(false);
+  const [aiSelectedSpheres, setAiSelectedSpheres] = useState<string[]>(() => {
+    const saved = localStorage.getItem("catalog_sphere");
+    return saved ? [saved] : [];
+  });
+
+  useEffect(() => {
+    if (selectedSphere) {
+      setAiSelectedSpheres((prev) => {
+        if (prev.includes(selectedSphere)) return prev;
+        return [...prev, selectedSphere];
+      });
+    }
+  }, [selectedSphere]);
   const [exportScope, setExportScope] = useState<
     | "all"
     | "sphere"
@@ -790,9 +805,9 @@ export default function App() {
   const handleFiles = useCallback(
     async (files: FileList | null) => {
       if (isParsing) return;
-      const blocked = !selectedSphere;
+      const blocked = aiSelectedSpheres.length === 0;
       if (blocked) {
-        alert("Сначала выберите Сферу в фильтрах.");
+        alert("Выберите хотя бы одну Сферу для импорта ИИ в панели снизу.");
         return;
       }
       if (!files || files.length === 0) return;
@@ -879,7 +894,12 @@ export default function App() {
                   newProduct.priceSupplier3 = priceVal;
                 if (selectedSupplier === "supplier4")
                   newProduct.priceSupplier4 = priceVal;
-                if (selectedSphere) newProduct.sphere = selectedSphere;
+
+                if (aiSelectedSpheres.length > 0) {
+                  newProduct.spheres = aiSelectedSpheres;
+                  newProduct.sphere = aiSelectedSpheres[0];
+                }
+
                 try {
                   await setDoc(doc(db, "products", newProduct.id), newProduct);
                   parsedCount++;
@@ -911,7 +931,7 @@ export default function App() {
         fileInputRef.current.value = "";
       }
     },
-    [selectedRegion, selectedSupplier, selectedSphere],
+    [selectedRegion, selectedSupplier, aiSelectedSpheres],
   );
 
   const onDrop = (e: React.DragEvent) => {
@@ -1990,6 +2010,11 @@ export default function App() {
           const isMatch = prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
           if (!isMatch) return false;
       }
+      if (showOnlyNew) {
+        if (!p.createdAt || Date.now() - p.createdAt >= 24 * 60 * 60 * 1000) {
+          return false;
+        }
+      }
       return true;
     })
     .sort((a, b) => {
@@ -2004,7 +2029,7 @@ export default function App() {
       return codeA.localeCompare(codeB) || a.name.localeCompare(b.name);
     });
 
-  const isUploadBlocked = !selectedSphere;
+  const isUploadBlocked = aiSelectedSpheres.length === 0;
 
   return (
     <>
@@ -2289,15 +2314,7 @@ export default function App() {
                 {isAdminMode && !isTabletMode && (
                   <button
                     onClick={handleOpenManualModal}
-                    disabled={isUploadBlocked}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 ${
-                      isUploadBlocked
-                        ? "bg-slate-200 text-slate-400 cursor-not-allowed"
-                        : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                    }`}
-                    title={
-                      isUploadBlocked ? "Сначала выберите Сферу в фильтрах" : ""
-                    }
+                    className="flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 bg-indigo-600 hover:bg-indigo-700 text-white"
                   >
                     <Plus className="w-4 h-4" />
                     Добавить вручную
@@ -2351,13 +2368,28 @@ export default function App() {
                 onChange={(e) => setSelectedSphere(e.target.value)}
                 className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-48"
               >
-                <option value="">Выберите сферу...</option>
+                <option value="">Все сферы</option>
                 {uniqueSpheres.map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
                 ))}
               </select>
+
+              <button
+                onClick={() => setShowOnlyNew(!showOnlyNew)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-md border text-sm font-medium transition-all shadow-sm ${
+                  showOnlyNew
+                    ? "bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100"
+                    : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                <Clock className={`w-4 h-4 ${showOnlyNew ? "text-rose-500" : "text-slate-400"}`} />
+                <span>Показать новые товары</span>
+                {showOnlyNew && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                )}
+              </button>
             </div>
 
             {/* Table */}
@@ -2889,7 +2921,7 @@ export default function App() {
                     <div>
                       <p className="text-sm font-semibold text-slate-700">
                         {isUploadBlocked
-                          ? "Сначала выберите Сферу"
+                          ? "Выберите сферу справа для ИИ-импорта"
                           : isParsing
                             ? "Обработка фото..."
                             : "Перетащите или вставьте фото сюда (Ctrl+V)"}
@@ -2902,6 +2934,45 @@ export default function App() {
                     </div>
                   </div>
                 </button>
+
+                {/* Spheres Multi-select for AI Uploader */}
+                <div className="w-72 h-full border border-slate-200 rounded-xl p-3 bg-slate-50 flex flex-col gap-2 shadow-inner overflow-hidden shrink-0">
+                  <div className="text-xs font-bold text-slate-700 flex justify-between items-center select-none">
+                    <span>Сферы для ИИ-импорта:</span>
+                    <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-full font-semibold">
+                      {aiSelectedSpheres.length}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-1.5 scrollbar-thin">
+                    {uniqueSpheres.map((s) => (
+                      <label
+                        key={s}
+                        className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-200/60 p-1 rounded transition-colors select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={aiSelectedSpheres.includes(s)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAiSelectedSpheres((prev) => [...prev, s]);
+                            } else {
+                              setAiSelectedSpheres((prev) =>
+                                prev.filter((item) => item !== s),
+                              );
+                            }
+                          }}
+                          className="w-3.5 h-3.5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                        />
+                        <span className="truncate" title={s}>{s}</span>
+                      </label>
+                    ))}
+                    {uniqueSpheres.length === 0 && (
+                      <div className="text-slate-400 text-[10px] text-center py-2">
+                        Нет доступных сфер
+                      </div>
+                    )}
+                  </div>
+                </div>
 
                 <div className="w-64 h-full relative flex flex-col gap-2">
                   <select
@@ -3822,15 +3893,28 @@ export default function App() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4 mt-2">
-                    {viewingProduct.sphere && (
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs text-slate-500">Сфера</span>
-                        <span className="text-sm font-medium text-slate-800">
-                          {viewingProduct.sphere}
-                        </span>
-                      </div>
-                    )}
+                  <div className="grid grid-cols-1 gap-4 mt-2">
+                    {(() => {
+                      const prodSpheres = viewingProduct.spheres && viewingProduct.spheres.length > 0
+                        ? viewingProduct.spheres
+                        : (viewingProduct.sphere ? [viewingProduct.sphere] : []);
+                      if (prodSpheres.length === 0) return null;
+                      return (
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-xs text-slate-500">Сферы применения</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {prodSpheres.map((s, idx) => (
+                              <span
+                                key={idx}
+                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100"
+                              >
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

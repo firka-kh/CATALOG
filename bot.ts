@@ -1679,14 +1679,57 @@ if (bot) {
 
       await ensureFont();
 
-      const drawHeader = () => {
-        // Title
+      const getSupplierName = (supp?: string) => {
+        if (!supp || supp === "supplier1") return "Логистика";
+        const list = globalDict.suppliers || [];
+        if (supp === "supplier2") return list[0] || "Поставщик 1";
+        if (supp === "supplier3") return list[1] || "Поставщик 2";
+        if (supp === "supplier4") return list[2] || "Поставщик 3";
+        return "Логистика";
+      };
+
+      // Filter cart items by selected sphere if provided
+      let filteredCartItems = cartItems;
+      if (sphere) {
+        filteredCartItems = cartItems.filter((item) => {
+          const prodSpheres = item.product.spheres && item.product.spheres.length > 0
+            ? item.product.spheres
+            : [item.product.sphere || "Общее"];
+          return prodSpheres.some(
+            (s: string) =>
+              s === sphere ||
+              s.includes(sphere) ||
+              sphere.includes(s)
+          );
+        });
+      }
+
+      if (filteredCartItems.length === 0) {
+        filteredCartItems = cartItems; // fallback
+      }
+
+      const uniqueSuppliersInCart = Array.from(
+        new Set(filteredCartItems.map((item) => item.selectedSupplier || "supplier2"))
+      ) as string[];
+
+      for (let sIndex = 0; sIndex < uniqueSuppliersInCart.length; sIndex++) {
+        const supplierKey = uniqueSuppliersInCart[sIndex];
+        const supplierItems = filteredCartItems.filter(
+          (item) => (item.selectedSupplier || "supplier2") === supplierKey
+        );
+        const supplierName = getSupplierName(supplierKey);
+
+        if (sIndex > 0) {
+          docPdf.addPage();
+        }
+
+        // Draw headers for this supplier's page
         docPdf
           .font(fontBoldPath)
           .fontSize(20)
+          .fillColor("black")
           .text("ЛИСТ ВЫБОРКИ ТОВАРОВ", 40, 40);
 
-        // Subtitle
         docPdf
           .font(fontPath)
           .fontSize(10)
@@ -1699,7 +1742,6 @@ if (bot) {
           year: "numeric",
         });
 
-        // Top right text
         docPdf
           .font(fontPath)
           .fontSize(10)
@@ -1726,339 +1768,357 @@ if (bot) {
           .strokeColor("black")
           .stroke();
 
-        // Selected suppliers box
-        const uniqueSuppliers = Array.from(
-          new Set(cartItems.map((item) => item.selectedSupplier)),
-        ).map((sup) => {
-          return sup === "supplier2"
-            ? "Поставщик 1"
-            : sup === "supplier3"
-              ? "Поставщик 2"
-              : sup === "supplier4"
-                ? "Поставщик 3"
-                : "Логистика";
-        });
-
+        // 2 Columns Info Section (y=95, height=65)
+        // Left Box: Supplier details
         docPdf
-          .roundedRect(40, 95, 510, 50, 5)
+          .roundedRect(40, 95, 245, 65, 5)
           .lineWidth(1)
           .strokeColor("#cbd5e1")
           .stroke();
+
         docPdf
           .font(fontBoldPath)
-          .fontSize(10)
+          .fontSize(8)
           .fillColor("#4f46e5")
-          .text("ВЫБРАННЫЕ ПОСТАВЩИКИ:", 50, 105);
+          .text("ВЫБРАННЫЙ ПОСТАВЩИК:", 50, 103);
+
         docPdf
           .font(fontBoldPath)
           .fontSize(10)
           .fillColor("black")
-          .text(uniqueSuppliers.join(", "), 60, 122);
+          .text(supplierName, 50, 115);
+
+        let detailsOffset = 127;
+        if (globalDict.supplierLegalNames?.[supplierKey]) {
+          docPdf
+            .font(fontPath)
+            .fontSize(7.5)
+            .fillColor("#374151")
+            .text(`Юр. название: ${globalDict.supplierLegalNames[supplierKey]}`, 50, detailsOffset, { width: 225 });
+          detailsOffset += 11;
+        }
+        if (globalDict.supplierPhones?.[supplierKey]) {
+          docPdf
+            .font(fontPath)
+            .fontSize(7.5)
+            .fillColor("#374151")
+            .text(`Телефон: ${globalDict.supplierPhones[supplierKey]}`, 50, detailsOffset, { width: 225 });
+        }
+
+        // Right Box: Parameters
+        docPdf
+          .roundedRect(305, 95, 245, 65, 5)
+          .lineWidth(1)
+          .strokeColor("#cbd5e1")
+          .stroke();
+
+        docPdf
+          .font(fontBoldPath)
+          .fontSize(8)
+          .fillColor("#4f46e5")
+          .text("ПАРАМЕТРЫ ФОРМИРОВАНИЯ ЛИСТА:", 315, 103);
+
+        docPdf
+          .font(fontPath)
+          .fontSize(8.5)
+          .fillColor("#1e293b")
+          .text(`Регион: `, 315, 120, { continued: true })
+          .font(fontBoldPath)
+          .text(region || "—");
+
+        docPdf
+          .font(fontPath)
+          .fontSize(8.5)
+          .fillColor("#1e293b")
+          .text(`Сфера деятельности: `, 315, 135, { continued: true })
+          .font(fontBoldPath)
+          .text(sphere || "Все сферы");
 
         // Table Header
         docPdf
-          .moveTo(40, 160)
-          .lineTo(550, 160)
+          .moveTo(40, 175)
+          .lineTo(550, 175)
           .lineWidth(2)
           .strokeColor("black")
           .stroke();
+
         docPdf.font(fontBoldPath).fontSize(8).fillColor("black");
-
-        docPdf.text("№", 45, 170, { width: 25, align: "center" });
-        docPdf.text("ФОТО", 70, 170, { width: 50, align: "center" });
-        docPdf.text("НАИМЕНОВАНИЕ И\nОПИСАНИЕ", 130, 170, { width: 170 });
-        docPdf.text("РЕГИОН И\nПОСТАВЩИК", 310, 170, { width: 80 });
-        docPdf.text("ЦЕНА", 400, 170, { width: 40, align: "center" });
-        docPdf.text("КОЛ-\nВО", 450, 170, { width: 30, align: "center" });
-        docPdf.text("СУММА", 490, 170, { width: 50, align: "center" });
+        docPdf.text("№", 40, 185, { width: 25, align: "center" });
+        docPdf.text("ФОТО", 65, 185, { width: 50, align: "center" });
+        docPdf.text("НАИМЕНОВАНИЕ И ОПИСАНИЕ", 125, 185, { width: 170 });
+        docPdf.text("СФЕРА", 305, 185, { width: 80 });
+        docPdf.text("ЦЕНА", 395, 185, { width: 45, align: "right" });
+        docPdf.text("КОЛ-ВО", 450, 185, { width: 40, align: "center" });
+        docPdf.text("СУММА", 500, 185, { width: 50, align: "right" });
 
         docPdf
-          .moveTo(40, 195)
-          .lineTo(550, 195)
+          .moveTo(40, 205)
+          .lineTo(550, 205)
           .lineWidth(2)
           .strokeColor("black")
           .stroke();
 
-        return 205; // start Y for items
-      };
+        let currentY = 215;
+        let itemIndex = 1;
+        let supplierTotal = 0;
 
-      let currentY = drawHeader();
-      let totalSum = 0;
-      let i = 1;
-
-      for (const item of cartItems) {
-        if (currentY > 750) {
+        const startNewTablePage = () => {
           docPdf.addPage();
-          currentY = drawHeader();
-        }
+          docPdf.moveTo(40, 40).lineTo(550, 40).lineWidth(2).strokeColor("black").stroke();
+          docPdf.font(fontBoldPath).fontSize(8).fillColor("black");
+          docPdf.text("№", 40, 48, { width: 25, align: "center" });
+          docPdf.text("ФОТО", 65, 48, { width: 50, align: "center" });
+          docPdf.text("НАИМЕНОВАНИЕ И ОПИСАНИЕ", 125, 48, { width: 170 });
+          docPdf.text("СФЕРА", 305, 48, { width: 80 });
+          docPdf.text("ЦЕНА", 395, 48, { width: 45, align: "right" });
+          docPdf.text("КОЛ-ВО", 450, 48, { width: 40, align: "center" });
+          docPdf.text("СУММА", 500, 48, { width: 50, align: "right" });
+          docPdf.moveTo(40, 68).lineTo(550, 68).lineWidth(2).strokeColor("black").stroke();
+          return 78;
+        };
 
-        const p = item.product;
-        const supName =
-          item.selectedSupplier === "supplier2"
-            ? "Поставщик 1"
-            : item.selectedSupplier === "supplier3"
-              ? "Поставщик 2"
-              : item.selectedSupplier === "supplier4"
-                ? "Поставщик 3"
-                : "Логистика";
-        const sum = item.selectedPrice * item.quantity;
-        totalSum += sum;
+        for (const item of supplierItems) {
+          const p = item.product;
 
-        const startY = currentY;
+          // Compute wrapped text heights
+          const nameH = docPdf.heightOfString(p.name || "Без названия", { width: 170, fontSize: 9 });
+          const descH = p.description ? docPdf.heightOfString(p.description, { width: 170, fontSize: 8 }) : 0;
+          const textHeight = nameH + descH + 18;
+          const rowHeight = Math.max(textHeight, 45);
 
-        // Col 1: Index
-        docPdf
-          .font(fontBoldPath)
-          .fontSize(8)
-          .text(i.toString(), 45, currentY, { width: 25, align: "center" });
-
-        // Col 2: Photo (placeholder text or just image if existing)
-        let imageDrawn = false;
-        if (p.imageBase64 && typeof p.imageBase64 === "string") {
-          try {
-            const base64Data = p.imageBase64.replace(
-              /^data:image\/\w+;base64,/,
-              "",
-            );
-            const imgBuffer = Buffer.from(base64Data, "base64");
-            const jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
-            docPdf.image(jpegBuffer, 75, currentY, {
-              fit: [40, 40],
-              align: "center",
-              valign: "center",
-            });
-            imageDrawn = true;
-          } catch (e) {
-            console.warn("Could not parse image for PDF:", e);
+          if (currentY + rowHeight > 750) {
+            currentY = startNewTablePage();
           }
-        }
-        if (!imageDrawn && p.photoUrl && p.photoUrl.startsWith("http")) {
-          try {
-            const imgRes = await axios.get(p.photoUrl, {
-              responseType: "arraybuffer",
-            });
-            const jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
-            docPdf.image(jpegBuffer, 75, currentY, {
-              fit: [40, 40],
-              align: "center",
-              valign: "center",
-            });
-            imageDrawn = true;
-          } catch (e) {
-            console.warn("Could not fetch image for PDF:", p.photoUrl);
-          }
-        }
-        if (!imageDrawn) {
-          docPdf
-            .font(fontPath)
-            .fontSize(8)
-            .fillColor("#94a3b8")
-            .text("Нет фото", 70, currentY, { width: 50, align: "center" });
-        }
 
-        // Col 3: Title and Code
-        docPdf
-          .font(fontBoldPath)
-          .fontSize(9)
-          .fillColor("black")
-          .text(p.name || "Без названия", 130, currentY, { width: 170 });
-        docPdf
-          .font(fontPath)
-          .fontSize(8)
-          .fillColor("gray")
-          .text("Код: " + (p.code || p.id), 130, docPdf.y, { width: 170 });
+          const startY = currentY;
 
-        // Figure out row height based on how much text was written
-        const textH = docPdf.y - startY;
-        const finalRowH = Math.max(textH, imageDrawn ? 40 : 30);
-
-        // Col 4: Region & Supplier
-        docPdf
-          .font(fontBoldPath)
-          .fontSize(8)
-          .fillColor("black")
-          .text(region, 310, currentY, { width: 80 });
-        docPdf
-          .font(fontPath)
-          .fontSize(7)
-          .fillColor("gray")
-          .text(supName, 310, currentY + 12, { width: 80 });
-
-        // Col 5: Price
-        if (item.selectedPrice > 0) {
+          // Col 1: Index
           docPdf
             .font(fontBoldPath)
             .fontSize(8)
             .fillColor("black")
-            .text(item.selectedPrice.toFixed(2), 400, currentY, {
-              width: 40,
-              align: "center",
-            });
-        } else {
+            .text(itemIndex.toString(), 40, currentY, { width: 25, align: "center" });
+
+          // Col 2: Photo
+          let imageDrawn = false;
+          if (p.imageBase64 && typeof p.imageBase64 === "string") {
+            try {
+              const base64Data = p.imageBase64.replace(
+                /^data:image\/\w+;base64,/,
+                "",
+              );
+              const imgBuffer = Buffer.from(base64Data, "base64");
+              const jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
+              docPdf.image(jpegBuffer, 70, currentY, {
+                fit: [40, 40],
+                align: "center",
+                valign: "center",
+              });
+              imageDrawn = true;
+            } catch (e) {
+              console.warn("Could not parse image for PDF:", e);
+            }
+          }
+          if (!imageDrawn && p.photoUrl && p.photoUrl.startsWith("http")) {
+            try {
+              const imgRes = await axios.get(p.photoUrl, {
+                responseType: "arraybuffer",
+              });
+              const jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
+              docPdf.image(jpegBuffer, 70, currentY, {
+                fit: [40, 40],
+                align: "center",
+                valign: "center",
+              });
+              imageDrawn = true;
+            } catch (e) {
+              console.warn("Could not fetch image for PDF:", p.photoUrl);
+            }
+          }
+          if (!imageDrawn) {
+            docPdf
+              .font(fontPath)
+              .fontSize(8)
+              .fillColor("#94a3b8")
+              .text("Нет фото", 65, currentY + 15, { width: 50, align: "center" });
+          }
+
+          // Col 3: Title and Code
+          const codeText = p.code ? `#${p.code}` : `#${p.id.substring(0, 8)}`;
+          docPdf.font(fontBoldPath).fontSize(8).fillColor("#4f46e5").text(codeText, 125, currentY);
+          const codeW = docPdf.widthOfString(codeText) + 5;
+          docPdf
+            .font(fontBoldPath)
+            .fontSize(9)
+            .fillColor("black")
+            .text(p.name || "Без названия", 125 + codeW, currentY, { width: 170 - codeW });
+
+          if (p.description) {
+            docPdf
+              .font(fontPath)
+              .fontSize(8)
+              .fillColor("#4b5563")
+              .text(p.description, 125, currentY + 15, { width: 170 });
+          }
+
+          // Col 4: Sphere
+          const itemSpheres = p.spheres && p.spheres.length > 0 ? p.spheres.join(", ") : (p.sphere || "—");
           docPdf
             .font(fontPath)
             .fontSize(8)
-            .fillColor("gray")
-            .text("-", 400, currentY, { width: 40, align: "center" });
+            .fillColor("#374151")
+            .text(itemSpheres, 305, currentY, { width: 80 });
+
+          // Col 5: Price
+          const hasPrice = item.selectedPrice && item.selectedPrice !== Infinity && item.selectedPrice > 0;
+          const priceText = hasPrice ? `${Number(item.selectedPrice).toFixed(2)} с.` : "НЕТ ЦЕНЫ";
+          docPdf
+            .font(fontBoldPath)
+            .fontSize(8)
+            .fillColor(hasPrice ? "black" : "#dc2626")
+            .text(priceText, 395, currentY, { width: 45, align: "right" });
+
+          // Col 6: Qty
+          const qtyText = `${item.quantity} ${p.unit || "шт."}`;
+          docPdf
+            .font(fontPath)
+            .fontSize(8)
+            .fillColor("black")
+            .text(qtyText, 450, currentY, { width: 40, align: "center" });
+
+          // Col 7: Sum
+          const sum = hasPrice ? item.selectedPrice * item.quantity : 0;
+          const sumText = hasPrice ? `${sum.toFixed(2)} с.` : "—";
+          docPdf
+            .font(fontBoldPath)
+            .fontSize(8)
+            .fillColor("black")
+            .text(sumText, 500, currentY, { width: 50, align: "right" });
+
+          if (hasPrice) {
+            supplierTotal += sum;
+          }
+
+          currentY += rowHeight + 15;
+          docPdf
+            .moveTo(40, currentY - 5)
+            .lineTo(550, currentY - 5)
+            .lineWidth(0.5)
+            .strokeColor("#cbd5e1")
+            .stroke();
+
+          itemIndex++;
         }
 
-        // Col 6: QTY
-        docPdf
-          .font(fontPath)
-          .fontSize(8)
-          .fillColor("black")
-          .text(item.quantity.toString(), 450, currentY, {
-            width: 30,
-            align: "center",
+        // Logistics & Total & Signatures
+        if (currentY > 600) {
+          docPdf.addPage();
+          currentY = 40;
+        }
+
+        if (logisticsCost > 0) {
+          docPdf
+            .moveTo(40, currentY)
+            .lineTo(550, currentY)
+            .lineWidth(1)
+            .strokeColor("#e2e8f0")
+            .stroke();
+          currentY += 10;
+          docPdf
+            .font(fontBoldPath)
+            .fontSize(10)
+            .fillColor("black")
+            .text(`Логистика (${region}):`, 300, currentY, { width: 140, align: "right" });
+          docPdf.text(logisticsCost.toFixed(2) + " с.", 450, currentY, {
+            width: 100,
+            align: "right",
           });
-
-        // Col 7: SUM
-        if (item.selectedPrice > 0) {
-          docPdf
-            .font(fontBoldPath)
-            .fontSize(8)
-            .fillColor("black")
-            .text(sum.toFixed(2), 490, currentY, {
-              width: 50,
-              align: "center",
-            });
-        } else {
-          docPdf
-            .font(fontPath)
-            .fontSize(8)
-            .fillColor("gray")
-            .text("-", 490, currentY, { width: 50, align: "center" });
+          currentY += 25;
         }
 
-        currentY += finalRowH + 15;
-        i++;
-      }
-
-      if (logisticsCost > 0) {
-        if (currentY > 750) {
-          docPdf.addPage();
-          currentY = drawHeader();
-        }
+        const finalTotal = supplierTotal + logisticsCost;
         docPdf
           .moveTo(40, currentY)
           .lineTo(550, currentY)
-          .lineWidth(1)
-          .strokeColor("#e2e8f0")
+          .lineWidth(2)
+          .strokeColor("black")
           .stroke();
         currentY += 10;
         docPdf
           .font(fontBoldPath)
-          .fontSize(10)
+          .fontSize(12)
           .fillColor("black")
-          .text(`Логистика (до ${region})`, 130, currentY, { width: 170 });
-        docPdf.text(logisticsCost.toFixed(2), 490, currentY, {
-          width: 50,
-          align: "center",
+          .text("ИТОГО К ОПЛАТЕ:", 250, currentY, { width: 190, align: "right" });
+        docPdf.text(`${finalTotal.toFixed(2)} с.`, 450, currentY - 2, {
+          width: 100,
+          align: "right",
         });
-        totalSum += logisticsCost;
-        currentY += 25;
-      }
 
-      docPdf
-        .moveTo(40, currentY)
-        .lineTo(550, currentY)
-        .lineWidth(2)
-        .strokeColor("black")
-        .stroke();
-      currentY += 10;
-      docPdf
-        .font(fontBoldPath)
-        .fontSize(14)
-        .fillColor("black")
-        .text("ИТОГО:", 310, currentY, { width: 80, align: "right" });
-      docPdf.text(`${totalSum.toFixed(2)} с.`, 400, currentY, {
-        width: 140,
-        align: "right",
-      });
+        currentY += 40;
+        docPdf
+          .moveTo(60, currentY + 25)
+          .lineTo(220, currentY + 25)
+          .lineWidth(1)
+          .strokeColor("black")
+          .stroke();
+        docPdf
+          .font(fontPath)
+          .fontSize(8)
+          .fillColor("#4b5563")
+          .text("Подпись клиента", 60, currentY + 30, { width: 160, align: "center" });
+
+        docPdf
+          .moveTo(370, currentY + 25)
+          .lineTo(530, currentY + 25)
+          .lineWidth(1)
+          .strokeColor("black")
+          .stroke();
+        docPdf.text("Подпись менеджера", 370, currentY + 30, { width: 160, align: "center" });
+      }
 
       docPdf.end();
       const pdfBuffer = await pdfPromise;
 
-      // Excel generation
+      // Excel generation (Same structure as downloadCartExcel in excelExport.ts)
       const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Cart");
+      wb.creator = "AI Catalog Creator";
+      wb.created = new Date();
 
-      ws.columns = [
-        { key: "index", width: 8 },
-        { key: "name", width: 55 },
-        { key: "unit", width: 15 },
-        { key: "qty", width: 12 },
-        { key: "price", width: 18 },
-        { key: "total", width: 20 },
-      ];
+      const uniqueCartSuppliers = Array.from(
+        new Set(filteredCartItems.map((i) => i.selectedSupplier || "supplier2"))
+      );
 
-      ws.mergeCells("A1:F1");
-      const titleCell = ws.getCell("A1");
-      titleCell.value = "Буҷети сармоягузорӣ";
-      titleCell.font = { bold: true, size: 12 };
-      titleCell.alignment = { horizontal: "center", vertical: "middle" };
-      titleCell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF4BA0DC" },
-      }; // Light blueish
-      for (let c = 1; c <= 6; c++) {
-        ws.getCell(1, c).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      }
+      for (const supplierKey of uniqueCartSuppliers) {
+        const supplierItems = filteredCartItems.filter(
+          (i) => (i.selectedSupplier || "supplier2") === supplierKey
+        );
+        const supplierName = getSupplierName(supplierKey);
 
-      const headerRow = ws.addRow([
-        "#",
-        "Ном ва хусусиятҳо",
-        "Воҳид",
-        "Миқдор",
-        "Нархи як воҳид*",
-        "Ҳамагӣ",
-      ]);
-      headerRow.eachCell((cell) => {
-        cell.font = { bold: true };
-        cell.alignment = { horizontal: "center", vertical: "middle" };
-        cell.fill = {
+        const rawTitle = `Инвойс - ${supplierName}`;
+        const sheetTitle = rawTitle.substring(0, 31).replace(/[\\/*?:\[\]]/g, "");
+        const ws = wb.addWorksheet(sheetTitle);
+
+        ws.columns = [
+          { key: "index", width: 8 },
+          { key: "name", width: 55 },
+          { key: "unit", width: 15 },
+          { key: "qty", width: 12 },
+          { key: "price", width: 18 },
+          { key: "total", width: 20 },
+        ];
+
+        ws.mergeCells("A1:F1");
+        const titleCell = ws.getCell("A1");
+        titleCell.value = "Буҷети сармоягузорӣ";
+        titleCell.font = { bold: true, size: 12 };
+        titleCell.alignment = { horizontal: "center", vertical: "middle" };
+        titleCell.fill = {
           type: "pattern",
           pattern: "solid",
           fgColor: { argb: "FF4BA0DC" },
         };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-
-      const spheresSet = new Set<string>();
-      cartItems.forEach((i) => {
-        const pSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
-        pSpheres.forEach(s => spheresSet.add(s));
-      });
-
-      let overallExcelTotal = 0;
-
-      for (const sphere of Array.from(spheresSet)) {
-        const itemsInSphere = cartItems.filter(i => {
-           const iSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
-           return iSpheres.includes(sphere);
-        });
-        if (itemsInSphere.length === 0) continue;
-
-        // Sphere row
-        const sRow = ws.addRow(["", sphere, "", "", "", ""]);
-        sRow.getCell(2).font = { bold: true, underline: true };
-        sRow.getCell(2).alignment = {
-          horizontal: "center",
-          vertical: "middle",
-        };
         for (let c = 1; c <= 6; c++) {
-          sRow.getCell(c).border = {
+          ws.getCell(1, c).border = {
             top: { style: "thin" },
             left: { style: "thin" },
             bottom: { style: "thin" },
@@ -2066,31 +2126,152 @@ if (bot) {
           };
         }
 
-        let sphereTotal = 0;
+        const infoRow1 = ws.addRow([
+          "Минтақа (Регион):",
+          region || "Ҳамаи минтақаҳо",
+          "",
+          "",
+          "",
+          "",
+        ]);
+        ws.mergeCells("B2:F2");
+        infoRow1.getCell(1).font = { bold: true, size: 10 };
+        infoRow1.getCell(2).font = { size: 10 };
+        for (let c = 1; c <= 6; c++) {
+          ws.getCell(2, c).border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        }
 
-        itemsInSphere.forEach((item, idx) => {
-          const sum = item.quantity * item.selectedPrice;
-          sphereTotal += sum;
-          const r = ws.addRow([
-            idx + 1,
-            item.product.name +
-              (item.product.description ? "\n" + item.product.description : ""),
-            item.product.unit || "шт.",
-            item.quantity,
-            item.selectedPrice > 0 ? item.selectedPrice : "-",
-            item.selectedPrice > 0 ? sum : "-",
-          ]);
-          r.eachCell((cell, colNumber) => {
-            let horz: "left" | "center" | "right" = "right";
-            if (colNumber === 1) horz = "center";
-            if (colNumber === 2) horz = "left";
-            if (colNumber === 3) horz = "center";
+        const infoRow2 = ws.addRow([
+          "Сфера (Бахш):",
+          sphere || "Ҳамаи сфераҳо",
+          "",
+          "",
+          "",
+          "",
+        ]);
+        ws.mergeCells("B3:F3");
+        infoRow2.getCell(1).font = { bold: true, size: 10 };
+        infoRow2.getCell(2).font = { size: 10 };
+        for (let c = 1; c <= 6; c++) {
+          ws.getCell(3, c).border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        }
 
-            cell.alignment = {
-              vertical: "middle",
-              horizontal: horz,
-              wrapText: true,
+        const headerRow = ws.addRow([
+          "#",
+          "Ном ва хусусиятҳо",
+          "Воҳид",
+          "Миқдор",
+          "Нархи як воҳид*",
+          "Ҳамагӣ",
+        ]);
+        headerRow.eachCell((cell) => {
+          cell.font = { bold: true };
+          cell.alignment = { horizontal: "center", vertical: "middle" };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FF4BA0DC" },
+          };
+          cell.border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
+        });
+
+        const spheresSet = new Set<string>();
+        supplierItems.forEach((i) => {
+          const pSpheres =
+            i.product.spheres && i.product.spheres.length > 0
+              ? i.product.spheres
+              : [i.product.sphere || "Общее"];
+          pSpheres.forEach((s: string) => {
+            if (sphere) {
+              if (s === sphere || s.includes(sphere) || sphere.includes(s)) {
+                spheresSet.add(s);
+              }
+            } else {
+              spheresSet.add(s);
+            }
+          });
+        });
+
+        let overallExcelTotal = 0;
+
+        for (const sName of Array.from(spheresSet)) {
+          const itemsInSphere = supplierItems.filter((i) => {
+            const iSpheres =
+              i.product.spheres && i.product.spheres.length > 0
+                ? i.product.spheres
+                : [i.product.sphere || "Общее"];
+            return iSpheres.includes(sName);
+          });
+          if (itemsInSphere.length === 0) continue;
+
+          const sRow = ws.addRow(["", sName, "", "", "", ""]);
+          sRow.getCell(2).font = { bold: true, underline: true };
+          sRow.getCell(2).alignment = {
+            horizontal: "center",
+            vertical: "middle",
+          };
+          for (let c = 1; c <= 6; c++) {
+            sRow.getCell(c).border = {
+              top: { style: "thin" },
+              left: { style: "thin" },
+              bottom: { style: "thin" },
+              right: { style: "thin" },
             };
+          }
+
+          let sphereTotal = 0;
+          itemsInSphere.forEach((item, idx) => {
+            const sum = item.quantity * item.selectedPrice;
+            sphereTotal += sum;
+            const r = ws.addRow([
+              idx + 1,
+              item.product.name +
+                (item.product.description ? "\n" + item.product.description : ""),
+              item.product.unit || "шт.",
+              item.quantity,
+              item.selectedPrice > 0 ? item.selectedPrice : "-",
+              item.selectedPrice > 0 ? sum : "-",
+            ]);
+            r.eachCell((cell, colNumber) => {
+              let horz: "left" | "center" | "right" = "right";
+              if (colNumber === 1) horz = "center";
+              if (colNumber === 2) horz = "left";
+              if (colNumber === 3) horz = "center";
+
+              cell.alignment = {
+                vertical: "middle",
+                horizontal: horz,
+                wrapText: true,
+              };
+              cell.border = {
+                top: { style: "thin" },
+                left: { style: "thin" },
+                bottom: { style: "thin" },
+                right: { style: "thin" },
+              };
+            });
+          });
+
+          overallExcelTotal += sphereTotal;
+
+          const subRow = ws.addRow(["", "", "", "", "Ҷамъ", sphereTotal]);
+          subRow.eachCell((cell) => {
+            cell.alignment = { vertical: "middle", horizontal: "right" };
             cell.border = {
               top: { style: "thin" },
               left: { style: "thin" },
@@ -2098,13 +2279,39 @@ if (bot) {
               right: { style: "thin" },
             };
           });
-        });
+          subRow.getCell(5).font = { bold: true };
+        }
 
-        overallExcelTotal += sphereTotal;
+        if (logisticsCost > 0) {
+          const logRow = ws.addRow([
+            "",
+            "Логистика",
+            "",
+            "",
+            "",
+            logisticsCost,
+          ]);
+          overallExcelTotal += logisticsCost;
+          logRow.eachCell((cell) => {
+            cell.alignment = { vertical: "middle", horizontal: "right" };
+            cell.border = {
+              top: { style: "thin" },
+              left: { style: "thin" },
+              bottom: { style: "thin" },
+              right: { style: "thin" },
+            };
+          });
+        }
 
-        // Subtotal row
-        const subRow = ws.addRow(["", "", "", "", "Ҷамъ", sphereTotal]);
-        subRow.eachCell((cell) => {
+        const totalRow = ws.addRow([
+          "",
+          "",
+          "",
+          "",
+          "Ҳамагӣ",
+          overallExcelTotal,
+        ]);
+        totalRow.eachCell((cell) => {
           cell.alignment = { vertical: "middle", horizontal: "right" };
           cell.border = {
             top: { style: "thin" },
@@ -2113,35 +2320,9 @@ if (bot) {
             right: { style: "thin" },
           };
         });
-        subRow.getCell(5).font = { bold: true };
+        totalRow.getCell(5).font = { bold: true };
+        totalRow.getCell(6).font = { bold: true };
       }
-
-      if (logisticsCost > 0) {
-        const logRow = ws.addRow(["", "Логистика", "", "", "", logisticsCost]);
-        overallExcelTotal += logisticsCost;
-        logRow.eachCell((cell) => {
-          cell.alignment = { vertical: "middle", horizontal: "right" };
-          cell.border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-        });
-      }
-
-      const totalRow = ws.addRow(["", "", "", "", "Ҳамагӣ", overallExcelTotal]);
-      totalRow.eachCell((cell) => {
-        cell.alignment = { vertical: "middle", horizontal: "right" };
-        cell.border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-      });
-      totalRow.getCell(5).font = { bold: true };
-      totalRow.getCell(6).font = { bold: true };
 
       const excelBuffer = Buffer.from(await wb.xlsx.writeBuffer());
 

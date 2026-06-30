@@ -301,6 +301,19 @@ const supplierUsers = new Map<number, string>();
 const facilitatorUsers = new Map<number, string>();
 const SECRET_CODE = "@020779@";
 
+// Helper to check if a message represents a cancellation request
+function isCancelMessage(text: string): boolean {
+  if (!text) return false;
+  const norm = text.trim().toLowerCase();
+  return (
+    norm === "/cancel" ||
+    norm === "❌ отмена" ||
+    norm === "отмена" ||
+    norm === "отменить" ||
+    norm === "cancel"
+  );
+}
+
 // Helper to get Facilitator WebApp URL
 function getFacilitatorUrl(facilitatorId: string) {
   const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app";
@@ -767,7 +780,7 @@ if (bot) {
       text = msg.web_app_data.data;
     }
 
-    if (text === "/cancel" || text === "❌ Отмена") {
+    if (isCancelMessage(text)) {
       userStates.delete(chatId);
       getMainKeyboard(chatId).then((replyMarkup) => {
         bot?.sendMessage(chatId, "Действие отменено.", {
@@ -912,7 +925,7 @@ if (bot) {
           { merge: true }
         ).catch((err) => console.error("Error persisting facilitator role:", err));
 
-        userStates.set(chatId, { state: "ADMIN_MENU" });
+        userStates.delete(chatId);
 
         let facilitatorName = "Фасилитатор";
         if (globalDict.facilitators) {
@@ -1458,7 +1471,7 @@ if (bot) {
       if (
         userState.state === "WAITING_PHOTO_SPEC" &&
         text !== "🔍 Распознать" &&
-        text !== "❌ Отмена" &&
+        !isCancelMessage(text) &&
         text !== "➕ Добавить товар"
       ) {
         if (!userState.tempProductData.textSpecs) {
@@ -1698,6 +1711,41 @@ if (bot) {
         filteredCartItems = cartItems; // fallback
       }
 
+      // Pre-download and process images in parallel to drastically improve PDF generation speed
+      const imageCache = new Map<string, Buffer>();
+      try {
+        const downloadPromises = filteredCartItems.map(async (item) => {
+          const p = item.product;
+          if (p.imageBase64 && typeof p.imageBase64 === "string") {
+            try {
+              const base64Data = p.imageBase64.replace(
+                /^data:image\/\w+;base64,/,
+                "",
+              );
+              const imgBuffer = Buffer.from(base64Data, "base64");
+              const jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
+              imageCache.set(p.imageBase64, jpegBuffer);
+            } catch (err) {
+              console.warn("Could not pre-process base64 image for PDF:", err);
+            }
+          } else if (p.photoUrl && p.photoUrl.startsWith("http")) {
+            try {
+              const imgRes = await axios.get(p.photoUrl, {
+                responseType: "arraybuffer",
+                timeout: 5000,
+              });
+              const jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
+              imageCache.set(p.photoUrl, jpegBuffer);
+            } catch (err) {
+              console.warn("Could not pre-fetch image for PDF:", p.photoUrl, err);
+            }
+          }
+        });
+        await Promise.all(downloadPromises);
+      } catch (e) {
+        console.error("Error pre-fetching images:", e);
+      }
+
       const uniqueSuppliersInCart = Array.from(
         new Set(filteredCartItems.map((item) => item.selectedSupplier || "supplier2"))
       ) as string[];
@@ -1893,12 +1941,15 @@ if (bot) {
           let imageDrawn = false;
           if (p.imageBase64 && typeof p.imageBase64 === "string") {
             try {
-              const base64Data = p.imageBase64.replace(
-                /^data:image\/\w+;base64,/,
-                "",
-              );
-              const imgBuffer = Buffer.from(base64Data, "base64");
-              const jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
+              let jpegBuffer = imageCache.get(p.imageBase64);
+              if (!jpegBuffer) {
+                const base64Data = p.imageBase64.replace(
+                  /^data:image\/\w+;base64,/,
+                  "",
+                );
+                const imgBuffer = Buffer.from(base64Data, "base64");
+                jpegBuffer = await sharp(imgBuffer).jpeg().toBuffer();
+              }
               docPdf.image(jpegBuffer, 70, currentY, {
                 fit: [40, 40],
                 align: "center",
@@ -1911,10 +1962,13 @@ if (bot) {
           }
           if (!imageDrawn && p.photoUrl && p.photoUrl.startsWith("http")) {
             try {
-              const imgRes = await axios.get(p.photoUrl, {
-                responseType: "arraybuffer",
-              });
-              const jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
+              let jpegBuffer = imageCache.get(p.photoUrl);
+              if (!jpegBuffer) {
+                const imgRes = await axios.get(p.photoUrl, {
+                  responseType: "arraybuffer",
+                });
+                jpegBuffer = await sharp(imgRes.data).jpeg().toBuffer();
+              }
               docPdf.image(jpegBuffer, 70, currentY, {
                 fit: [40, 40],
                 align: "center",

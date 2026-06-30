@@ -1566,6 +1566,13 @@ if (bot) {
     bot?.sendMessage(chatId, `⏳ Ищу товары: ${requestedItems.length} шт...`);
 
     try {
+      // Optimize product lookup to run in a single Firestore query to prevent major performance delays
+      const productsSnap = await getDocs(collection(db, "products"));
+      const allProductsList: any[] = [];
+      productsSnap.forEach((docSnap) => {
+        allProductsList.push({ id: docSnap.id, ...docSnap.data() });
+      });
+
       const foundProducts = new Map<
         string,
         { product: any; quantity: number }
@@ -1573,35 +1580,18 @@ if (bot) {
       const notFound = new Set<string>();
 
       for (const req of requestedItems) {
-        try {
-          // 1. By ID
-          const docRef = doc(db, "products", req.code);
-          const snap = await getDoc(docRef);
-          if (snap.exists()) {
-            foundProducts.set(snap.id, {
-              product: { id: snap.id, ...snap.data() },
-              quantity: req.qty,
-            });
-            continue;
-          }
-
-          // 2. By Code
-          const q = query(
-            collection(db, "products"),
-            where("code", "==", req.code),
-          );
-          const qSnap = await getDocs(q);
-          if (!qSnap.empty) {
-            const d = qSnap.docs[0];
-            foundProducts.set(d.id, {
-              product: { id: d.id, ...d.data() },
-              quantity: req.qty,
-            });
-            continue;
-          }
-
+        // Search in memory by ID or by Code
+        const found = allProductsList.find(
+          (p) => p.id === req.code || (p.code && String(p.code).trim().toLowerCase() === String(req.code).trim().toLowerCase())
+        );
+        if (found) {
+          foundProducts.set(found.id, {
+            product: found,
+            quantity: req.qty,
+          });
+        } else {
           notFound.add(req.code);
-        } catch (e) {}
+        }
       }
 
       const productsData = Array.from(foundProducts.values());

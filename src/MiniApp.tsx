@@ -310,6 +310,43 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     );
   }
 
+  if (portalFacilitator && isFacilitatorAuthenticated && !sphere) {
+    if (!globalDict || !globalDict.spheres) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 font-sans text-center p-4">
+          <Loader2 className="animate-spin w-8 h-8 text-blue-500 mb-2" />
+          <div className="text-white text-sm font-medium">Загрузка сфер деятельности...</div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans p-4">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">
+          <div className="w-12 h-12 bg-green-50 dark:bg-green-950/30 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600 dark:text-green-400">
+            <Briefcase className="w-6 h-6" />
+          </div>
+          <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2 text-center text-[15px] sm:text-lg">Выбор сферы занятости</h2>
+          <p className="text-xs text-slate-500 dark:text-gray-400 mb-6 text-center font-medium">
+            Для просмотра каталога вам обязательно нужно выбрать вашу сферу деятельности.
+          </p>
+          <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
+            {globalDict.spheres.map((s: string) => (
+              <button
+                key={s}
+                onClick={() => handleSetSphere(s)}
+                className="w-full text-left bg-slate-50 hover:bg-blue-50 dark:bg-gray-700 dark:hover:bg-gray-600 text-slate-700 dark:text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm border border-slate-200 dark:border-gray-600 hover:border-blue-300 flex items-center justify-between"
+              >
+                <span>{s}</span>
+                <span className="w-2 h-2 bg-slate-300 dark:bg-gray-500 rounded-full"></span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
       <div className="sticky top-0 z-10 bg-[var(--tg-theme-bg-color,#f3f4f6)] pb-4 space-y-3">
@@ -351,7 +388,8 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
                onChange={(e) => handleSetSphere(e.target.value)}
                className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-green-500"
              >
-               <option value="">Все сферы</option>
+               {!portalFacilitator && <option value="">Все сферы</option>}
+               {portalFacilitator && !sphere && <option value="" disabled>Выбрать сферу</option>}
                {(globalDict.spheres || []).map((s: string) => (
                  <option key={s} value={s}>{s}</option>
                ))}

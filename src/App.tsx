@@ -2344,13 +2344,21 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   return (
     <>
       <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden outline-none print:hidden">
+        {/* Mobile Backdrop overlay */}
+        {!isTabletMode && isSidebarVisible && (
+          <div 
+            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+            onClick={() => setIsSidebarVisible(false)}
+          />
+        )}
+
         {/* Sidebar Navigation */}
         {!isTabletMode && (
           <aside
-            className={`bg-slate-900 text-white flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden ${
+            className={`bg-slate-900 text-white flex flex-col shrink-0 transition-all duration-300 ease-in-out overflow-hidden fixed md:static inset-y-0 left-0 z-50 h-full md:h-auto shadow-2xl md:shadow-none ${
               isSidebarVisible
-                ? "w-64 opacity-100 border-r border-slate-800"
-                : "w-0 opacity-0 pointer-events-none border-r-0"
+                ? "w-64 opacity-100 border-r border-slate-800 translate-x-0"
+                : "w-0 opacity-0 pointer-events-none border-r-0 -translate-x-full md:translate-x-0"
             }`}
           >
             <div className="p-6 border-b border-slate-800 shrink-0">
@@ -2521,11 +2529,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           )}
 
           {/* Top Header */}
-          <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
-            <div className="flex items-center gap-3.5">
+          <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-8 shrink-0 gap-2">
+            <div className="flex items-center gap-2 sm:gap-3.5 min-w-0">
               <button
                 onClick={() => setIsSidebarVisible(!isSidebarVisible)}
-                className="p-2 -ml-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all flex items-center justify-center focus:outline-none"
+                className="p-1.5 sm:p-2 -ml-1 sm:-ml-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all flex items-center justify-center focus:outline-none shrink-0"
                 title={
                   isSidebarVisible
                     ? "Скрыть меню (складывание влево)"
@@ -2538,19 +2546,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   <Menu className="w-5 h-5 text-slate-700 font-bold" />
                 )}
               </button>
-              <div className="h-4 w-px bg-slate-200"></div>
-              <div className="flex items-center gap-3 w-80">
+              <div className="h-4 w-px bg-slate-200 shrink-0"></div>
+              <div className="flex items-center gap-2 w-32 xs:w-44 sm:w-64 md:w-80 shrink min-w-0">
                 <Search className="w-4 h-4 text-slate-400 shrink-0" />
                 <input
                   type="text"
                   value={searchName}
                   onChange={(e) => setSearchName(e.target.value)}
-                  placeholder="Поиск по каталогу..."
-                  className="text-sm w-full outline-none text-slate-600 font-sans"
+                  placeholder="Поиск..."
+                  className="text-sm w-full outline-none text-slate-600 font-sans bg-transparent truncate"
                 />
               </div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
               <div className="hidden md:flex items-center gap-2 mr-2">
                 {isOnline ? (
                   <span className="flex items-center gap-1.5 min-w-fit px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-md text-xs font-medium border border-emerald-200">
@@ -2574,43 +2582,45 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     setIsBestPricePasswordModalOpen(true);
                   }
                 }}
-                className={`text-xs px-3 py-1.5 rounded-md font-medium border transition-colors mr-2 ${
+                className={`text-xs px-2 py-1 sm:px-3 sm:py-1.5 rounded-md font-medium border transition-colors ${
                   showBestPrice
                     ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
                     : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
                 }`}
               >
-                {showBestPrice ? "Лучшая цена: Вкл" : "Лучшая цена: Выкл"}
+                <span className="hidden xs:inline">{showBestPrice ? "Лучшая цена: Вкл" : "Лучшая цена: Выкл"}</span>
+                <span className="xs:hidden">{showBestPrice ? "Лучшая" : "Выкл"}</span>
               </button>
               <button
                 onClick={() => setIsTabletMode(!isTabletMode)}
-                className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md font-medium border border-indigo-200 hover:bg-indigo-100 transition-colors mr-2"
+                className="text-xs bg-indigo-50 text-indigo-700 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md font-medium border border-indigo-200 hover:bg-indigo-100 transition-colors"
               >
-                {isTabletMode ? "Обычный режим" : "Режим Планшета"}
+                <span className="hidden xs:inline">{isTabletMode ? "Обычный режим" : "Режим Планшета"}</span>
+                <span className="xs:hidden">{isTabletMode ? "Обычный" : "Планшет"}</span>
               </button>
               {isTabletMode && (
                 <button
                   onClick={() => setIsCartOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-md text-sm font-medium mr-2 hover:bg-indigo-700 transition-colors relative"
+                  className="flex items-center gap-1 px-2 py-1 bg-indigo-600 text-white rounded-md text-xs font-medium hover:bg-indigo-700 transition-colors relative"
                 >
-                  <ShoppingCart className="w-4 h-4" />
-                  Корзина
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span className="hidden xs:inline">Корзина</span>
                   {cart.length > 0 && (
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                    <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] font-bold px-1 py-0.5 rounded-full">
                       {cart.reduce((a, b) => a + b.quantity, 0)}
                     </span>
                   )}
                 </button>
               )}
-              <span className="text-sm text-slate-500 font-medium px-4 py-2 bg-slate-100 rounded-full border border-slate-200 hidden sm:inline-block">
+              <span className="text-xs text-slate-500 font-medium px-2.5 py-1 bg-slate-100 rounded-full border border-slate-200 hidden md:inline-block">
                 Публичный доступ
               </span>
             </div>
           </header>
 
           {/* Content Area */}
-          <div className="flex-1 p-8 bg-slate-50/50 overflow-auto">
-            <div className="flex items-center justify-between mb-6">
+          <div className="flex-1 p-3 sm:p-8 bg-slate-50/50 overflow-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-slate-900">
                   Каталог товаров

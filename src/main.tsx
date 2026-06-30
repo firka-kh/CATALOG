@@ -12,11 +12,11 @@ const isMiniApp = window.location.pathname.startsWith('/mini-app') || params.get
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {isMiniApp ? (
-      <MiniApp />
+      <MiniApp portalFacilitator={portalSupplier && portalSupplier.startsWith('facilitator') ? portalSupplier : undefined} />
     ) : portalSupplier && portalSupplier.startsWith('supplier') ? (
       <SupplierPortal supplierId={portalSupplier as any} />
     ) : portalSupplier && portalSupplier.startsWith('facilitator') ? (
-      <App portalFacilitator={portalSupplier} />
+      <MiniApp portalFacilitator={portalSupplier} />
     ) : (
       <App />
     )}

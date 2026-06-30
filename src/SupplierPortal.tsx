@@ -502,10 +502,10 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       </div>
 
       {/* Main Table Area */}
-      <div className="flex-1 overflow-auto bg-slate-50 p-6">
+      <div className="flex-1 overflow-auto bg-slate-50 p-3 sm:p-6">
         <div className="max-w-6xl mx-auto">
           {(!selectedRegion && supplierId !== 'supplier1') ? null : (
-             <div className="flex items-center justify-end gap-3 mb-4">
+             <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2 sm:gap-3 mb-4">
                 <input 
                   type="file" 
                   accept=".xlsx" 
@@ -549,7 +549,8 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                    <p className="text-sm mt-2">Чтобы начать заполнять цены, укажите регион, для которого они действуют.</p>
                 </div>
              ) : (
-             <table className="w-full text-left border-collapse text-sm">
+             <div className="overflow-x-auto w-full">
+             <table className="w-full text-left border-collapse text-sm min-w-[750px]">
              <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 z-10 text-[11px] uppercase tracking-wider text-slate-500">
                <tr>
                  <th className="px-3 py-3 w-16 text-center font-semibold">Фото</th>
@@ -653,6 +654,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                })}
              </tbody>
            </table>
+            </div>
            )}
            {displayedProducts.length === 0 && selectedRegion && (
              <div className="p-8 text-center text-slate-500 text-sm">
@@ -666,14 +668,14 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       {/* Floating Save All Bar */}
       {(Object.keys(editedPrices).length > 0 || Object.keys(editedUnits).length > 0) && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-40 flex items-center justify-center animate-in slide-in-from-bottom-5">
-           <div className="flex items-center gap-6">
-              <span className="text-slate-600 font-medium">
+           <div className="flex flex-col sm:flex-row items-center gap-3 sm:gap-6 text-center">
+              <span className="text-slate-600 font-medium text-sm sm:text-base">
                 Есть несохраненные изменения ({Object.keys({ ...editedPrices, ...editedUnits }).length})
               </span>
               <button
                 onClick={handleSaveAllPrices}
                 disabled={isSaving}
-                className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md transition-all disabled:opacity-50"
+                className="flex items-center justify-center gap-2 px-5 py-2.5 sm:px-6 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-md transition-all disabled:opacity-50 text-sm w-full sm:w-auto"
               >
                 {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                 Сохранить все изменения

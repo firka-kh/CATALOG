@@ -278,8 +278,8 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[85vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col h-[90vh] sm:h-[85vh]">
         <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0 bg-slate-50">
           <h2 className="text-lg font-bold text-slate-800">Управление справочниками</h2>
           <button 
@@ -290,13 +290,13 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
           </button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="w-56 bg-slate-50 border-r border-slate-200 p-3 flex flex-col gap-1 shrink-0">
-            <button onClick={() => setTab('regions')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'regions' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Регионы и Районы</button>
-            <button onClick={() => setTab('spheres')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'spheres' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Сферы занятости</button>
-            <button onClick={() => setTab('suppliers')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'suppliers' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Поставщики</button>
-            <button onClick={() => setTab('facilitators')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'facilitators' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Фасилитаторы</button>
-            <button onClick={() => setTab('logistics')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'logistics' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Логистика</button>
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
+          <div className="bg-slate-50 border-b md:border-b-0 md:border-r border-slate-200 p-2 md:p-3 flex md:flex-col gap-1 shrink-0 overflow-x-auto md:overflow-x-visible scrollbar-thin">
+            <button onClick={() => setTab('regions')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'regions' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Регионы и Районы</button>
+            <button onClick={() => setTab('spheres')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'spheres' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Сферы занятости</button>
+            <button onClick={() => setTab('suppliers')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'suppliers' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Поставщики</button>
+            <button onClick={() => setTab('facilitators')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'facilitators' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Фасилитаторы</button>
+            <button onClick={() => setTab('logistics')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'logistics' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Логистика</button>
           </div>
 
           <div className="flex-1 flex flex-col min-w-0 bg-white">

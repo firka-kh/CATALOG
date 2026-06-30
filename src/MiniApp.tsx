@@ -4,7 +4,7 @@ import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'fir
 import { Product } from './types';
 import { Loader2, Plus, Minus, Search, MapPin, Briefcase } from 'lucide-react';
 
-export default function MiniApp() {
+export default function MiniApp({ portalFacilitator }: { portalFacilitator?: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<Record<string, number>>({});
@@ -13,7 +13,79 @@ export default function MiniApp() {
   const [region, setRegion] = useState("");
   const [sphere, setSphere] = useState("");
 
+  const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
+    if (!portalFacilitator) return false;
+    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true" || sessionStorage.getItem("auth_resolved") === "true";
+  });
+  const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
+
   const tg = (window as any).Telegram?.WebApp;
+
+  const resolvedFacilitator = useMemo(() => {
+    if (!portalFacilitator || !globalDict?.facilitatorCodes) {
+      return { key: "", code: "", name: "Фасилитатор", region: "" };
+    }
+    // 1. Direct match
+    if (globalDict.facilitatorCodes[portalFacilitator]) {
+      const idx = parseInt(portalFacilitator.replace("facilitator", ""), 10) - 2;
+      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+      const region = globalDict.facilitatorRegions?.[portalFacilitator] || "";
+      return {
+        key: portalFacilitator,
+        code: String(globalDict.facilitatorCodes[portalFacilitator]),
+        name,
+        region,
+      };
+    }
+    // 2. Fallback
+    let numStr = portalFacilitator.replace("facilitator", "");
+    let num = parseInt(numStr, 10);
+    if (isNaN(num)) {
+      num = 2;
+    }
+    const checkKeys = [
+      `facilitator${num}`,
+      `facilitator${num + 1}`,
+      `facilitator${num + 2}`,
+      `facilitator${num - 1}`,
+      `facilitator${num - 2}`
+    ];
+    for (const tk of checkKeys) {
+      if (globalDict.facilitatorCodes[tk]) {
+        const idx = parseInt(tk.replace("facilitator", ""), 10) - 2;
+        const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+        const region = globalDict.facilitatorRegions?.[tk] || "";
+        return {
+          key: tk,
+          code: String(globalDict.facilitatorCodes[tk]),
+          name,
+          region,
+        };
+      }
+    }
+    // 3. Fallback: If only one exists
+    const keys = Object.keys(globalDict.facilitatorCodes);
+    if (keys.length === 1) {
+      const onlyKey = keys[0];
+      const idx = parseInt(onlyKey.replace("facilitator", ""), 10) - 2;
+      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+      const region = globalDict.facilitatorRegions?.[onlyKey] || "";
+      return {
+        key: onlyKey,
+        code: String(globalDict.facilitatorCodes[onlyKey]),
+        name,
+        region,
+      };
+    }
+    return { key: "", code: "", name: "Фасилитатор", region: "" };
+  }, [portalFacilitator, globalDict]);
+
+  // Set facilitator's region once loaded & authenticated
+  useEffect(() => {
+    if (portalFacilitator && isFacilitatorAuthenticated && resolvedFacilitator.region) {
+      setRegion(resolvedFacilitator.region);
+    }
+  }, [portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region]);
 
   const getProductMinPrice = (p: Product) => {
     let minP = Infinity;
@@ -178,23 +250,99 @@ export default function MiniApp() {
     return true;
   });
 
+  if (portalFacilitator && !isFacilitatorAuthenticated) {
+    const expectedCode = resolvedFacilitator.code || "";
+    if (!globalDict || Object.keys(globalDict).length === 0) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 font-sans text-center p-4">
+          <Loader2 className="animate-spin w-8 h-8 text-blue-500 mb-2" />
+          <div className="text-white text-sm font-medium">Загрузка данных авторизации...</div>
+        </div>
+      );
+    }
+    if (!expectedCode) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans text-center p-4">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Доступ не настроен</h2>
+            <p className="text-xs text-slate-500 dark:text-gray-400">
+              Код доступа для данного фасилитатора еще не задан администратором в справочнике.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans p-4">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2 text-center">Вход для Фасилитаторов</h2>
+          <p className="text-xs text-slate-500 dark:text-gray-400 mb-6 text-center font-medium">Введите секретный код для доступа к каталогу фасилитатора.</p>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (facilitatorInputCode.trim().toLowerCase() === expectedCode.trim().toLowerCase()) {
+                setIsFacilitatorAuthenticated(true);
+                sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
+                sessionStorage.setItem("auth_resolved", "true");
+              } else {
+                alert("Неверный код");
+              }
+            }}
+            className="flex flex-col gap-4"
+          >
+            <input 
+              type="password" 
+              value={facilitatorInputCode} 
+              onChange={e => setFacilitatorInputCode(e.target.value)}
+              placeholder="Секретный код..." 
+              className="w-full border border-slate-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              autoFocus
+            />
+            <button 
+              type="submit" 
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-4 rounded-xl transition-colors text-sm"
+            >
+              Войти
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
       <div className="sticky top-0 z-10 bg-[var(--tg-theme-bg-color,#f3f4f6)] pb-4 space-y-3">
+        {portalFacilitator && (
+          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-2.5 rounded-xl text-xs flex justify-between items-center shadow-sm">
+            <span>Вошли как: <strong className="font-bold">{resolvedFacilitator.name}</strong></span>
+            <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-semibold">Региональный доступ</span>
+          </div>
+        )}
+
         {/* Region & Sphere Selectors */}
         <div className="flex gap-2 w-full">
            <div className="relative flex-1">
              <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-blue-500" />
-             <select 
-               value={region} 
-               onChange={(e) => handleSetRegion(e.target.value)}
-               className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-blue-500"
-             >
-               <option value="" disabled>Выбрать регион</option>
-               {(globalDict.regions || []).map((r: string) => (
-                 <option key={r} value={r}>{r}</option>
-               ))}
-             </select>
+             {portalFacilitator ? (
+               <input
+                 type="text"
+                 readOnly
+                 value={region || "Загрузка региона..."}
+                 className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm outline-none text-slate-500 dark:text-slate-400 font-semibold"
+               />
+             ) : (
+               <select 
+                 value={region} 
+                 onChange={(e) => handleSetRegion(e.target.value)}
+                 className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-blue-500"
+               >
+                 <option value="" disabled>Выбрать регион</option>
+                 {(globalDict.regions || []).map((r: string) => (
+                   <option key={r} value={r}>{r}</option>
+                 ))}
+               </select>
+             )}
            </div>
            <div className="relative flex-1">
              <Briefcase className="absolute left-3 top-2.5 w-4 h-4 text-green-500" />

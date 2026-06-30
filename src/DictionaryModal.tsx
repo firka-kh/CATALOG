@@ -12,6 +12,13 @@ interface DictionaryData {
     supplier3?: Record<string, number>;
     supplier4?: Record<string, number>;
   };
+  supplierCodes?: Record<string, string>;
+  logisticsCosts?: Record<string, number>;
+  supplierPhones?: Record<string, string>;
+  supplierLegalNames?: Record<string, string>;
+  facilitators?: string[];
+  facilitatorRegions?: Record<string, string>;
+  facilitatorCodes?: Record<string, string>;
 }
 
 interface Props {
@@ -22,7 +29,7 @@ interface Props {
 }
 
 export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
-  const [tab, setTab] = useState<'regions' | 'spheres' | 'suppliers' | 'logistics'>('regions');
+  const [tab, setTab] = useState<'regions' | 'spheres' | 'suppliers' | 'logistics' | 'facilitators'>('regions');
   const [localData, setLocalData] = useState<DictionaryData>(data);
   const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
 
@@ -31,8 +38,17 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
   const [newDistrict, setNewDistrict] = useState('');
   const [newSphere, setNewSphere] = useState('');
   const [newSupplier, setNewSupplier] = useState('');
+  const [newSupplierPhone, setNewSupplierPhone] = useState('');
+  const [newSupplierLegalName, setNewSupplierLegalName] = useState('');
   const [editingSupplier, setEditingSupplier] = useState<string | null>(null);
   const [editSupplierName, setEditSupplierName] = useState('');
+
+  // For facilitators
+  const [newFacilitator, setNewFacilitator] = useState('');
+  const [newFacilitatorRegion, setNewFacilitatorRegion] = useState('');
+  const [newFacilitatorCode, setNewFacilitatorCode] = useState('');
+  const [editingFacilitator, setEditingFacilitator] = useState<string | null>(null);
+  const [editFacilitatorName, setEditFacilitatorName] = useState('');
 
   // Sync data when opened
   useEffect(() => {
@@ -46,7 +62,10 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
       setLocalData({
         ...data,
         pricingRules: ensuredPricingRules,
-        suppliers: data.suppliers || []
+        suppliers: data.suppliers || [],
+        facilitators: data.facilitators || [],
+        facilitatorRegions: data.facilitatorRegions || {},
+        facilitatorCodes: data.facilitatorCodes || {},
       });
     }
   }, [isOpen, data]);
@@ -111,12 +130,30 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
       const nextSuppliers = currentSuppliers.includes(s)
         ? currentSuppliers
         : [...currentSuppliers, s];
+      
+      const newIdx = nextSuppliers.indexOf(s);
+      const supplierKey = `supplier${newIdx + 2}`;
+
+      const nextPhones = { ...(prev.supplierPhones || {}) };
+      if (newSupplierPhone.trim()) {
+        nextPhones[supplierKey] = newSupplierPhone.trim();
+      }
+
+      const nextLegalNames = { ...(prev.supplierLegalNames || {}) };
+      if (newSupplierLegalName.trim()) {
+        nextLegalNames[supplierKey] = newSupplierLegalName.trim();
+      }
+
       return {
         ...prev,
-        suppliers: nextSuppliers
+        suppliers: nextSuppliers,
+        supplierPhones: nextPhones,
+        supplierLegalNames: nextLegalNames
       };
     });
     setNewSupplier('');
+    setNewSupplierPhone('');
+    setNewSupplierLegalName('');
   };
 
   const handleDeleteSupplier = (s: string) => {
@@ -155,6 +192,87 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
     setEditSupplierName('');
   };
 
+  const handleAddFacilitator = () => {
+    const f = newFacilitator.trim();
+    if (!f) return;
+    setLocalData(prev => {
+      const currentFacilitators = prev.facilitators || [];
+      const nextFacilitators = currentFacilitators.includes(f)
+        ? currentFacilitators
+        : [...currentFacilitators, f];
+
+      const newIdx = nextFacilitators.indexOf(f);
+      const facilitatorKey = `facilitator${newIdx + 2}`;
+
+      const nextRegions = { ...(prev.facilitatorRegions || {}) };
+      if (newFacilitatorRegion) {
+        nextRegions[facilitatorKey] = newFacilitatorRegion;
+      }
+
+      const nextCodes = { ...(prev.facilitatorCodes || {}) };
+      if (newFacilitatorCode.trim()) {
+        nextCodes[facilitatorKey] = newFacilitatorCode.trim();
+      }
+
+      return {
+        ...prev,
+        facilitators: nextFacilitators,
+        facilitatorRegions: nextRegions,
+        facilitatorCodes: nextCodes
+      };
+    });
+    setNewFacilitator('');
+    setNewFacilitatorRegion('');
+    setNewFacilitatorCode('');
+  };
+
+  const handleDeleteFacilitator = (f: string) => {
+    setLocalData(prev => {
+      const currentFacilitators = prev.facilitators || [];
+      const nextFacilitators = currentFacilitators.filter(x => x !== f);
+      const newIdx = currentFacilitators.indexOf(f);
+      const facilitatorKey = `facilitator${newIdx + 2}`;
+      
+      const nextRegions = { ...(prev.facilitatorRegions || {}) };
+      delete nextRegions[facilitatorKey];
+      
+      const nextCodes = { ...(prev.facilitatorCodes || {}) };
+      delete nextCodes[facilitatorKey];
+
+      return {
+        ...prev,
+        facilitators: nextFacilitators,
+        facilitatorRegions: nextRegions,
+        facilitatorCodes: nextCodes
+      };
+    });
+  };
+
+  const handleStartEditFacilitator = (f: string) => {
+    setEditingFacilitator(f);
+    setEditFacilitatorName(f);
+  };
+
+  const handleCancelEditFacilitator = () => {
+    setEditingFacilitator(null);
+    setEditFacilitatorName('');
+  };
+
+  const handleSaveEditFacilitator = (oldName: string) => {
+    const freshName = editFacilitatorName.trim();
+    if (!freshName) return;
+    setLocalData(prev => {
+      const currentFacilitators = prev.facilitators || [];
+      const nextFacilitators = currentFacilitators.map(f => f === oldName ? freshName : f);
+      return {
+        ...prev,
+        facilitators: nextFacilitators
+      };
+    });
+    setEditingFacilitator(null);
+    setEditFacilitatorName('');
+  };
+
   const handleSave = () => {
     onSave(localData);
   };
@@ -177,6 +295,7 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
             <button onClick={() => setTab('regions')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'regions' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Регионы и Районы</button>
             <button onClick={() => setTab('spheres')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'spheres' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Сферы занятости</button>
             <button onClick={() => setTab('suppliers')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'suppliers' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Поставщики</button>
+            <button onClick={() => setTab('facilitators')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'facilitators' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Фасилитаторы</button>
             <button onClick={() => setTab('logistics')} className={`px-4 py-2.5 text-sm font-medium rounded-md text-left transition-colors ${tab === 'logistics' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Логистика</button>
           </div>
 
@@ -279,10 +398,10 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                   <div>
                     <h3 className="text-base font-semibold text-slate-900 mb-4">Управление поставщиками</h3>
                     
-                    {/* Add form */}
+                     {/* Add form */}
                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 space-y-4">
                       <h4 className="text-sm font-semibold text-slate-700">Новый поставщик</h4>
-                      <div className="grid grid-cols-1 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Поставщик</label>
                           <input 
@@ -290,6 +409,28 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                              value={newSupplier} 
                              onChange={e => setNewSupplier(e.target.value)} 
                              placeholder="Введите название..." 
+                             className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                             onKeyDown={e => e.key === 'Enter' && handleAddSupplier()}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Телефон</label>
+                          <input 
+                             type="text" 
+                             value={newSupplierPhone} 
+                             onChange={e => setNewSupplierPhone(e.target.value)} 
+                             placeholder="Введите номер телефона..." 
+                             className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                             onKeyDown={e => e.key === 'Enter' && handleAddSupplier()}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Юридическое название</label>
+                          <input 
+                             type="text" 
+                             value={newSupplierLegalName} 
+                             onChange={e => setNewSupplierLegalName(e.target.value)} 
+                             placeholder="Введите юр. название..." 
                              className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                              onKeyDown={e => e.key === 'Enter' && handleAddSupplier()}
                           />
@@ -402,6 +543,34 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                                       className="flex-1 text-xs bg-white border border-slate-200 rounded px-2 py-1 text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
                                     />
                                   </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-32">Телефон:</span>
+                                    <input 
+                                      type="text" 
+                                      value={localData.supplierPhones?.[`supplier${idx + 2}`] || ''}
+                                      onChange={(e) => {
+                                        const nextPhones = { ...(localData.supplierPhones || {}) };
+                                        nextPhones[`supplier${idx + 2}`] = e.target.value;
+                                        setLocalData((prev: any) => ({ ...prev, supplierPhones: nextPhones }));
+                                      }}
+                                      placeholder="Введите номер телефона..."
+                                      className="flex-1 text-xs bg-white border border-slate-200 rounded px-2 py-1 text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-32">Юр. название:</span>
+                                    <input 
+                                      type="text" 
+                                      value={localData.supplierLegalNames?.[`supplier${idx + 2}`] || ''}
+                                      onChange={(e) => {
+                                        const nextLegalNames = { ...(localData.supplierLegalNames || {}) };
+                                        nextLegalNames[`supplier${idx + 2}`] = e.target.value;
+                                        setLocalData((prev: any) => ({ ...prev, supplierLegalNames: nextLegalNames }));
+                                      }}
+                                      placeholder="Введите юридическое название..."
+                                      className="flex-1 text-xs bg-white border border-slate-200 rounded px-2 py-1 text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                  </div>
                                  </div>
                                </div>
                              )}
@@ -413,6 +582,176 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                 </div>
               )}
               
+              {tab === 'facilitators' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900 mb-4">Управление фасилитаторами</h3>
+                    
+                     {/* Add form */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 space-y-4">
+                      <h4 className="text-sm font-semibold text-slate-700">Новый фасилитатор</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">ФИО / Имя</label>
+                          <input 
+                             type="text" 
+                             value={newFacilitator} 
+                             onChange={e => setNewFacilitator(e.target.value)} 
+                             placeholder="Введите имя..." 
+                             className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                             onKeyDown={e => e.key === 'Enter' && handleAddFacilitator()}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Регион</label>
+                          <select 
+                             value={newFacilitatorRegion} 
+                             onChange={e => setNewFacilitatorRegion(e.target.value)} 
+                             className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          >
+                            <option value="">Выберите регион...</option>
+                            {localData.regions.map(r => (
+                              <option key={r} value={r}>{r}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">Секретный код</label>
+                          <input 
+                             type="text" 
+                             value={newFacilitatorCode} 
+                             onChange={e => setNewFacilitatorCode(e.target.value)} 
+                             placeholder="Код доступа..." 
+                             className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                             onKeyDown={e => e.key === 'Enter' && handleAddFacilitator()}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-1">
+                        <button onClick={handleAddFacilitator} className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium flex items-center gap-1.5">
+                          <Plus className="w-4 h-4"/>
+                          Добавить фасилитатора
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* List */}
+                    <div className="space-y-3">
+                      {(localData.facilitators || []).length === 0 && (
+                        <div className="p-8 text-center text-sm text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                          Нет зарегистрированных фасилитаторов
+                        </div>
+                      )}
+                      {(localData.facilitators || []).map((f, idx) => {
+                         const fKey = `facilitator${idx + 2}`;
+                         const baseOrigin = window.location.origin;
+                         const portalUrl = `${baseOrigin}/?portal=${fKey}`;
+                         
+                         return (
+                           <div key={fKey} className="border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all bg-white">
+                             {editingFacilitator === f ? (
+                               <div className="flex flex-col gap-3">
+                                 <div className="flex items-center gap-2">
+                                   <input 
+                                     type="text" 
+                                     value={editFacilitatorName} 
+                                     onChange={e => setEditFacilitatorName(e.target.value)}
+                                     className="flex-1 border border-slate-300 rounded px-2.5 py-1 text-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                     placeholder="Имя фасилитатора..."
+                                   />
+                                   <button 
+                                     onClick={() => handleSaveEditFacilitator(f)}
+                                     className="bg-green-600 hover:bg-green-700 text-white p-1.5 rounded transition-colors"
+                                     title="Сохранить"
+                                   >
+                                     <Check className="w-4 h-4" />
+                                   </button>
+                                   <button 
+                                     onClick={handleCancelEditFacilitator}
+                                     className="bg-slate-100 hover:bg-slate-200 text-slate-500 p-1.5 rounded transition-colors text-xs font-semibold"
+                                   >
+                                     Отмена
+                                   </button>
+                                 </div>
+                               </div>
+                             ) : (
+                               <div className="flex flex-col gap-3">
+                                 <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-slate-800 text-sm">{f}</span>
+                                      <div className="flex items-center gap-1">
+                                          <button 
+                                            onClick={() => handleStartEditFacilitator(f)} 
+                                            className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                            title="Редактировать имя"
+                                          >
+                                            <Pencil className="w-4 h-4" />
+                                          </button>
+                                          <button onClick={() => handleDeleteFacilitator(f)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Удалить фасилитатора"><Trash2 className="w-4 h-4" /></button>
+                                      </div>
+                                 </div>
+                                 
+                                 <div className="flex flex-col gap-2 bg-slate-100 p-2 rounded-md">
+                                   <div className="flex items-center gap-2">
+                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-32">Ссылка (Портал):</span>
+                                     <input 
+                                       type="text" 
+                                       readOnly 
+                                       value={portalUrl} 
+                                       className="flex-1 text-xs bg-white border border-slate-200 rounded px-2 py-1 text-slate-600 outline-none"
+                                     />
+                                     <button
+                                       onClick={() => {
+                                         navigator.clipboard.writeText(portalUrl);
+                                         alert("Ссылка скопирована!");
+                                       }}
+                                       className="px-2 py-1 bg-white border border-slate-200 shadow-sm rounded text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 transition-colors whitespace-nowrap"
+                                       title="Скопировать ссылку"
+                                     >
+                                       Копировать
+                                     </button>
+                                   </div>
+                                   <div className="flex items-center gap-2">
+                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-32">Регион:</span>
+                                     <select 
+                                       value={localData.facilitatorRegions?.[fKey] || ''}
+                                       onChange={(e) => {
+                                         const nextRegs = { ...(localData.facilitatorRegions || {}) };
+                                         nextRegs[fKey] = e.target.value;
+                                         setLocalData((prev: any) => ({ ...prev, facilitatorRegions: nextRegs }));
+                                       }}
+                                       className="flex-1 text-xs bg-white border border-slate-200 rounded px-2 py-1 text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500"
+                                     >
+                                       <option value="">Выберите регион...</option>
+                                       {localData.regions.map(r => (
+                                         <option key={r} value={r}>{r}</option>
+                                       ))}
+                                     </select>
+                                   </div>
+                                   <div className="flex items-center gap-2">
+                                     <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-32">Секретный код:</span>
+                                     <input 
+                                       type="text" 
+                                       value={localData.facilitatorCodes?.[fKey] || ''}
+                                       onChange={(e) => {
+                                         const nextCodes = { ...(localData.facilitatorCodes || {}) };
+                                         nextCodes[fKey] = e.target.value;
+                                         setLocalData((prev: any) => ({ ...prev, facilitatorCodes: nextCodes }));
+                                       }}
+                                       placeholder="Введите код для входа..."
+                                       className="flex-1 text-xs bg-white border border-slate-200 rounded px-2 py-1 text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                                     />
+                                   </div>
+                                 </div>
+                               </div>
+                             )}
+                           </div>
+                         );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {tab === 'logistics' && (
                 <div className="space-y-6">
                   <div>

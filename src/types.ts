@@ -32,4 +32,9 @@ export interface GlobalDictionary {
     pricingRules?: Record<string, Record<string, number>>;
     supplierCodes?: Record<string, string>;
     logisticsCosts?: Record<string, number>;
+    supplierPhones?: Record<string, string>;
+    supplierLegalNames?: Record<string, string>;
+    facilitators?: string[];
+    facilitatorRegions?: Record<string, string>;
+    facilitatorCodes?: Record<string, string>;
 }

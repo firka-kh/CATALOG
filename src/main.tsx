@@ -13,8 +13,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {isMiniApp ? (
       <MiniApp />
-    ) : portalSupplier ? (
+    ) : portalSupplier && portalSupplier.startsWith('supplier') ? (
       <SupplierPortal supplierId={portalSupplier as any} />
+    ) : portalSupplier && portalSupplier.startsWith('facilitator') ? (
+      <App portalFacilitator={portalSupplier} />
     ) : (
       <App />
     )}

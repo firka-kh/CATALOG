@@ -288,11 +288,19 @@ import { generateNextProductCode } from "./src/lib/generateNextCode";
 const userStates = new Map<number, UserState>();
 const adminUsers = new Set<number>();
 const supplierUsers = new Map<number, string>();
+const facilitatorUsers = new Map<number, string>();
 const SECRET_CODE = "@020779@";
+
+// Helper to get Facilitator WebApp URL
+function getFacilitatorUrl(facilitatorId: string) {
+  const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app";
+  const baseUrl = miniAppUrl.replace(/\/mini-app$/, "");
+  return `${baseUrl}/?portal=${facilitatorId}`;
+}
 
 // Helper to ensure user role is restored from Firestore
 async function ensureUserRoleLoaded(chatId: number) {
-  if (adminUsers.has(chatId) || supplierUsers.has(chatId)) {
+  if (adminUsers.has(chatId) || supplierUsers.has(chatId) || facilitatorUsers.has(chatId)) {
     return;
   }
   try {
@@ -303,11 +311,52 @@ async function ensureUserRoleLoaded(chatId: number) {
         adminUsers.add(chatId);
       } else if (userData.role === "supplier" && userData.supplierId) {
         supplierUsers.set(chatId, userData.supplierId);
+      } else if (userData.role === "facilitator" && userData.facilitatorId) {
+        facilitatorUsers.set(chatId, userData.facilitatorId);
       }
     }
   } catch (e) {
     console.error("Failed to restore user role from Firestore", e);
   }
+}
+
+// Helper to get Main Menu Keyboard depending on user role
+async function getMainKeyboard(chatId: number) {
+  await ensureUserRoleLoaded(chatId);
+  if (facilitatorUsers.has(chatId)) {
+    const facilitatorId = facilitatorUsers.get(chatId) || "";
+    return {
+      keyboard: [
+        [
+          {
+            text: "🛍 Открыть Каталог (Фасилитатор)",
+            web_app: {
+              url: getFacilitatorUrl(facilitatorId),
+            },
+          },
+        ],
+        [{ text: "🛠 Личный кабинет фасилитатора" }],
+      ],
+      resize_keyboard: true,
+    };
+  }
+
+  return {
+    keyboard: [
+      [
+        {
+          text: "🛍 Открыть Каталог",
+          web_app: {
+            url:
+              process.env.MINI_APP_URL ||
+              "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+          },
+        },
+      ],
+      [{ text: "🛠 Панель администратора" }],
+    ],
+    resize_keyboard: true,
+  };
 }
 
 if (bot) {
@@ -682,23 +731,10 @@ if (bot) {
 
     if (text === "/cancel" || text === "❌ Отмена") {
       userStates.delete(chatId);
-      bot?.sendMessage(chatId, "Действие отменено.", {
-        reply_markup: {
-          keyboard: [
-            [
-              {
-                text: "🛍 Открыть Каталог",
-                web_app: {
-                  url:
-                    process.env.MINI_APP_URL ||
-                    "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
-                },
-              },
-            ],
-            [{ text: "🛠 Панель администратора" }],
-          ],
-          resize_keyboard: true,
-        },
+      getMainKeyboard(chatId).then((replyMarkup) => {
+        bot?.sendMessage(chatId, "Действие отменено.", {
+          reply_markup: replyMarkup,
+        });
       });
       return;
     }
@@ -709,7 +745,7 @@ if (bot) {
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,
-        "Введите секретный код администратора или поставщика:",
+        "Введите секретный код администратора, поставщика или фасилитатора:",
         {
           reply_markup: {
             keyboard: [[{ text: "❌ Отмена" }]],
@@ -730,6 +766,17 @@ if (bot) {
         if (code === text) {
           isSupplier = true;
           matchedSupplierId = supId;
+          break;
+        }
+      }
+
+      let isFacilitator = false;
+      let matchedFacilitatorId = "";
+      const facilitatorCodes = globalDict.facilitatorCodes || {};
+      for (const [facId, code] of Object.entries(facilitatorCodes)) {
+        if (code === text) {
+          isFacilitator = true;
+          matchedFacilitatorId = facId;
           break;
         }
       }
@@ -783,6 +830,42 @@ if (bot) {
             reply_markup: {
               keyboard: [
                 [{ text: "➕ Добавить товар" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+      } else if (isFacilitator) {
+        facilitatorUsers.set(chatId, matchedFacilitatorId);
+        await setDoc(
+          doc(db, "telegram_users", chatId.toString()),
+          { role: "facilitator", facilitatorId: matchedFacilitatorId, updatedAt: Date.now() },
+          { merge: true }
+        ).catch((err) => console.error("Error persisting facilitator role:", err));
+
+        userStates.set(chatId, { state: "ADMIN_MENU" });
+
+        let facilitatorName = "Фасилитатор";
+        if (globalDict.facilitators) {
+          const idx = parseInt(matchedFacilitatorId.replace("facilitator", ""), 10) - 2;
+          facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
+        }
+
+        bot?.sendMessage(
+          chatId,
+          `✅ Доступ разрешен.\n\nВы авторизованы как Фасилитатор: ${facilitatorName}.`,
+          {
+            reply_markup: {
+              keyboard: [
+                [
+                  {
+                    text: "🛍 Открыть Каталог (Фасилитатор)",
+                    web_app: {
+                      url: getFacilitatorUrl(matchedFacilitatorId),
+                    },
+                  },
+                ],
                 [{ text: "❌ Отмена" }],
               ],
               resize_keyboard: true,
@@ -1196,32 +1279,28 @@ if (bot) {
 
     // --- NORMAL USER LOGIC BELOW THIS LINE ---
     if (text === "/start") {
-      bot?.sendMessage(
-        chatId,
-        "Привет! Я бот-каталог. Жмите СТАРТ чтобы открыть каталог и собрать заказ по минимальным ценам. Или просто отправьте мне коды товаров.",
-        {
-          reply_markup: {
-            keyboard: [
-              [
-                {
-                  text: "🛍 Открыть Каталог",
-                  web_app: {
-                    url:
-                      process.env.MINI_APP_URL ||
-                      "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
-                  },
-                },
-              ],
-              [{ text: "🛠 Панель администратора" }],
-            ],
-            resize_keyboard: true,
-          },
-        },
-      );
+      getMainKeyboard(chatId).then(async (replyMarkup) => {
+        let greeting = "Привет! Я бот-каталог. Жмите СТАРТ чтобы открыть каталог и собрать заказ по минимальным ценам. Или просто отправьте мне коды товаров.";
+        
+        if (facilitatorUsers.has(chatId)) {
+          const facilitatorId = facilitatorUsers.get(chatId) || "";
+          const globalDict = await getGlobalDict();
+          let facilitatorName = "Фасилитатор";
+          if (globalDict.facilitators) {
+            const idx = parseInt(facilitatorId.replace("facilitator", ""), 10) - 2;
+            facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
+          }
+          greeting = `Привет, ${facilitatorName}! Вы авторизованы как Фасилитатор.\nЖмите кнопку ниже, чтобы открыть каталог в режиме Фасилитатора и сформировать Лист выборки товаров.`;
+        }
+
+        bot?.sendMessage(chatId, greeting, {
+          reply_markup: replyMarkup,
+        });
+      });
       return;
     }
 
-    if (text === "🛠 Панель администратора") {
+    if (text === "🛠 Панель администратора" || text === "🛠 Личный кабинет фасилитатора") {
       if (adminUsers.has(chatId)) {
         userStates.set(chatId, { state: "ADMIN_MENU" });
         bot?.sendMessage(
@@ -1259,10 +1338,41 @@ if (bot) {
         return;
       }
 
+      if (facilitatorUsers.has(chatId)) {
+        const facilitatorId = facilitatorUsers.get(chatId) || "";
+        const globalDict = await getGlobalDict();
+        let facilitatorName = "Фасилитатор";
+        if (globalDict.facilitators) {
+          const idx = parseInt(facilitatorId.replace("facilitator", ""), 10) - 2;
+          facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
+        }
+        bot?.sendMessage(
+          chatId,
+          `🛠 Вы авторизованы как Фасилитатор: ${facilitatorName}.\n\nЗдесь вы можете открыть каталог с закрепленной за вами ролью.`,
+          {
+            reply_markup: {
+              keyboard: [
+                [
+                  {
+                    text: "🛍 Открыть Каталог (Фасилитатор)",
+                    web_app: {
+                      url: getFacilitatorUrl(facilitatorId),
+                    },
+                  },
+                ],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
+          },
+        );
+        return;
+      }
+
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,
-        "Введите секретный код администратора или поставщика:",
+        "Введите секретный код администратора, поставщика или фасилитатора:",
         {
           reply_markup: {
             keyboard: [[{ text: "❌ Отмена" }]],

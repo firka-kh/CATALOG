@@ -26,6 +26,7 @@ import {
   WifiOff,
   CheckCircle,
   Clock,
+  Lock,
 } from "lucide-react";
 import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { generateNextProductCode } from "./lib/generateNextCode";
@@ -231,7 +232,7 @@ const compressImageBase64 = (
   });
 };
 
-export default function App() {
+export default function App({ portalFacilitator }: { portalFacilitator?: string }) {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
     updateServiceWorker,
@@ -243,6 +244,29 @@ export default function App() {
       console.log("SW registration error", error);
     },
   });
+
+  // Facilitator Auth & Lock States
+  const [isDictLoaded, setIsDictLoaded] = useState(() => {
+    try {
+      return !!localStorage.getItem("global_dict_cache");
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    // Fail-safe to ensure the app never stays stuck if firestore is slow
+    const timer = setTimeout(() => {
+      setIsDictLoaded(true);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
+    if (!portalFacilitator) return false;
+    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true" || sessionStorage.getItem("auth_resolved") === "true";
+  });
+  const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
   const [products, setProducts] = useState<Product[]>([]);
   const [isParsing, setIsParsing] = useState(false);
@@ -266,19 +290,136 @@ export default function App() {
     };
     supplierCodes?: Record<string, string>;
     logisticsCosts?: Record<string, number>;
-  }>({
-    regions: Object.keys(DISTRICTS_BY_REGION),
-    districtsByRegion: DISTRICTS_BY_REGION,
-    spheres: DEFAULT_SPHERES,
-    suppliers: [],
-    pricingRules: {
-      supplier1: {},
-      supplier2: {},
-      supplier3: {},
-      supplier4: {},
-    },
-    logisticsCosts: {},
+    supplierPhones?: Record<string, string>;
+    supplierLegalNames?: Record<string, string>;
+    facilitators?: string[];
+    facilitatorRegions?: Record<string, string>;
+    facilitatorCodes?: Record<string, string>;
+  }>(() => {
+    try {
+      const cached = localStorage.getItem("global_dict_cache");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === "object" && parsed.regions) {
+          return {
+            regions: parsed.regions,
+            districtsByRegion: parsed.districtsByRegion || DISTRICTS_BY_REGION,
+            spheres: parsed.spheres || DEFAULT_SPHERES,
+            suppliers: parsed.suppliers || [],
+            pricingRules: parsed.pricingRules || {
+              supplier1: {},
+              supplier2: {},
+              supplier3: {},
+              supplier4: {},
+            },
+            supplierCodes: parsed.supplierCodes || {},
+            logisticsCosts: parsed.logisticsCosts || {},
+            supplierPhones: parsed.supplierPhones || {},
+            supplierLegalNames: parsed.supplierLegalNames || {},
+            facilitators: parsed.facilitators || [],
+            facilitatorRegions: parsed.facilitatorRegions || {},
+            facilitatorCodes: parsed.facilitatorCodes || {},
+          };
+        }
+      }
+    } catch (e) {
+      console.error("Error reading cached dictionaries:", e);
+    }
+    return {
+      regions: Object.keys(DISTRICTS_BY_REGION),
+      districtsByRegion: DISTRICTS_BY_REGION,
+      spheres: DEFAULT_SPHERES,
+      suppliers: [],
+      pricingRules: {
+        supplier1: {},
+        supplier2: {},
+        supplier3: {},
+        supplier4: {},
+      },
+      logisticsCosts: {},
+      supplierPhones: {},
+      supplierLegalNames: {},
+      facilitators: [],
+      facilitatorRegions: {},
+      facilitatorCodes: {},
+    };
   });
+
+  // Robust facilitator lookup that automatically handles off-by-one errors and resolves single/nearby-id matches
+  const getResolvedFacilitator = () => {
+    if (!portalFacilitator || !globalDict.facilitatorCodes) {
+      return { key: "", code: "", name: "Фасилитатор", region: "" };
+    }
+    
+    // 1. Direct match (e.g. facilitator2)
+    if (globalDict.facilitatorCodes[portalFacilitator]) {
+      const idx = parseInt(portalFacilitator.replace("facilitator", ""), 10) - 2;
+      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+      const region = globalDict.facilitatorRegions?.[portalFacilitator] || "";
+      return {
+        key: portalFacilitator,
+        code: globalDict.facilitatorCodes[portalFacilitator],
+        name,
+        region
+      };
+    }
+
+    // 2. Fallback check for nearby ID matches (e.g. facilitator1 vs facilitator2)
+    const numStr = portalFacilitator.replace("facilitator", "");
+    const num = parseInt(numStr, 10);
+    if (!isNaN(num)) {
+      const targets = [
+        `facilitator${num}`,
+        `facilitator${num + 1}`,
+        `facilitator${num + 2}`,
+        `facilitator${num - 1}`,
+        `facilitator${num - 2}`
+      ];
+      for (const tk of targets) {
+        if (globalDict.facilitatorCodes[tk]) {
+          const idx = parseInt(tk.replace("facilitator", ""), 10) - 2;
+          const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+          const region = globalDict.facilitatorRegions?.[tk] || "";
+          return {
+            key: tk,
+            code: globalDict.facilitatorCodes[tk],
+            name,
+            region
+          };
+        }
+      }
+    }
+
+    // 3. Fallback: If only one facilitator exists in dictionaries, map any facilitator request to them
+    const keys = Object.keys(globalDict.facilitatorCodes);
+    if (keys.length === 1) {
+      const onlyKey = keys[0];
+      const idx = parseInt(onlyKey.replace("facilitator", ""), 10) - 2;
+      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+      const region = globalDict.facilitatorRegions?.[onlyKey] || "";
+      return {
+        key: onlyKey,
+        code: globalDict.facilitatorCodes[onlyKey],
+        name,
+        region
+      };
+    }
+
+    return { key: "", code: "", name: "Фасилитатор", region: "" };
+  };
+
+  const resolvedFacilitator = getResolvedFacilitator();
+  const facilitatorRegion = resolvedFacilitator.region || null;
+
+  useEffect(() => {
+    if (resolvedFacilitator.key && isFacilitatorAuthenticated && resolvedFacilitator.region) {
+      setSelectedRegion(resolvedFacilitator.region);
+    }
+  }, [resolvedFacilitator.key, isFacilitatorAuthenticated, resolvedFacilitator.region]);
+
+  const getFacilitatorName = () => {
+    return resolvedFacilitator.name || "Фасилитатор";
+  };
 
   const getSupplierLabel = (
     sup: "supplier1" | "supplier2" | "supplier3" | "supplier4",
@@ -375,6 +516,9 @@ export default function App() {
   const [isTabletMode, setIsTabletMode] = useState(
     () => localStorage.getItem("catalog_tablet_mode") === "true",
   );
+  const [showBestPrice, setShowBestPrice] = useState(
+    () => localStorage.getItem("catalog_show_best_price") === "true"
+  );
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -383,6 +527,13 @@ export default function App() {
       isTabletMode ? "true" : "false",
     );
   }, [isTabletMode]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      "catalog_show_best_price",
+      showBestPrice ? "true" : "false"
+    );
+  }, [showBestPrice]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -409,15 +560,18 @@ export default function App() {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed)) {
         return parsed.map((item: any) => {
-          const supp = item.selectedSupplier || "supplier1";
-          const price =
-            item.selectedPrice !== undefined
-              ? item.selectedPrice
-              : item.product?.price || 0;
+          let supp = item.selectedSupplier;
+          if (!supp || supp === "supplier1") {
+            supp = "supplier2";
+          }
+          let price = item.selectedPrice;
+          if (price === undefined || price === null || price === Infinity || price <= 0) {
+            price = item.product?.price || 0;
+          }
           return {
             product: item.product,
             quantity: item.quantity || 1,
-            selectedSupplier: supp,
+            selectedSupplier: supp as "supplier2" | "supplier3" | "supplier4",
             selectedPrice: price,
           };
         });
@@ -441,10 +595,15 @@ export default function App() {
   const [isPrintOptionsOpen, setIsPrintOptionsOpen] = useState(false);
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
   const [isGenerateIdsModalOpen, setIsGenerateIdsModalOpen] = useState(false);
+  const [isBestPricePasswordModalOpen, setIsBestPricePasswordModalOpen] = useState(false);
+  const [bestPricePasswordInput, setBestPricePasswordInput] = useState("");
+  const [bestPricePasswordError, setBestPricePasswordError] = useState("");
   const [generateIdsSuccess, setGenerateIdsSuccess] = useState<string | null>(
     null,
   );
   const [isNormalizeConfirmOpen, setIsNormalizeConfirmOpen] = useState(false);
+  const [normalizePasswordInput, setNormalizePasswordInput] = useState("");
+  const [normalizePasswordError, setNormalizePasswordError] = useState("");
   const [deleteAllCode, setDeleteAllCode] = useState("");
   const [catalogPrintMode, setCatalogPrintMode] = useState<"all" | "lowest">(
     "all",
@@ -521,24 +680,37 @@ export default function App() {
             );
           }
 
-          setGlobalDict({
-            regions: loadedRegions,
-            districtsByRegion: loadedDistricts,
-            spheres: data.spheres || DEFAULT_SPHERES,
-            suppliers: data.suppliers || data.facilitators || [],
-            pricingRules: data.pricingRules || {
-              supplier1: {},
-              supplier2: {},
-              supplier3: {},
-              supplier4: {},
-            },
-            supplierCodes: data.supplierCodes || {},
-            logisticsCosts: data.logisticsCosts || {},
-          });
+            const updatedDict = {
+              regions: loadedRegions,
+              districtsByRegion: loadedDistricts,
+              spheres: data.spheres || DEFAULT_SPHERES,
+              suppliers: data.suppliers || [],
+              pricingRules: data.pricingRules || {
+                supplier1: {},
+                supplier2: {},
+                supplier3: {},
+                supplier4: {},
+              },
+              supplierCodes: data.supplierCodes || {},
+              logisticsCosts: data.logisticsCosts || {},
+              supplierPhones: data.supplierPhones || {},
+              supplierLegalNames: data.supplierLegalNames || {},
+              facilitators: data.facilitators || [],
+              facilitatorRegions: data.facilitatorRegions || {},
+              facilitatorCodes: data.facilitatorCodes || {},
+            };
+            setGlobalDict(updatedDict);
+            try {
+              localStorage.setItem("global_dict_cache", JSON.stringify(updatedDict));
+            } catch (e) {
+              console.error("Error caching dictionaries to localStorage:", e);
+            }
         }
+        setIsDictLoaded(true);
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, "dictionaries");
+        setIsDictLoaded(true);
       },
     );
     return () => unsub();
@@ -609,8 +781,14 @@ export default function App() {
     const cartData = params.get("cartData");
     if (cartData && products.length > 0) {
       try {
-        const items: { product: Product; quantity: number }[] = [];
+        const items: {
+          product: Product;
+          quantity: number;
+          selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4";
+          selectedPrice: number;
+        }[] = [];
         const parts = cartData.split(",");
+        const activeReg = selectedRegion || "Душанбе";
         for (const part of parts) {
           const [id, qStr] = part.split(":");
           const skuId = id?.trim();
@@ -618,7 +796,26 @@ export default function App() {
           const qty = parseInt(qStr || "1", 10);
           const prod = products.find((p) => p.id === skuId);
           if (prod) {
-            items.push({ product: prod, quantity: qty });
+            let bestSupplier: "supplier2" | "supplier3" | "supplier4" = "supplier2";
+            let minPrice = Infinity;
+            const sups: ("supplier2" | "supplier3" | "supplier4")[] = [
+              "supplier2",
+              "supplier3",
+              "supplier4",
+            ];
+            sups.forEach((sup) => {
+              const pr = getProductPriceForSupplierAndRegion(prod, sup, activeReg);
+              if (pr > 0 && pr < minPrice) {
+                minPrice = pr;
+                bestSupplier = sup;
+              }
+            });
+            items.push({
+              product: prod,
+              quantity: qty,
+              selectedSupplier: bestSupplier,
+              selectedPrice: minPrice,
+            });
           }
         }
         if (items.length > 0) {
@@ -685,6 +882,7 @@ export default function App() {
   const [isAdminMode, setIsAdminMode] = useState(
     () => localStorage.getItem("catalog_admin") === "true",
   );
+  const isReallyAdmin = isAdminMode && !portalFacilitator;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const priceExcelInputRef = useRef<HTMLInputElement>(null);
   const [isImportingPrices, setIsImportingPrices] = useState(false);
@@ -810,6 +1008,7 @@ export default function App() {
 
   const handleFiles = useCallback(
     async (files: FileList | null) => {
+      if (portalFacilitator) return;
       if (isParsing) return;
       const blocked = aiSelectedSpheres.length === 0;
       if (blocked) {
@@ -951,6 +1150,7 @@ export default function App() {
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    if (portalFacilitator) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       handleFiles(e.dataTransfer.files);
       e.dataTransfer.clearData();
@@ -963,6 +1163,7 @@ export default function App() {
 
   useEffect(() => {
     const handleGlobalPaste = (e: ClipboardEvent) => {
+      if (portalFacilitator) return;
       if (
         e.clipboardData &&
         e.clipboardData.files &&
@@ -1020,6 +1221,8 @@ export default function App() {
   };
 
   const handleNormalizeAllNames = () => {
+    setNormalizePasswordInput("");
+    setNormalizePasswordError("");
     setIsNormalizeConfirmOpen(true);
   };
 
@@ -1095,6 +1298,10 @@ export default function App() {
   };
 
   const confirmNormalizeAllNames = async () => {
+    if (normalizePasswordInput !== "020779") {
+      alert("Неверный пароль!");
+      return;
+    }
     setIsNormalizeConfirmOpen(false);
     setIsNormalizingState({ active: true, current: 0, total: products.length });
 
@@ -1277,8 +1484,11 @@ export default function App() {
             : item,
         );
       }
-      // Remove other suppliers of the same product first to only keep the cheapest supplier in the cart.
-      const filtered = prev.filter((item) => item.product.id !== p.id);
+      
+      const filtered = showBestPrice
+        ? prev.filter((item) => item.product.id !== p.id)
+        : prev;
+
       return [
         ...filtered,
         {
@@ -1291,48 +1501,67 @@ export default function App() {
     });
   };
 
-  // Automatically adjust cart items to the cheapest supplier whenever selectedRegion changes
+  // Automatically adjust cart items whenever selectedRegion or showBestPrice changes
   useEffect(() => {
     if (cart.length === 0) return;
     const activeReg = selectedRegion || "Душанбе";
     let changed = false;
 
     const updatedCart = cart.map((item) => {
-      const sups: ("supplier2" | "supplier3" | "supplier4")[] = [
-        "supplier2",
-        "supplier3",
-        "supplier4",
-      ];
-      let minPrice = Infinity;
-      let bestSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4" =
-        "supplier2";
+      if (showBestPrice) {
+        const sups: ("supplier2" | "supplier3" | "supplier4")[] = [
+          "supplier2",
+          "supplier3",
+          "supplier4",
+        ];
+        let minPrice = Infinity;
+        let bestSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4" =
+          "supplier2";
 
-      sups.forEach((sup) => {
-        const pr = getProductPriceForSupplierAndRegion(
+        sups.forEach((sup) => {
+          const pr = getProductPriceForSupplierAndRegion(
+            item.product,
+            sup,
+            activeReg,
+          );
+          if (pr > 0 && pr < minPrice) {
+            minPrice = pr;
+            bestSupplier = sup;
+          }
+        });
+
+        if (minPrice === Infinity) {
+          bestSupplier = item.selectedSupplier || "supplier2";
+        }
+
+        if (
+          item.selectedSupplier !== bestSupplier ||
+          item.selectedPrice !== minPrice
+        ) {
+          changed = true;
+          return {
+            ...item,
+            selectedSupplier: bestSupplier,
+            selectedPrice: minPrice,
+          };
+        }
+      } else {
+        // Keep current selected supplier, update price for the new region
+        const currentSup = item.selectedSupplier || "supplier2";
+        const newPrice = getProductPriceForSupplierAndRegion(
           item.product,
-          sup,
+          currentSup,
           activeReg,
         );
-        if (pr > 0 && pr < minPrice) {
-          minPrice = pr;
-          bestSupplier = sup;
+        const finalPrice = newPrice > 0 ? newPrice : Infinity;
+
+        if (item.selectedPrice !== finalPrice) {
+          changed = true;
+          return {
+            ...item,
+            selectedPrice: finalPrice,
+          };
         }
-      });
-
-      if (minPrice === Infinity) {
-        bestSupplier = "supplier2";
-      }
-
-      if (
-        item.selectedSupplier !== bestSupplier ||
-        item.selectedPrice !== minPrice
-      ) {
-        changed = true;
-        return {
-          ...item,
-          selectedSupplier: bestSupplier,
-          selectedPrice: minPrice,
-        };
       }
       return item;
     });
@@ -1340,7 +1569,7 @@ export default function App() {
     if (changed) {
       setCart(updatedCart);
     }
-  }, [selectedRegion, products, globalDict]);
+  }, [selectedRegion, products, globalDict, showBestPrice]);
 
   const handleUpdateCartQuantity = (
     productId: string,
@@ -1576,6 +1805,7 @@ export default function App() {
   };
 
   const handleSecretClick = () => {
+    if (portalFacilitator) return;
     const now = Date.now();
     if (now - clickTimestampRef.current > 1000) {
       clickCountRef.current = 1;
@@ -1931,7 +2161,9 @@ export default function App() {
     }
   };
 
-  const uniqueRegions = Array.from(new Set([...globalDict.regions])).sort();
+  const uniqueRegions = portalFacilitator && isFacilitatorAuthenticated && facilitatorRegion
+    ? [facilitatorRegion]
+    : Array.from(new Set([...globalDict.regions])).sort();
   const uniqueSpheres = Array.from(
     new Set([
       ...globalDict.spheres,
@@ -1951,7 +2183,7 @@ export default function App() {
   };
 
   const confirmGenerateMissingCodes = async () => {
-    if (deleteAllCode !== "@020779") {
+    if (deleteAllCode !== "@020779" && deleteAllCode !== "020779") {
       alert("Неверный код. Операция отменена.");
       return;
     }
@@ -2046,6 +2278,66 @@ export default function App() {
 
   const isUploadBlocked = aiSelectedSpheres.length === 0;
 
+  if (portalFacilitator && !isDictLoaded) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 font-sans text-center">
+        <div className="text-white text-lg font-medium">Загрузка данных авторизации...</div>
+      </div>
+    );
+  }
+
+  if (portalFacilitator && !isFacilitatorAuthenticated) {
+    const expectedCode = resolvedFacilitator.code || "";
+    if (!expectedCode) {
+      return (
+        <div className="flex items-center justify-center h-screen bg-slate-950 font-sans text-center">
+          <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 max-w-sm w-full mx-4">
+            <h2 className="text-xl font-bold text-slate-800 mb-2">Доступ не настроен</h2>
+            <p className="text-sm text-slate-500">
+              Код доступа для данного фасилитатора еще не задан администратором в справочнике.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-900 font-sans">
+        <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 max-w-sm w-full mx-4">
+          <h2 className="text-xl font-bold text-slate-800 mb-2 text-center">Вход для Фасилитаторов</h2>
+          <p className="text-sm text-slate-500 mb-6 text-center">Введите секретный код для доступа к панели фасилитатора.</p>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (facilitatorInputCode.trim() === expectedCode) {
+                setIsFacilitatorAuthenticated(true);
+                sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
+                sessionStorage.setItem("auth_resolved", "true");
+              } else {
+                alert("Неверный код");
+              }
+            }}
+            className="flex flex-col gap-4"
+          >
+            <input 
+              type="password" 
+              value={facilitatorInputCode} 
+              onChange={e => setFacilitatorInputCode(e.target.value)}
+              placeholder="Секретный код..." 
+              className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              autoFocus
+            />
+            <button 
+              type="submit" 
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition-colors text-sm"
+            >
+              Войти
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden outline-none print:hidden">
@@ -2073,6 +2365,20 @@ export default function App() {
             </div>
 
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+              {portalFacilitator && isFacilitatorAuthenticated && (
+                <div className="mb-6 p-3 bg-indigo-950/40 rounded-lg border border-indigo-800/50">
+                  <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">
+                    Профиль Фасилитатора
+                  </div>
+                  <div className="font-semibold text-sm text-white leading-snug">
+                    {getFacilitatorName()}
+                  </div>
+                  <div className="mt-2 text-xs text-slate-300 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
+                    Регион: <span className="font-medium text-white">{facilitatorRegion || "Не привязан"}</span>
+                  </div>
+                </div>
+              )}
               <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
                 Управление
               </div>
@@ -2101,7 +2407,7 @@ export default function App() {
                   </span>
                 )}
               </a>
-              {isAdminMode && (
+              {isReallyAdmin && (
                 <>
                   <a
                     href="#"
@@ -2151,15 +2457,15 @@ export default function App() {
                     <Trash2 className="w-5 h-5 opacity-70" />
                     Очистить базу ({products.length})
                   </a>
+                  <a
+                    href="#"
+                    className="flex items-center gap-3 px-3 py-2 text-slate-400 hover:bg-slate-800 transition-colors"
+                  >
+                    <Download className="w-5 h-5" />
+                    История экспорта
+                  </a>
                 </>
               )}
-              <a
-                href="#"
-                className="flex items-center gap-3 px-3 py-2 text-slate-400 hover:bg-slate-800 transition-colors"
-              >
-                <Download className="w-5 h-5" />
-                История экспорта
-              </a>
             </nav>
 
             <div className="p-4 border-t border-slate-800 space-y-3 shrink-0">
@@ -2256,6 +2562,24 @@ export default function App() {
                 )}
               </div>
               <button
+                onClick={() => {
+                  if (showBestPrice) {
+                    setShowBestPrice(false);
+                  } else {
+                    setBestPricePasswordInput("");
+                    setBestPricePasswordError("");
+                    setIsBestPricePasswordModalOpen(true);
+                  }
+                }}
+                className={`text-xs px-3 py-1.5 rounded-md font-medium border transition-colors mr-2 ${
+                  showBestPrice
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                }`}
+              >
+                {showBestPrice ? "Лучшая цена: Вкл" : "Лучшая цена: Выкл"}
+              </button>
+              <button
                 onClick={() => setIsTabletMode(!isTabletMode)}
                 className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md font-medium border border-indigo-200 hover:bg-indigo-100 transition-colors mr-2"
               >
@@ -2293,7 +2617,7 @@ export default function App() {
                 </p>
               </div>
               <div className="flex gap-2">
-                {!isTabletMode && (
+                {!isTabletMode && isReallyAdmin && (
                   <>
                     <input
                       type="file"
@@ -2326,7 +2650,7 @@ export default function App() {
                   </>
                 )}
 
-                {isAdminMode && !isTabletMode && (
+                {isReallyAdmin && !isTabletMode && (
                   <button
                     onClick={handleOpenManualModal}
                     className="flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 bg-indigo-600 hover:bg-indigo-700 text-white"
@@ -2347,7 +2671,7 @@ export default function App() {
             </div>
 
             <div className="flex flex-wrap items-center gap-4 mb-6 z-10 w-full">
-              {!isTabletMode && (
+              {!isTabletMode && !portalFacilitator && (
                 <select
                   value={selectedSupplier}
                   onChange={(e) => setSelectedSupplier(e.target.value as any)}
@@ -2368,7 +2692,8 @@ export default function App() {
               <select
                 value={selectedRegion}
                 onChange={(e) => setSelectedRegion(e.target.value)}
-                className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-48"
+                disabled={!!portalFacilitator}
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-48 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50 font-medium"
               >
                 <option value="">Выберите регион...</option>
                 {uniqueRegions.map((r) => (
@@ -2450,7 +2775,8 @@ export default function App() {
                           <select
                             value={selectedRegion}
                             onChange={(e) => setSelectedRegion(e.target.value)}
-                            className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] font-normal normal-case bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 font-sans"
+                            disabled={!!portalFacilitator}
+                            className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] font-normal normal-case bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 font-sans disabled:opacity-75 disabled:cursor-not-allowed"
                           >
                             <option value="">Все регионы</option>
                             {uniqueRegions.map((r) => (
@@ -2478,11 +2804,13 @@ export default function App() {
                           </select>
                         </div>
                       </th>
-                      {isAdminMode && (
+                      {(isAdminMode || !!portalFacilitator) && (
                         <>
-                          <th className="px-4 py-3 align-middle w-32 text-left text-slate-700 font-bold bg-slate-50 border-r border-slate-200">
-                            ГК
-                          </th>
+                          {isReallyAdmin && (
+                            <th className="px-4 py-3 align-middle w-32 text-left text-slate-700 font-bold bg-slate-50 border-r border-slate-200">
+                              ГК
+                            </th>
+                          )}
                           <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
                             {getSupplierLabel("supplier2")}
                           </th>
@@ -2494,9 +2822,11 @@ export default function App() {
                           </th>
                         </>
                       )}
-                      <th className="px-4 py-3 align-middle w-40 text-left text-emerald-700 font-bold bg-emerald-50/40">
-                        Итоговая цена
-                      </th>
+                      {showBestPrice && (
+                        <th className="px-4 py-3 align-middle w-40 text-left text-emerald-700 font-bold bg-emerald-50/40">
+                          Лучшая цена
+                        </th>
+                      )}
                       <th className="px-4 py-3 align-middle w-24 text-center">
                         Ед. изм.
                       </th>
@@ -2507,7 +2837,7 @@ export default function App() {
                     {displayProducts.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={10}
+                          colSpan={7 + (isReallyAdmin ? 4 : portalFacilitator ? 3 : 0) + (showBestPrice ? 1 : 0)}
                           className="px-6 py-12 text-center text-slate-500 bg-slate-50/50"
                         >
                           {isParsing ? (
@@ -2680,19 +3010,21 @@ export default function App() {
                               {(p.spheres && p.spheres.length > 0) ? p.spheres.join(", ") : (p.sphere || "—")}
                             </div>
                           </td>
-                          {isAdminMode && (
+                          {(isAdminMode || !!portalFacilitator) && (
                             <>
-                              <td className="px-4 py-4 bg-slate-50 border-r border-slate-100 font-mono font-semibold text-xs text-slate-800">
-                                {p.price !== undefined && p.price > 0 ? (
-                                  <div className="flex items-center justify-start">
-                                    {p.price.toFixed(2)} с.
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 italic text-[11px]">
-                                    Нет цены
-                                  </span>
-                                )}
-                              </td>
+                              {isReallyAdmin && (
+                                <td className="px-4 py-4 bg-slate-50 border-r border-slate-100 font-mono font-semibold text-xs text-slate-800">
+                                  {p.price !== undefined && p.price > 0 ? (
+                                    <div className="flex items-center justify-start">
+                                      {p.price.toFixed(2)} с.
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-300 italic text-[11px]">
+                                      Нет цены
+                                    </span>
+                                  )}
+                                </td>
+                              )}
                               <td
                                 className="px-4 py-4 bg-indigo-50/10"
                                 onClick={(e) => e.stopPropagation()}
@@ -2718,7 +3050,7 @@ export default function App() {
                                         </span>
                                       )}
                                     </span>
-                                    {s2Price === minPrice && (
+                                    {!showBestPrice && s2Price !== undefined && s2Price > 0 && (
                                       <button
                                         onClick={() =>
                                           handleAddToCart(p, "supplier2", s2Price)
@@ -2761,7 +3093,7 @@ export default function App() {
                                         </span>
                                       )}
                                     </span>
-                                    {s3Price === minPrice && (
+                                    {!showBestPrice && s3Price !== undefined && s3Price > 0 && (
                                       <button
                                         onClick={() =>
                                           handleAddToCart(p, "supplier3", s3Price)
@@ -2804,7 +3136,7 @@ export default function App() {
                                         </span>
                                       )}
                                     </span>
-                                    {s4Price === minPrice && (
+                                    {!showBestPrice && s4Price !== undefined && s4Price > 0 && (
                                       <button
                                         onClick={() =>
                                           handleAddToCart(p, "supplier4", s4Price)
@@ -2824,43 +3156,45 @@ export default function App() {
                               </td>
                             </>
                           )}
-                          <td
-                            className="px-4 py-4 bg-emerald-50/10"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {minPrice !== null && minPrice > 0 ? (
-                              <div className="flex items-center gap-1.5 justify-start">
-                                <span className="font-mono font-bold text-sm text-emerald-800 bg-white border border-emerald-200 px-2.5 py-1 rounded shadow-sm">
-                                  {minPrice.toFixed(2)} с.
+                          {showBestPrice && (
+                            <td
+                              className="px-4 py-4 bg-emerald-50/10"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {minPrice !== null && minPrice > 0 ? (
+                                <div className="flex items-center gap-1.5 justify-start">
+                                  <span className="font-mono font-bold text-sm text-emerald-800 bg-white border border-emerald-200 px-2.5 py-1 rounded shadow-sm">
+                                    {minPrice.toFixed(2)} с.
+                                  </span>
+                                  <button
+                                    onClick={() => {
+                                      let sup:
+                                        | "supplier2"
+                                        | "supplier3"
+                                        | "supplier4" = "supplier2";
+                                      if (minPrice === s3Price) sup = "supplier3";
+                                      if (minPrice === s4Price) sup = "supplier4";
+                                      handleAddToCart(p, sup, minPrice);
+                                    }}
+                                    className="p-1.5 text-emerald-100 hover:text-emerald-700 hover:bg-emerald-100 rounded transition-colors text-emerald-600"
+                                    title="В выборку (по лучшей цене)"
+                                  >
+                                    <ShoppingCart className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 italic text-[11px]">
+                                  Нет цены
                                 </span>
-                                <button
-                                  onClick={() => {
-                                    let sup:
-                                      | "supplier2"
-                                      | "supplier3"
-                                      | "supplier4" = "supplier2";
-                                    if (minPrice === s3Price) sup = "supplier3";
-                                    if (minPrice === s4Price) sup = "supplier4";
-                                    handleAddToCart(p, sup, minPrice);
-                                  }}
-                                  className="p-1.5 text-emerald-100 hover:text-emerald-700 hover:bg-emerald-100 rounded transition-colors text-emerald-600"
-                                  title="В выборку (по лучшей цене)"
-                                >
-                                  <ShoppingCart className="w-4 h-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="text-slate-300 italic text-[11px]">
-                                Нет цены
-                              </span>
-                            )}
-                          </td>
+                              )}
+                            </td>
+                          )}
                           <td className="px-4 py-4 text-center text-slate-600 text-xs font-semibold">
                             1 {p.unit || "шт."}
                           </td>
                           <td className="px-4 py-4">
                             <div className="flex items-center gap-0.5 justify-end">
-                              {isAdminMode && (
+                              {isReallyAdmin && (
                                 <>
                                   <button
                                     onClick={(e) => handleEditProduct(p, e)}
@@ -2903,7 +3237,7 @@ export default function App() {
           </div>
 
           {/* Bottom Action Area (Photo Input) */}
-          {isAdminMode && !isTabletMode && (
+          {isReallyAdmin && !isTabletMode && (
             <section
               onDrop={onDrop}
               onDragOver={onDragOver}
@@ -3133,7 +3467,7 @@ export default function App() {
                 </button>
               </div>
               <div className="p-6">
-                <p className="text-sm text-slate-600 mb-6 leading-relaxed">
+                <p className="text-sm text-slate-600 mb-4 leading-relaxed">
                   Вы уверены, что хотите запустить нормализацию всех названий
                   товаров? Искусственный интеллект автоматически проанализирует
                   текущие названия каждого товара и сделает их более
@@ -3143,7 +3477,34 @@ export default function App() {
                   изменить названия навсегда.
                 </p>
 
-                <div className="flex justify-end gap-3">
+                <p className="text-xs font-semibold text-slate-700 mb-2">
+                  Для подтверждения введите пароль:
+                </p>
+                <input
+                  type="password"
+                  value={normalizePasswordInput}
+                  onChange={(e) => {
+                    setNormalizePasswordInput(e.target.value);
+                    setNormalizePasswordError("");
+                  }}
+                  placeholder="Пароль"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 mb-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-center text-slate-900 shadow-sm text-sm"
+                  disabled={isNormalizingState.active}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (normalizePasswordInput === "020779") {
+                        confirmNormalizeAllNames();
+                      } else {
+                        setNormalizePasswordError("Неверный пароль!");
+                      }
+                    }
+                  }}
+                />
+                {normalizePasswordError && (
+                  <p className="text-xs text-rose-600 font-semibold mb-4">{normalizePasswordError}</p>
+                )}
+
+                <div className="flex justify-end gap-3 mt-4">
                   <button
                     type="button"
                     onClick={() => setIsNormalizeConfirmOpen(false)}
@@ -3153,9 +3514,15 @@ export default function App() {
                     Отмена
                   </button>
                   <button
-                    onClick={confirmNormalizeAllNames}
+                    onClick={() => {
+                      if (normalizePasswordInput === "020779") {
+                        confirmNormalizeAllNames();
+                      } else {
+                        setNormalizePasswordError("Неверный пароль!");
+                      }
+                    }}
                     disabled={
-                      isNormalizingState.active || products.length === 0
+                      isNormalizingState.active || products.length === 0 || !normalizePasswordInput
                     }
                     className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm disabled:opacity-50"
                   >
@@ -3201,16 +3568,21 @@ export default function App() {
                     в базе. Все текущие ID будут перезаписаны.
                   </p>
                   <p className="text-sm text-slate-600 mb-4">
-                    Введите секретный код для подтверждения:
+                    Введите пароль для подтверждения:
                   </p>
 
                   <input
-                    type="text"
+                    type="password"
                     value={deleteAllCode}
                     onChange={(e) => setDeleteAllCode(e.target.value)}
-                    placeholder="Секретный код"
+                    placeholder="Пароль"
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-center tracking-widest text-slate-900 shadow-sm"
                     disabled={isExporting}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        confirmGenerateMissingCodes();
+                      }
+                    }}
                   />
                 </div>
               )}
@@ -3239,6 +3611,78 @@ export default function App() {
                     )}
                   </button>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Best Price Password Modal */}
+        {isBestPricePasswordModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col border border-indigo-100">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-indigo-50">
+                <h2 className="text-sm font-bold text-indigo-700 flex items-center gap-2">
+                  <Lock className="w-4 h-4" />
+                  Активация режима "Лучшая цена"
+                </h2>
+                <button
+                  onClick={() => setIsBestPricePasswordModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-indigo-700 hover:bg-indigo-100 rounded-md transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-6 flex flex-col gap-4">
+                <p className="text-xs text-slate-600">
+                  Для отображения столбца «Лучшая цена» требуется ввести секретный код:
+                </p>
+                <input
+                  type="password"
+                  value={bestPricePasswordInput}
+                  onChange={(e) => {
+                    setBestPricePasswordInput(e.target.value);
+                    setBestPricePasswordError("");
+                  }}
+                  placeholder="Введите пароль..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (bestPricePasswordInput === "020779") {
+                        setShowBestPrice(true);
+                        setIsBestPricePasswordModalOpen(false);
+                      } else {
+                        setBestPricePasswordError("Неверный пароль!");
+                      }
+                    }
+                  }}
+                  autoFocus
+                />
+                {bestPricePasswordError && (
+                  <p className="text-xs text-rose-600 font-semibold">{bestPricePasswordError}</p>
+                )}
+              </div>
+
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+                <button
+                  onClick={() => setIsBestPricePasswordModalOpen(false)}
+                  className="px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-md transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={() => {
+                    if (bestPricePasswordInput === "020779") {
+                      setShowBestPrice(true);
+                      setIsBestPricePasswordModalOpen(false);
+                    } else {
+                      setBestPricePasswordError("Неверный пароль!");
+                    }
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-md transition-colors"
+                >
+                  Подтвердить
+                </button>
               </div>
             </div>
           </div>
@@ -3966,7 +4410,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              {isAdminMode && (
+              {isReallyAdmin && (
                 <div className="p-4 border-t border-slate-100 flex gap-3 justify-end bg-slate-50">
                   <button
                     onClick={(e) => {
@@ -4093,6 +4537,10 @@ export default function App() {
         logisticsCost={
           selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0
         }
+        showBestPrice={showBestPrice}
+        supplierPhones={globalDict.supplierPhones}
+        supplierLegalNames={globalDict.supplierLegalNames}
+        selectedSphere={selectedSphere}
       />
 
       {!isCartPrinting && (
@@ -4435,6 +4883,9 @@ export default function App() {
             selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0
           }
           selectedRegion={selectedRegion}
+          selectedSphere={selectedSphere}
+          supplierPhones={globalDict.supplierPhones}
+          supplierLegalNames={globalDict.supplierLegalNames}
         />
       )}
     </>

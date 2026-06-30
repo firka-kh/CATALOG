@@ -63,6 +63,10 @@ interface Props {
   regions?: string[];
   onRegionChange?: (region: string) => void;
   logisticsCost?: number;
+  showBestPrice?: boolean;
+  supplierPhones?: Record<string, string>;
+  supplierLegalNames?: Record<string, string>;
+  selectedSphere?: string;
 }
 
 export function CartModal({
@@ -80,9 +84,11 @@ export function CartModal({
   regions = [],
   onRegionChange,
   logisticsCost = 0,
+  showBestPrice = false,
+  supplierPhones,
+  supplierLegalNames,
+  selectedSphere,
 }: Props) {
-  if (!isOpen) return null;
-
   const [addMode, setAddMode] = useState<"single" | "mass">("single");
   const [massInputText, setMassInputText] = useState("");
 
@@ -92,11 +98,25 @@ export function CartModal({
     useState<Product | null>(null);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
 
-  const cartLinesTotal = cart.reduce(
+  const displayedCart = useMemo(() => {
+    if (!selectedSphere) return cart;
+    return cart.filter((item) => {
+      const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
+        ? item.product.spheres 
+        : [item.product.sphere || "Общее"];
+      return prodSpheres.some(s => 
+        s === selectedSphere || 
+        s.includes(selectedSphere) || 
+        selectedSphere.includes(s)
+      );
+    });
+  }, [cart, selectedSphere]);
+
+  const cartLinesTotal = displayedCart.reduce(
     (sum, item) => sum + (item.selectedPrice === Infinity ? 0 : (item.selectedPrice || 0)) * item.quantity,
     0,
   );
-  const total = cartLinesTotal + (cart.length > 0 ? logisticsCost : 0);
+  const total = cartLinesTotal + (displayedCart.length > 0 ? logisticsCost : 0);
 
   const getSupplierName = (
     supp?: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
@@ -348,6 +368,8 @@ export function CartModal({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
@@ -357,16 +379,23 @@ export function CartModal({
             <h2 className="text-xl font-bold text-slate-900">
               Лист выборки (корзина)
             </h2>
-            <p className="text-sm text-slate-500 mt-1">
-              {cart.length} наименований
-            </p>
+            <div className="text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <span>{displayedCart.length} наименований</span>
+              <span className="text-slate-300">|</span>
+              <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-xs border border-slate-200">
+                Регион: {selectedRegion || "Все регионы"}
+              </span>
+              <span className="font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-xs border border-indigo-100">
+                Сфера: {selectedSphere || "Все сферы"}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                downloadCartExcel(cart, cart.length > 0 ? logisticsCost : 0);
+                downloadCartExcel(displayedCart, displayedCart.length > 0 ? logisticsCost : 0, suppliers, selectedRegion, selectedSphere);
               }}
-              disabled={cart.length === 0}
+              disabled={displayedCart.length === 0}
               className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md transition-colors text-sm font-medium"
             >
               <FileDown className="w-4 h-4" />
@@ -374,7 +403,7 @@ export function CartModal({
             </button>
             <button
               onClick={onPrint}
-              disabled={cart.length === 0}
+              disabled={displayedCart.length === 0}
               className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md transition-colors text-sm font-medium"
             >
               <Printer className="w-4 h-4" />
@@ -783,14 +812,14 @@ export function CartModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50 relative z-10">
-          {cart.length === 0 ? (
+          {displayedCart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-16">
               <Package className="w-12 h-12 mb-4 text-slate-300" />
               <p>Корзина пуста. Добавьте товары из каталога.</p>
             </div>
           ) : (
             <div className="grid gap-4">
-              {cart.map((item) => (
+              {displayedCart.map((item) => (
                 <div
                   key={`${item.product.id}-${item.selectedSupplier}`}
                   className="bg-white border border-slate-200 p-4 rounded-lg flex items-center gap-4 shadow-sm"
@@ -830,18 +859,40 @@ export function CartModal({
                          <span className="inline-flex items-center gap-1.5 bg-rose-50 text-rose-600 px-2.5 py-1 rounded-md font-bold border border-rose-100 text-[11px]">
                            НЕТ ЦЕНЫ
                          </span>
+                       ) : showBestPrice ? (
+                         <span
+                           className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-md font-bold border border-emerald-100 text-[11px]"
+                           title="Выбран поставщик с минимальной ценой"
+                         >
+                           <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shrink-0"></span>
+                           {getSupplierName(item.selectedSupplier || 'supplier2')}
+                           <span className="text-[9px] bg-emerald-600 text-white px-1 rounded-sm uppercase tracking-wider font-extrabold scale-90">
+                             мин
+                           </span>
+                         </span>
                        ) : (
-                        <span
-                          className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-md font-bold border border-emerald-100 text-[11px]"
-                          title="Выбран поставщик с минимальной ценой"
-                        >
-                          <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shrink-0"></span>
-                          {getSupplierName(item.selectedSupplier)}
-                          <span className="text-[9px] bg-emerald-600 text-white px-1 rounded-sm uppercase tracking-wider font-extrabold scale-90">
-                            мин
-                          </span>
-                        </span>
+                         <span
+                           className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-800 px-2.5 py-1 rounded-md font-bold border border-indigo-100 text-[11px]"
+                         >
+                           <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0"></span>
+                           {getSupplierName(item.selectedSupplier || 'supplier2')}
+                         </span>
                        )}
+
+                      {item.selectedPrice !== Infinity && (supplierLegalNames?.[item.selectedSupplier || 'supplier2'] || supplierPhones?.[item.selectedSupplier || 'supplier2']) && (
+                        <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-[10px] text-slate-500 px-2 py-0.5 rounded font-medium">
+                          {supplierLegalNames?.[item.selectedSupplier || 'supplier2'] && (
+                            <span>Юр: {supplierLegalNames[item.selectedSupplier || 'supplier2']}</span>
+                          )}
+                          {supplierLegalNames?.[item.selectedSupplier || 'supplier2'] && supplierPhones?.[item.selectedSupplier || 'supplier2'] && (
+                            <span className="text-slate-300">|</span>
+                          )}
+                          {supplierPhones?.[item.selectedSupplier || 'supplier2'] && (
+                            <span>Тел: {supplierPhones[item.selectedSupplier || 'supplier2']}</span>
+                          )}
+                        </span>
+                      )}
+
                       <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium text-[11px] truncate max-w-full">
                         {item.product.spheres && item.product.spheres.length > 0 ? item.product.spheres.join(", ") : item.product.sphere}
                       </span>
@@ -922,7 +973,7 @@ export function CartModal({
         </div>
 
         {/* Footer */}
-        {cart.length > 0 && (
+        {displayedCart.length > 0 && (
           <div className="border-t border-slate-200 p-6 bg-white shrink-0 flex items-center justify-between">
             <div className="text-slate-700 font-bold">Итого:</div>
             <div className="text-3xl font-bold font-mono text-slate-900">

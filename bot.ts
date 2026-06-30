@@ -9,6 +9,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  deleteDoc,
   orderBy,
   limit,
 } from "firebase/firestore";
@@ -344,7 +345,35 @@ async function getMainKeyboard(chatId: number) {
             },
           },
         ],
-        [{ text: "🛠 Личный кабинет фасилитатора" }],
+        [{ text: "🛠 Личный кабинет фасилитатора" }, { text: "🚪 Выйти" }],
+      ],
+      resize_keyboard: true,
+    };
+  }
+
+  if (supplierUsers.has(chatId)) {
+    return {
+      keyboard: [
+        [{ text: "🛠 Панель администратора" }, { text: "🚪 Выйти" }],
+      ],
+      resize_keyboard: true,
+    };
+  }
+
+  if (adminUsers.has(chatId)) {
+    return {
+      keyboard: [
+        [
+          {
+            text: "🛍 Открыть Каталог",
+            web_app: {
+              url:
+                process.env.MINI_APP_URL ||
+                "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+            },
+          },
+        ],
+        [{ text: "🛠 Панель администратора" }, { text: "🚪 Выйти" }],
       ],
       resize_keyboard: true,
     };
@@ -744,6 +773,36 @@ if (bot) {
         bot?.sendMessage(chatId, "Действие отменено.", {
           reply_markup: replyMarkup,
         });
+      });
+      return;
+    }
+
+    if (
+      text === "/logout" || 
+      text === "🚪 Выйти" || 
+      text === "Выйти" || 
+      text === "Сбросить роль" || 
+      text === "Сменить роль" ||
+      text === "🚪 Выйти (Сбросить роль)"
+    ) {
+      adminUsers.delete(chatId);
+      supplierUsers.delete(chatId);
+      facilitatorUsers.delete(chatId);
+      userStates.delete(chatId);
+      try {
+        await deleteDoc(doc(db, "telegram_users", chatId.toString()));
+      } catch (e) {
+        console.error("Failed to delete user doc in Firestore on logout:", e);
+      }
+      
+      getMainKeyboard(chatId).then((replyMarkup) => {
+        bot?.sendMessage(
+          chatId,
+          "🚪 Вы успешно вышли из системы (роль сброшена).\n\nТеперь вы можете авторизоваться заново с помощью команды /admin или кнопки «Вход» (введя код другого поставщика или фасилитатора).",
+          {
+            reply_markup: replyMarkup,
+          }
+        );
       });
       return;
     }
@@ -1319,6 +1378,7 @@ if (bot) {
             reply_markup: {
               keyboard: [
                 [{ text: "➕ Добавить товар" }],
+                [{ text: "🚪 Выйти (Сбросить роль)" }],
                 [{ text: "❌ Отмена" }],
               ],
               resize_keyboard: true,
@@ -1338,6 +1398,7 @@ if (bot) {
             reply_markup: {
               keyboard: [
                 [{ text: "➕ Добавить товар" }],
+                [{ text: "🚪 Выйти (Сбросить роль)" }],
                 [{ text: "❌ Отмена" }],
               ],
               resize_keyboard: true,
@@ -1369,6 +1430,7 @@ if (bot) {
                     },
                   },
                 ],
+                [{ text: "🚪 Выйти (Сбросить роль)" }],
                 [{ text: "❌ Отмена" }],
               ],
               resize_keyboard: true,

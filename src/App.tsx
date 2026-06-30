@@ -1662,6 +1662,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     });
   };
 
+  const handleClearCart = () => {
+    setCart([]);
+  };
+
   const handleCartPrint = () => {
     if (window !== window.parent) {
       setPrintWarningType("cart");
@@ -4665,6 +4669,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         supplierPhones={globalDict.supplierPhones}
         supplierLegalNames={globalDict.supplierLegalNames}
         selectedSphere={selectedSphere}
+        onClearCart={handleClearCart}
       />
 
       {!isCartPrinting && (

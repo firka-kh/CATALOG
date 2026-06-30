@@ -67,6 +67,7 @@ interface Props {
   supplierPhones?: Record<string, string>;
   supplierLegalNames?: Record<string, string>;
   selectedSphere?: string;
+  onClearCart?: () => void;
 }
 
 export function CartModal({
@@ -88,6 +89,7 @@ export function CartModal({
   supplierPhones,
   supplierLegalNames,
   selectedSphere,
+  onClearCart,
 }: Props) {
   const [addMode, setAddMode] = useState<"single" | "mass">("single");
   const [massInputText, setMassInputText] = useState("");
@@ -97,6 +99,30 @@ export function CartModal({
   const [selectedQuickProduct, setSelectedQuickProduct] =
     useState<Product | null>(null);
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
+
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsConfirmingClear(false);
+    }
+  }, [isOpen]);
+
+  const handleClearCartClick = () => {
+    if (!isConfirmingClear) {
+      setIsConfirmingClear(true);
+    } else {
+      onClearCart?.();
+      setIsConfirmingClear(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isConfirmingClear) {
+      const t = setTimeout(() => setIsConfirmingClear(false), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [isConfirmingClear]);
 
   const displayedCart = useMemo(() => {
     if (!selectedSphere) return cart;
@@ -1021,10 +1047,23 @@ export function CartModal({
 
         {/* Footer */}
         {displayedCart.length > 0 && (
-          <div className="border-t border-slate-200 p-6 bg-white shrink-0 flex items-center justify-between">
-            <div className="text-slate-700 font-bold">Итого:</div>
-            <div className="text-3xl font-bold font-mono text-slate-900">
-              {total.toFixed(2)} с.
+          <div className="border-t border-slate-200 p-4 sm:p-6 bg-slate-50 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <button
+              onClick={handleClearCartClick}
+              className={`flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg border transition-all text-xs sm:text-sm font-semibold w-full sm:w-auto justify-center shadow-sm ${
+                isConfirmingClear
+                  ? "bg-red-600 hover:bg-red-700 text-white border-red-700 animate-pulse"
+                  : "bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200"
+              }`}
+            >
+              <Trash2 className="w-4 h-4 shrink-0" />
+              <span>{isConfirmingClear ? "Вы уверены? Нажмите для подтверждения" : "Очистить корзину"}</span>
+            </button>
+            <div className="flex items-center justify-between sm:justify-end gap-6 w-full sm:w-auto">
+              <div className="text-slate-700 font-bold text-sm sm:text-base">Итого:</div>
+              <div className="text-2xl sm:text-3xl font-bold font-mono text-slate-900">
+                {total.toFixed(2)} с.
+              </div>
             </div>
           </div>
         )}

@@ -871,14 +871,43 @@ export function CartModal({
                                мин
                              </span>
                            </span>
-                         ) : (
-                           <span
-                             className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-800 px-2 py-0.5 sm:py-1 rounded-md font-bold border border-indigo-100 text-[10px] sm:text-[11px]"
-                           >
-                             <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0"></span>
-                             {getSupplierName(item.selectedSupplier || 'supplier2')}
-                           </span>
-                         )}
+                         ) : (() => {
+                           const availableSuppliers = (["supplier2", "supplier3", "supplier4"] as const).map(sup => {
+                             const price = getProductPrice(item.product, sup, selectedRegion || "Душанбе");
+                             return { id: sup, price };
+                           }).filter(s => s.price > 0);
+
+                           if (onUpdateSupplier && availableSuppliers.length > 1) {
+                             return (
+                               <div className="inline-flex items-center gap-1.5 bg-indigo-50 border border-indigo-200 px-2 py-0.5 sm:py-1 rounded-md text-indigo-800 font-bold text-[10px] sm:text-[11px] shadow-sm">
+                                 <span className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider">Поставщик:</span>
+                                 <select
+                                   value={item.selectedSupplier}
+                                   onChange={(e) => {
+                                     const newSup = e.target.value as "supplier2" | "supplier3" | "supplier4";
+                                     onUpdateSupplier(item.product.id, item.selectedSupplier, newSup);
+                                   }}
+                                   className="bg-transparent border-none text-indigo-900 font-bold text-[10px] sm:text-[11px] focus:outline-none cursor-pointer transition-colors p-0 pr-1"
+                                 >
+                                   {availableSuppliers.map((s) => (
+                                     <option key={s.id} value={s.id} className="bg-white text-slate-900 font-medium">
+                                       {getSupplierName(s.id)} ({s.price.toFixed(2)} с.)
+                                     </option>
+                                   ))}
+                                 </select>
+                               </div>
+                             );
+                           }
+
+                           return (
+                             <span
+                               className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-800 px-2 py-0.5 sm:py-1 rounded-md font-bold border border-indigo-100 text-[10px] sm:text-[11px]"
+                             >
+                               <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full shrink-0"></span>
+                               {getSupplierName(item.selectedSupplier || 'supplier2')}
+                             </span>
+                           );
+                         })()}
 
                         {item.selectedPrice !== Infinity && (supplierLegalNames?.[item.selectedSupplier || 'supplier2'] || supplierPhones?.[item.selectedSupplier || 'supplier2']) && (
                           <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-[9px] sm:text-[10px] text-slate-500 px-1.5 sm:px-2 py-0.5 rounded font-medium">

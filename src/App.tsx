@@ -4327,11 +4327,22 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                         )}
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1 font-mono">
-                      <div className="flex justify-between items-center text-sm">
+                      <div className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
                         <span className="text-slate-600">
                           {getSupplierLabel("supplier2")}:
                         </span>
-                        <span className="font-bold text-slate-950">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-950">
+                            {(() => {
+                              const activeReg = selectedRegion || "Душанбе";
+                              const val = getProductPriceForSupplierAndRegion(
+                                viewingProduct,
+                                "supplier2",
+                                activeReg,
+                              );
+                              return val > 0 ? `${val.toFixed(2)} с.` : "—";
+                            })()}
+                          </span>
                           {(() => {
                             const activeReg = selectedRegion || "Душанбе";
                             const val = getProductPriceForSupplierAndRegion(
@@ -4339,15 +4350,52 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               "supplier2",
                               activeReg,
                             );
-                            return val > 0 ? `${val.toFixed(2)} с.` : "—";
+                            if (val > 0) {
+                              const qty = cart.find(
+                                (item) =>
+                                  item.product.id === viewingProduct.id &&
+                                  item.selectedSupplier === "supplier2"
+                              )?.quantity || 0;
+
+                              return (
+                                <div className="flex items-center gap-1">
+                                  {qty > 0 && (
+                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                      {qty} {viewingProduct.unit || "шт"}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      handleAddToCart(viewingProduct, "supplier2", val);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                    title={`Добавить в выборку (${getSupplierLabel("supplier2")})`}
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            }
+                            return null;
                           })()}
-                        </span>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center text-sm">
+                      <div className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
                         <span className="text-slate-600">
                           {getSupplierLabel("supplier3")}:
                         </span>
-                        <span className="font-bold text-slate-950">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-950">
+                            {(() => {
+                              const activeReg = selectedRegion || "Душанбе";
+                              const val = getProductPriceForSupplierAndRegion(
+                                viewingProduct,
+                                "supplier3",
+                                activeReg,
+                              );
+                              return val > 0 ? `${val.toFixed(2)} с.` : "—";
+                            })()}
+                          </span>
                           {(() => {
                             const activeReg = selectedRegion || "Душанбе";
                             const val = getProductPriceForSupplierAndRegion(
@@ -4355,15 +4403,52 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               "supplier3",
                               activeReg,
                             );
-                            return val > 0 ? `${val.toFixed(2)} с.` : "—";
+                            if (val > 0) {
+                              const qty = cart.find(
+                                (item) =>
+                                  item.product.id === viewingProduct.id &&
+                                  item.selectedSupplier === "supplier3"
+                              )?.quantity || 0;
+
+                              return (
+                                <div className="flex items-center gap-1">
+                                  {qty > 0 && (
+                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                      {qty} {viewingProduct.unit || "шт"}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      handleAddToCart(viewingProduct, "supplier3", val);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                    title={`Добавить в выборку (${getSupplierLabel("supplier3")})`}
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            }
+                            return null;
                           })()}
-                        </span>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center text-sm">
+                      <div className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
                         <span className="text-slate-600">
                           {getSupplierLabel("supplier4")}:
                         </span>
-                        <span className="font-bold text-slate-950">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-950">
+                            {(() => {
+                              const activeReg = selectedRegion || "Душанбе";
+                              const val = getProductPriceForSupplierAndRegion(
+                                viewingProduct,
+                                "supplier4",
+                                activeReg,
+                              );
+                              return val > 0 ? `${val.toFixed(2)} с.` : "—";
+                            })()}
+                          </span>
                           {(() => {
                             const activeReg = selectedRegion || "Душанбе";
                             const val = getProductPriceForSupplierAndRegion(
@@ -4371,9 +4456,35 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               "supplier4",
                               activeReg,
                             );
-                            return val > 0 ? `${val.toFixed(2)} с.` : "—";
+                            if (val > 0) {
+                              const qty = cart.find(
+                                (item) =>
+                                  item.product.id === viewingProduct.id &&
+                                  item.selectedSupplier === "supplier4"
+                              )?.quantity || 0;
+
+                              return (
+                                <div className="flex items-center gap-1">
+                                  {qty > 0 && (
+                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full shrink-0">
+                                      {qty} {viewingProduct.unit || "шт"}
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => {
+                                      handleAddToCart(viewingProduct, "supplier4", val);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                    title={`Добавить в выборку (${getSupplierLabel("supplier4")})`}
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            }
+                            return null;
                           })()}
-                        </span>
+                        </div>
                       </div>
                     </div>
                   </div>

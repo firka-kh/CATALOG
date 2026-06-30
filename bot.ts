@@ -1835,8 +1835,8 @@ if (bot) {
         docPdf.font(fontBoldPath).fontSize(8).fillColor("black");
         docPdf.text("№", 40, 185, { width: 25, align: "center" });
         docPdf.text("ФОТО", 65, 185, { width: 50, align: "center" });
-        docPdf.text("НАИМЕНОВАНИЕ И ОПИСАНИЕ", 125, 185, { width: 170 });
-        docPdf.text("СФЕРА", 305, 185, { width: 80 });
+        docPdf.text("НАИМЕНОВАНИЕ", 125, 185, { width: 190 });
+        docPdf.text("СФЕРА", 325, 185, { width: 60 });
         docPdf.text("ЦЕНА", 395, 185, { width: 45, align: "right" });
         docPdf.text("КОЛ-ВО", 450, 185, { width: 40, align: "center" });
         docPdf.text("СУММА", 500, 185, { width: 50, align: "right" });
@@ -1858,8 +1858,8 @@ if (bot) {
           docPdf.font(fontBoldPath).fontSize(8).fillColor("black");
           docPdf.text("№", 40, 48, { width: 25, align: "center" });
           docPdf.text("ФОТО", 65, 48, { width: 50, align: "center" });
-          docPdf.text("НАИМЕНОВАНИЕ И ОПИСАНИЕ", 125, 48, { width: 170 });
-          docPdf.text("СФЕРА", 305, 48, { width: 80 });
+          docPdf.text("НАИМЕНОВАНИЕ", 125, 48, { width: 190 });
+          docPdf.text("СФЕРА", 325, 48, { width: 60 });
           docPdf.text("ЦЕНА", 395, 48, { width: 45, align: "right" });
           docPdf.text("КОЛ-ВО", 450, 48, { width: 40, align: "center" });
           docPdf.text("СУММА", 500, 48, { width: 50, align: "right" });
@@ -1871,8 +1871,8 @@ if (bot) {
           const p = item.product;
 
           // Compute wrapped text heights
-          const nameH = docPdf.heightOfString(p.name || "Без названия", { width: 170, fontSize: 9 });
-          const descH = p.description ? docPdf.heightOfString(p.description, { width: 170, fontSize: 8 }) : 0;
+          const nameH = docPdf.heightOfString(p.name || "Без названия", { width: 190, fontSize: 9 });
+          const descH = 0;
           const textHeight = nameH + descH + 18;
           const rowHeight = Math.max(textHeight, 45);
 
@@ -1936,20 +1936,11 @@ if (bot) {
           // Col 3: Title and Code
           const codeText = p.code ? `#${p.code}` : `#${p.id.substring(0, 8)}`;
           docPdf.font(fontBoldPath).fontSize(8).fillColor("#4f46e5").text(codeText, 125, currentY);
-          const codeW = docPdf.widthOfString(codeText) + 5;
           docPdf
             .font(fontBoldPath)
             .fontSize(9)
             .fillColor("black")
-            .text(p.name || "Без названия", 125 + codeW, currentY, { width: 170 - codeW });
-
-          if (p.description) {
-            docPdf
-              .font(fontPath)
-              .fontSize(8)
-              .fillColor("#4b5563")
-              .text(p.description, 125, currentY + 15, { width: 170 });
-          }
+            .text(p.name || "Без названия", 125, currentY + 12, { width: 190 });
 
           // Col 4: Sphere
           const itemSpheres = p.spheres && p.spheres.length > 0 ? p.spheres.join(", ") : (p.sphere || "—");
@@ -1957,7 +1948,7 @@ if (bot) {
             .font(fontPath)
             .fontSize(8)
             .fillColor("#374151")
-            .text(itemSpheres, 305, currentY, { width: 80 });
+            .text(itemSpheres, 325, currentY, { width: 60 });
 
           // Col 5: Price
           const hasPrice = item.selectedPrice && item.selectedPrice !== Infinity && item.selectedPrice > 0;
@@ -2036,11 +2027,11 @@ if (bot) {
         currentY += 10;
         docPdf
           .font(fontBoldPath)
-          .fontSize(12)
+          .fontSize(11)
           .fillColor("black")
-          .text("ИТОГО К ОПЛАТЕ:", 250, currentY, { width: 190, align: "right" });
-        docPdf.text(`${finalTotal.toFixed(2)} с.`, 450, currentY - 2, {
-          width: 100,
+          .text("ИТОГО К ОПЛАТЕ:", 200, currentY, { width: 230, align: "right" });
+        docPdf.text(`${finalTotal.toFixed(2)} с.`, 430, currentY - 1, {
+          width: 120,
           align: "right",
         });
 
@@ -2230,8 +2221,7 @@ if (bot) {
             sphereTotal += sum;
             const r = ws.addRow([
               idx + 1,
-              item.product.name +
-                (item.product.description ? "\n" + item.product.description : ""),
+              item.product.name,
               item.product.unit || "шт.",
               item.quantity,
               item.selectedPrice > 0 ? item.selectedPrice : "-",

@@ -125,8 +125,8 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                 <tr className="bg-gray-100 uppercase text-xs font-bold border-y-2 border-black">
                   <th className="p-3 w-16">№</th>
                   <th className="p-3 w-20">Фото</th>
-                  <th className="p-3">Наименование и Описание</th>
-                  <th className="p-3 w-48 font-semibold">Сфера</th>
+                  <th className="p-3">Наименование</th>
+                  <th className="p-3 w-28 font-semibold">Сфера</th>
                   <th className="p-3 w-24 text-right border-l border-gray-200">Цена</th>
                   <th className="p-3 w-24 text-center border-l border-gray-200">Кол-во</th>
                   <th className="p-3 w-28 text-right border-l border-gray-200">Сумма</th>
@@ -144,15 +144,16 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                       )}
                     </td>
                     <td className="p-3">
-                      <div className="font-bold text-base flex flex-wrap items-center gap-1.5">
+                      <div className="flex flex-col items-start gap-1">
                         {item.product.code ? (
                           <span className={`font-mono text-xs font-semibold px-1.5 py-0.5 rounded border ${(!item.selectedPrice || item.selectedPrice === Infinity) ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>#{item.product.code}</span>
                         ) : (
                           <span className={`font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border max-w-[100px] truncate ${(!item.selectedPrice || item.selectedPrice === Infinity) ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-400 bg-gray-50 border-gray-100'}`}>{item.product.id}</span>
                         )}
-                        {item.product.name}
+                        <span className="font-bold text-base text-gray-900 leading-tight">
+                          {item.product.name}
+                        </span>
                       </div>
-                      <div className="text-gray-600 font-serif mt-1">{item.product.description}</div>
                     </td>
                     <td className="p-3 text-xs text-gray-700 font-semibold">
                       {selectedSphere ? (
@@ -201,9 +202,9 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                      </td>
                   </tr>
                 )}
-                <tr className="border-t-2 border-black font-bold text-lg bg-gray-50/80 break-inside-avoid">
+                <tr className="border-t-2 border-black font-bold text-base bg-gray-50/80 break-inside-avoid">
                    <td colSpan={6} className="p-4 text-right uppercase">Итого к оплате:</td>
-                   <td className="p-4 text-right font-mono">
+                   <td className="p-4 text-right font-mono whitespace-nowrap">
                        {total.toFixed(2)} с.
                    </td>
                 </tr>

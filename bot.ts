@@ -2081,6 +2081,7 @@ if (bot) {
 
         ws.columns = [
           { key: "index", width: 8 },
+          { key: "code", width: 15 },
           { key: "name", width: 55 },
           { key: "unit", width: 15 },
           { key: "qty", width: 12 },
@@ -2088,7 +2089,7 @@ if (bot) {
           { key: "total", width: 20 },
         ];
 
-        ws.mergeCells("A1:F1");
+        ws.mergeCells("A1:G1");
         const titleCell = ws.getCell("A1");
         titleCell.value = "Буҷети сармоягузорӣ";
         titleCell.font = { bold: true, size: 12 };
@@ -2098,7 +2099,7 @@ if (bot) {
           pattern: "solid",
           fgColor: { argb: "FF4BA0DC" },
         };
-        for (let c = 1; c <= 6; c++) {
+        for (let c = 1; c <= 7; c++) {
           ws.getCell(1, c).border = {
             top: { style: "thin" },
             left: { style: "thin" },
@@ -2114,11 +2115,12 @@ if (bot) {
           "",
           "",
           "",
+          "",
         ]);
-        ws.mergeCells("B2:F2");
+        ws.mergeCells("B2:G2");
         infoRow1.getCell(1).font = { bold: true, size: 10 };
         infoRow1.getCell(2).font = { size: 10 };
-        for (let c = 1; c <= 6; c++) {
+        for (let c = 1; c <= 7; c++) {
           ws.getCell(2, c).border = {
             top: { style: "thin" },
             left: { style: "thin" },
@@ -2134,11 +2136,12 @@ if (bot) {
           "",
           "",
           "",
+          "",
         ]);
-        ws.mergeCells("B3:F3");
+        ws.mergeCells("B3:G3");
         infoRow2.getCell(1).font = { bold: true, size: 10 };
         infoRow2.getCell(2).font = { size: 10 };
-        for (let c = 1; c <= 6; c++) {
+        for (let c = 1; c <= 7; c++) {
           ws.getCell(3, c).border = {
             top: { style: "thin" },
             left: { style: "thin" },
@@ -2149,6 +2152,7 @@ if (bot) {
 
         const headerRow = ws.addRow([
           "#",
+          "ID товара",
           "Ном ва хусусиятҳо",
           "Воҳид",
           "Миқдор",
@@ -2200,13 +2204,13 @@ if (bot) {
           });
           if (itemsInSphere.length === 0) continue;
 
-          const sRow = ws.addRow(["", sName, "", "", "", ""]);
+          const sRow = ws.addRow(["", sName, "", "", "", "", ""]);
           sRow.getCell(2).font = { bold: true, underline: true };
           sRow.getCell(2).alignment = {
             horizontal: "center",
             vertical: "middle",
           };
-          for (let c = 1; c <= 6; c++) {
+          for (let c = 1; c <= 7; c++) {
             sRow.getCell(c).border = {
               top: { style: "thin" },
               left: { style: "thin" },
@@ -2219,8 +2223,10 @@ if (bot) {
           itemsInSphere.forEach((item, idx) => {
             const sum = item.quantity * item.selectedPrice;
             sphereTotal += sum;
+            const codeVal = item.product.code || item.product.id?.substring(0, 8) || "";
             const r = ws.addRow([
               idx + 1,
+              codeVal,
               item.product.name,
               item.product.unit || "шт.",
               item.quantity,
@@ -2230,8 +2236,9 @@ if (bot) {
             r.eachCell((cell, colNumber) => {
               let horz: "left" | "center" | "right" = "right";
               if (colNumber === 1) horz = "center";
-              if (colNumber === 2) horz = "left";
-              if (colNumber === 3) horz = "center";
+              if (colNumber === 2) horz = "center";
+              if (colNumber === 3) horz = "left";
+              if (colNumber === 4) horz = "center";
 
               cell.alignment = {
                 vertical: "middle",
@@ -2249,7 +2256,7 @@ if (bot) {
 
           overallExcelTotal += sphereTotal;
 
-          const subRow = ws.addRow(["", "", "", "", "Ҷамъ", sphereTotal]);
+          const subRow = ws.addRow(["", "", "", "", "", "Ҷамъ", sphereTotal]);
           subRow.eachCell((cell) => {
             cell.alignment = { vertical: "middle", horizontal: "right" };
             cell.border = {
@@ -2259,11 +2266,13 @@ if (bot) {
               right: { style: "thin" },
             };
           });
-          subRow.getCell(5).font = { bold: true };
+          subRow.getCell(6).font = { bold: true };
+          subRow.getCell(7).font = { bold: true };
         }
 
         if (logisticsCost > 0) {
           const logRow = ws.addRow([
+            "",
             "",
             "Логистика",
             "",
@@ -2288,6 +2297,7 @@ if (bot) {
           "",
           "",
           "",
+          "",
           "Ҳамагӣ",
           overallExcelTotal,
         ]);
@@ -2300,8 +2310,8 @@ if (bot) {
             right: { style: "thin" },
           };
         });
-        totalRow.getCell(5).font = { bold: true };
         totalRow.getCell(6).font = { bold: true };
+        totalRow.getCell(7).font = { bold: true };
       }
 
       const excelBuffer = Buffer.from(await wb.xlsx.writeBuffer());

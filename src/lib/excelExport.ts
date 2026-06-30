@@ -328,27 +328,23 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
       cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     });
 
-    const spheresSet = new Set<string>();
+    // Assign each item to exactly one primary sphere to prevent duplicate listing in different spheres
+    const itemToPrimarySphere = new Map<string, string>();
     supplierItems.forEach((i) => {
       const pSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
-      pSpheres.forEach(s => {
-        if (selectedSphere) {
-          if (s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s)) {
-            spheresSet.add(s);
-          }
-        } else {
-          spheresSet.add(s);
-        }
-      });
+      let primary = pSpheres[0] || "Общее";
+      if (selectedSphere && pSpheres.includes(selectedSphere)) {
+        primary = selectedSphere;
+      }
+      itemToPrimarySphere.set(i.product.id, primary);
     });
+
+    const spheresSet = new Set<string>(itemToPrimarySphere.values());
 
     let overallExcelTotal = 0;
 
     for (const sphere of Array.from(spheresSet)) {
-      const itemsInSphere = supplierItems.filter(i => {
-          const iSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
-          return iSpheres.includes(sphere);
-      });
+      const itemsInSphere = supplierItems.filter(i => itemToPrimarySphere.get(i.product.id) === sphere);
       if (itemsInSphere.length === 0) continue;
 
       const sRow = summaryWs.addRow(["", sphere, "", "", "", "", ""]);

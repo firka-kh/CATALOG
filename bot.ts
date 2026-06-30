@@ -404,7 +404,7 @@ async function getMainKeyboard(chatId: number) {
           },
         },
       ],
-      [{ text: "🛠 Панель администратора" }],
+      [{ text: "🔑 Войти (Авторизация)" }],
     ],
     resize_keyboard: true,
   };
@@ -822,7 +822,7 @@ if (bot) {
 
     const userState = userStates.get(chatId) || { state: "IDLE" };
 
-    if (text === "/admin") {
+    if (text === "/admin" || text === "🔑 Войти (Авторизация)" || text === "Войти") {
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,
@@ -1464,6 +1464,24 @@ if (bot) {
           },
         },
       );
+      return;
+    }
+
+    const isUserAuthorized =
+      adminUsers.has(chatId) ||
+      supplierUsers.has(chatId) ||
+      facilitatorUsers.has(chatId);
+
+    if (!isUserAuthorized) {
+      getMainKeyboard(chatId).then((replyMarkup) => {
+        bot?.sendMessage(
+          chatId,
+          "⚠️ Доступ ограничен. Вы не авторизованы в системе.\n\nПожалуйста, нажмите «🔑 Войти (Авторизация)» ниже или используйте команду /admin для входа с помощью вашего секретного кода доступа.",
+          {
+            reply_markup: replyMarkup,
+          }
+        );
+      });
       return;
     }
 
@@ -2229,33 +2247,25 @@ if (bot) {
           };
         });
 
-        const spheresSet = new Set<string>();
+        // Assign each item to exactly one primary sphere to prevent duplicate listing in different spheres
+        const itemToPrimarySphere = new Map<string, string>();
         supplierItems.forEach((i) => {
-          const pSpheres =
-            i.product.spheres && i.product.spheres.length > 0
-              ? i.product.spheres
-              : [i.product.sphere || "Общее"];
-          pSpheres.forEach((s: string) => {
-            if (sphere) {
-              if (s === sphere || s.includes(sphere) || sphere.includes(s)) {
-                spheresSet.add(s);
-              }
-            } else {
-              spheresSet.add(s);
-            }
-          });
+          const pSpheres = i.product.spheres && i.product.spheres.length > 0
+            ? i.product.spheres
+            : [i.product.sphere || "Общее"];
+          let primary = pSpheres[0] || "Общее";
+          if (sphere && pSpheres.includes(sphere)) {
+            primary = sphere;
+          }
+          itemToPrimarySphere.set(i.product.id, primary);
         });
+
+        const spheresSet = new Set<string>(itemToPrimarySphere.values());
 
         let overallExcelTotal = 0;
 
         for (const sName of Array.from(spheresSet)) {
-          const itemsInSphere = supplierItems.filter((i) => {
-            const iSpheres =
-              i.product.spheres && i.product.spheres.length > 0
-                ? i.product.spheres
-                : [i.product.sphere || "Общее"];
-            return iSpheres.includes(sName);
-          });
+          const itemsInSphere = supplierItems.filter((i) => itemToPrimarySphere.get(i.product.id) === sName);
           if (itemsInSphere.length === 0) continue;
 
           const sRow = ws.addRow(["", sName, "", "", "", "", ""]);

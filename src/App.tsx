@@ -358,14 +358,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       const region = globalDict.facilitatorRegions?.[portalFacilitator] || "";
       return {
         key: portalFacilitator,
-        code: globalDict.facilitatorCodes[portalFacilitator],
+        code: String(globalDict.facilitatorCodes[portalFacilitator]),
         name,
         region
       };
     }
 
-    // 2. Fallback check for nearby ID matches (e.g. facilitator1 vs facilitator2)
-    const numStr = portalFacilitator.replace("facilitator", "");
+    // 2. Fallback check for nearby ID matches (e.g. facilitator1 vs facilitator2, or just "facilitator")
+    let numStr = portalFacilitator.replace("facilitator", "");
+    if (numStr === "" || numStr === "1") {
+      numStr = "2"; // First facilitator is facilitator2
+    }
     const num = parseInt(numStr, 10);
     if (!isNaN(num)) {
       const targets = [
@@ -382,7 +385,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           const region = globalDict.facilitatorRegions?.[tk] || "";
           return {
             key: tk,
-            code: globalDict.facilitatorCodes[tk],
+            code: String(globalDict.facilitatorCodes[tk]),
             name,
             region
           };
@@ -399,7 +402,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       const region = globalDict.facilitatorRegions?.[onlyKey] || "";
       return {
         key: onlyKey,
-        code: globalDict.facilitatorCodes[onlyKey],
+        code: String(globalDict.facilitatorCodes[onlyKey]),
         name,
         region
       };
@@ -2308,7 +2311,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           <form 
             onSubmit={(e) => {
               e.preventDefault();
-              if (facilitatorInputCode.trim() === expectedCode) {
+              if (facilitatorInputCode.trim().toLowerCase() === expectedCode.trim().toLowerCase()) {
                 setIsFacilitatorAuthenticated(true);
                 sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
                 sessionStorage.setItem("auth_resolved", "true");

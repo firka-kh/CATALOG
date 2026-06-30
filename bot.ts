@@ -58,10 +58,19 @@ async function ensureFont() {
 ensureFont();
 
 // Firebase init
-const firebaseConfig = {
-  projectId: "gen-lang-client-0196317953",
-  firestoreDatabaseId: "ai-studio-5f59c4a4-c929-485c-8d2d-607080775340",
-};
+const firebaseConfig = (() => {
+  try {
+    return JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf-8")
+    );
+  } catch (e) {
+    console.error("Failed to read firebase-applet-config.json, falling back to basic config", e);
+    return {
+      projectId: "gen-lang-client-0196317953",
+      firestoreDatabaseId: "ai-studio-5f59c4a4-c929-485c-8d2d-607080775340",
+    };
+  }
+})();
 
 const app = initializeApp(firebaseConfig);
 const db = initializeFirestore(
@@ -763,7 +772,7 @@ if (bot) {
       let matchedSupplierId = "";
       const supplierCodes = globalDict.supplierCodes || {};
       for (const [supId, code] of Object.entries(supplierCodes)) {
-        if (code === text) {
+        if (code && String(code).trim().toLowerCase() === text.trim().toLowerCase()) {
           isSupplier = true;
           matchedSupplierId = supId;
           break;
@@ -774,7 +783,7 @@ if (bot) {
       let matchedFacilitatorId = "";
       const facilitatorCodes = globalDict.facilitatorCodes || {};
       for (const [facId, code] of Object.entries(facilitatorCodes)) {
-        if (code === text) {
+        if (code && String(code).trim().toLowerCase() === text.trim().toLowerCase()) {
           isFacilitator = true;
           matchedFacilitatorId = facId;
           break;

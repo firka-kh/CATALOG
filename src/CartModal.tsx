@@ -894,7 +894,23 @@ export function CartModal({
                       )}
 
                       <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-medium text-[11px] truncate max-w-full">
-                        {item.product.spheres && item.product.spheres.length > 0 ? item.product.spheres.join(", ") : item.product.sphere}
+                        {selectedSphere ? (
+                          (() => {
+                            const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
+                              ? item.product.spheres 
+                              : [item.product.sphere || "Общее"];
+                            const matched = prodSpheres.find(s => 
+                              s === selectedSphere || 
+                              s.includes(selectedSphere) || 
+                              selectedSphere.includes(s)
+                            );
+                            return matched || selectedSphere;
+                          })()
+                        ) : (
+                          item.product.spheres && item.product.spheres.length > 0 
+                            ? item.product.spheres.join(", ") 
+                            : (item.product.sphere || "—")
+                        )}
                       </span>
                     </div>
                   </div>

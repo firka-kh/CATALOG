@@ -126,7 +126,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                   <th className="p-3 w-16">№</th>
                   <th className="p-3 w-20">Фото</th>
                   <th className="p-3">Наименование и Описание</th>
-                  <th className="p-3 w-48 font-semibold">Регион и Поставщик</th>
+                  <th className="p-3 w-48 font-semibold">Сфера</th>
                   <th className="p-3 w-24 text-right border-l border-gray-200">Цена</th>
                   <th className="p-3 w-24 text-center border-l border-gray-200">Кол-во</th>
                   <th className="p-3 w-28 text-right border-l border-gray-200">Сумма</th>
@@ -154,14 +154,24 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                       </div>
                       <div className="text-gray-600 font-serif mt-1">{item.product.description}</div>
                     </td>
-                    <td className="p-3 text-xs flex flex-col gap-1 text-gray-700">
-                      <span className="font-bold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded self-start">{item.product.region || '—'}</span>
-                      {item.selectedPrice !== Infinity && (
-                        <span className="font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded self-start mt-1">
-                          {getSupplierName(item.selectedSupplier || supplierKey)}
-                        </span>
+                    <td className="p-3 text-xs text-gray-700 font-semibold">
+                      {selectedSphere ? (
+                        (() => {
+                          const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
+                            ? item.product.spheres 
+                            : [item.product.sphere || "Общее"];
+                          const matched = prodSpheres.find(s => 
+                            s === selectedSphere || 
+                            s.includes(selectedSphere) || 
+                            selectedSphere.includes(s)
+                          );
+                          return matched || selectedSphere;
+                        })()
+                      ) : (
+                        item.product.spheres && item.product.spheres.length > 0 
+                          ? item.product.spheres.join(", ") 
+                          : (item.product.sphere || "—")
                       )}
-                      <span className="italic text-gray-500 mt-1">{item.product.sphere}</span>
                     </td>
                     <td className="p-3 text-right font-mono border-l border-gray-100">
                       {(!item.selectedPrice || item.selectedPrice === Infinity) ? (

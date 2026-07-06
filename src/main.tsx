@@ -16,7 +16,7 @@ createRoot(document.getElementById('root')!).render(
     ) : portalSupplier && portalSupplier.startsWith('supplier') ? (
       <SupplierPortal supplierId={portalSupplier as any} />
     ) : portalSupplier && portalSupplier.startsWith('facilitator') ? (
-      <MiniApp portalFacilitator={portalSupplier} />
+      <App portalFacilitator={portalSupplier} />
     ) : (
       <App />
     )}

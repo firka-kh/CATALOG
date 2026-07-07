@@ -253,6 +253,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       return false;
     }
   });
+  
+  const [isProductsLoaded, setIsProductsLoaded] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingText, setLoadingText] = useState("Сервис загружается...");
+  const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
 
   useEffect(() => {
     // Fail-safe to ensure the app never stays stuck if firestore is slow
@@ -261,6 +266,21 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     }, 1200);
     return () => clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (isDictLoaded && isProductsLoaded) {
+      setLoadingProgress(100);
+      setLoadingText("Готово");
+      const t = setTimeout(() => setIsInitialLoadDone(true), 600);
+      return () => clearTimeout(t);
+    } else if (isDictLoaded || isProductsLoaded) {
+      setLoadingProgress(60);
+      setLoadingText("Проверяем доступность");
+    } else {
+      setLoadingProgress(20);
+      setLoadingText("Сервис загружается");
+    }
+  }, [isDictLoaded, isProductsLoaded]);
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
     if (!portalFacilitator) return false;
@@ -982,6 +1002,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         });
         // Removed dynamic code generation, relying on database
         setProducts(prods);
+        setIsProductsLoaded(true);
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, "products");
@@ -2285,10 +2306,21 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const isUploadBlocked = aiSelectedSpheres.length === 0;
 
-  if (portalFacilitator && !isDictLoaded) {
+  if (portalFacilitator && !isInitialLoadDone) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-slate-950 font-sans text-center">
-        <div className="text-white text-lg font-medium">Загрузка данных авторизации...</div>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 font-sans">
+        <div className="max-w-xs w-full px-6 flex flex-col items-center">
+          <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-6" />
+          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden mb-3">
+            <div 
+              className="h-full bg-indigo-600 transition-all duration-300 ease-out"
+              style={{ width: `${loadingProgress}%` }}
+            />
+          </div>
+          <div className="text-sm font-medium text-slate-600 animate-pulse">
+            {loadingText}
+          </div>
+        </div>
       </div>
     );
   }

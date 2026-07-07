@@ -9,7 +9,7 @@ import { bot } from "./bot.ts";
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 
 // Webhook endpoint for Telegram
 app.post("/api/bot-webhook", express.json(), (req, res) => {

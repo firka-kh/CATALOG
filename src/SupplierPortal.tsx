@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { Product, GlobalDictionary } from './types';
-import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle } from 'lucide-react';
+import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff } from 'lucide-react';
 import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
 
 const UNITS = [
@@ -38,6 +38,10 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
   // Auth state
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+  const [isProductsLoaded, setIsProductsLoaded] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingText, setLoadingText] = useState("Сервис загружается...");
+  const [isInitialLoadDone, setIsInitialLoadDone] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [inputCode, setInputCode] = useState('');
 
@@ -46,6 +50,18 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const [isImporting, setIsImporting] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    }
+  }, []);
 
   // Local state for edits before saving
   const [editedPrices, setEditedPrices] = useState<Record<string, string>>({});
@@ -72,6 +88,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       const prods: Product[] = [];
       snap.forEach(d => prods.push({ id: d.id, ...d.data() } as Product));
       setProducts(prods.sort((a, b) => a.name.localeCompare(b.name)));
+      setIsProductsLoaded(true);
     });
 
     return () => {
@@ -79,6 +96,21 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       unsubProducts();
     };
   }, []);
+
+  useEffect(() => {
+    if (isConfigLoaded && isProductsLoaded) {
+      setLoadingProgress(100);
+      setLoadingText("Готово");
+      const t = setTimeout(() => setIsInitialLoadDone(true), 600);
+      return () => clearTimeout(t);
+    } else if (isConfigLoaded || isProductsLoaded) {
+      setLoadingProgress(60);
+      setLoadingText("Проверяем доступность");
+    } else {
+      setLoadingProgress(20);
+      setLoadingText("Сервис загружается");
+    }
+  }, [isConfigLoaded, isProductsLoaded]);
 
   const getSupplierLabel = (sup: 'supplier1' | 'supplier2' | 'supplier3' | 'supplier4') => {
     if (sup === 'supplier1') return 'Логистика';
@@ -412,10 +444,21 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
     }
   };
 
-  if (!isConfigLoaded) {
+  if (!isInitialLoadDone) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-50 text-slate-500">
-        <Loader2 className="w-8 h-8 animate-spin" />
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 font-sans">
+        <div className="max-w-xs w-full px-6 flex flex-col items-center">
+          <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-6" />
+          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden mb-3">
+            <div 
+              className="h-full bg-indigo-600 transition-all duration-300 ease-out"
+              style={{ width: `${loadingProgress}%` }}
+            />
+          </div>
+          <div className="text-sm font-medium text-slate-600 animate-pulse">
+            {loadingText}
+          </div>
+        </div>
       </div>
     );
   }
@@ -473,6 +516,19 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         </div>
         
         <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+          <div className="hidden md:flex items-center mr-2">
+            {isOnline ? (
+              <span className="flex items-center gap-1.5 min-w-fit px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-md text-xs font-medium border border-emerald-200">
+                <Wifi className="w-3.5 h-3.5" />
+                Онлайн
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 min-w-fit px-3 py-1.5 bg-rose-50 text-rose-700 rounded-md text-xs font-medium border border-rose-200">
+                <WifiOff className="w-3.5 h-3.5" />
+                Оффлайн
+              </span>
+            )}
+          </div>
           <input
             type="text"
             placeholder="Поиск по названию..."

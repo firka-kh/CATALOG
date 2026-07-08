@@ -317,8 +317,7 @@ function isCancelMessage(text: string): boolean {
 // Helper to get Facilitator WebApp URL
 function getFacilitatorUrl(facilitatorId: string) {
   const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app";
-  const baseUrl = miniAppUrl.replace(/\/mini-app$/, "");
-  return `${baseUrl}/?portal=${facilitatorId}`;
+  return `${miniAppUrl}?portal=${facilitatorId}`;
 }
 
 // Helper to ensure user role is restored from Firestore

@@ -528,6 +528,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [debouncedSearchCode, setDebouncedSearchCode] = useState("");
   const [queryLimit, setQueryLimit] = useState(15);
   const [hasMoreProducts, setHasMoreProducts] = useState(true);
+  const [visibleCount, setVisibleCount] = useState(40);
+
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [searchName, searchCode, selectedSphere, selectedRegion, showOnlyNew]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -2935,7 +2940,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                         </td>
                       </tr>
                     ) : null}
-                    {displayProducts.map((p, i) => {
+                    {displayProducts.slice(0, visibleCount).map((p, i) => {
                       const statusColorClass = "bg-slate-100 text-slate-500";
                       const statusDotClass = "bg-slate-400";
                       const statusText = "Черновик";
@@ -3307,11 +3312,21 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 font-medium">
                 <div className="flex items-center gap-4">
-                  <span>Всего {displayProducts.length} элементов</span>
+                  <span>Показано {Math.min(visibleCount, displayProducts.length)} из {displayProducts.length} элементов</span>
+                  {visibleCount < displayProducts.length && (
+                    <button
+                      onClick={() => setVisibleCount(prev => prev + 50)}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs transition-colors shadow-sm active:scale-95"
+                    >
+                      Показать еще (+50)
+                    </button>
+                  )}
                 </div>
                 <div className="flex gap-2 items-center">
                   {products.length > 0 && (
-                    <span className="text-slate-400">Все товары загружены</span>
+                    <span className="text-slate-400">
+                      {visibleCount >= displayProducts.length ? "Все товары отображены" : `Осталось скрыть: ${displayProducts.length - visibleCount}`}
+                    </span>
                   )}
                 </div>
               </div>

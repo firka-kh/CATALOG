@@ -32,6 +32,11 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const [selectedSphere, setSelectedSphere] = useState('');
   
   const [searchName, setSearchName] = useState('');
+  const [visibleCount, setVisibleCount] = useState(40);
+
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [searchName, selectedSphere, selectedRegion]);
   const [isSaving, setIsSaving] = useState(false);
   const [savedRowId, setSavedRowId] = useState<string | null>(null);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
@@ -622,7 +627,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                </tr>
              </thead>
              <tbody className="divide-y divide-slate-200">
-               {displayedProducts.map(p => {
+               {displayedProducts.slice(0, visibleCount).map(p => {
                  const baseVal = getBasePrice(p);
                  const originalVal = getCurrentOverride(p); // either numeric or empty
                  const editedVal = editedPrices[p.id];
@@ -711,7 +716,27 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
              </tbody>
            </table>
             </div>
-           )}
+           )}           {
+             displayedProducts.length > 0 && (
+               <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 font-medium">
+                 <div className="flex flex-wrap items-center gap-3">
+                   <span>Показано {Math.min(visibleCount, displayedProducts.length)} из {displayedProducts.length} элементов</span>
+                   {visibleCount < displayedProducts.length && (
+                     <button
+                       onClick={() => setVisibleCount(prev => prev + 50)}
+                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs transition-colors shadow-sm active:scale-95"
+                     >
+                       Показать еще (+50)
+                     </button>
+                   )}
+                 </div>
+                 <div>
+                   {visibleCount >= displayedProducts.length ? "Все товары отображены" : `Осталось скрыть: ${displayedProducts.length - visibleCount}`}
+                 </div>
+               </div>
+             )
+           }
+
            {displayedProducts.length === 0 && selectedRegion && (
              <div className="p-8 text-center text-slate-500 text-sm">
                Товары не найдены

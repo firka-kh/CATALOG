@@ -14,6 +14,11 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
   const [globalDict, setGlobalDict] = useState<any>({});
   const [region, setRegion] = useState("");
   const [sphere, setSphere] = useState("");
+  const [visibleCount, setVisibleCount] = useState(30);
+
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [search, sphere, region]);
   const [showPrintAlert, setShowPrintAlert] = useState(false);
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
@@ -510,7 +515,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
              <p className="text-gray-500 dark:text-gray-400 font-medium">Товары не найдены</p>
           </div>
         )}
-        {(!loading) && filteredProducts.map(p => {
+        {(!loading) && filteredProducts.slice(0, visibleCount).map(p => {
           const currentSupplier = tempSelectedSuppliers[p.id] || cart[p.id]?.supplier || getDefaultSupplier(p);
           const activePrice = getProductPriceForSupplierAndRegion(p, currentSupplier, region);
           
@@ -594,7 +599,17 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
                       </button>
                     );
                   })}
-                </div>
+        {visibleCount < filteredProducts.length && (
+          <div className="flex justify-center pt-2 pb-6">
+            <button
+              onClick={() => setVisibleCount(prev => prev + 30)}
+              className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-sm rounded-full shadow-md transition-all flex items-center gap-2"
+            >
+              Показать еще (+30)
+            </button>
+          </div>
+        )}
+      </div>
               </div>
             </div>
           );

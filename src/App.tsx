@@ -1711,7 +1711,6 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const handlePrint = () => {
     if (portalFacilitator && isFacilitatorAuthenticated) {
-      setCatalogPrintMode("lowest");
       setShowFacilitatorPrintWarning(true);
     } else {
       setShowFacilitatorPrintWarning(false);
@@ -3831,38 +3830,27 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               <div className="p-6 flex flex-col gap-4">
                 {showFacilitatorPrintWarning && (
                   <div className="mb-2 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs leading-relaxed flex items-start gap-2 shadow-sm">
-                    <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <Printer className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <span>
-                      <strong>Внимание:</strong> как фасилитатор вы можете распечатывать цены только для своего каталога (минимальные цены).
+                      <strong>Информация:</strong> как фасилитатор вы можете распечатывать каталог по всем поставщикам, но только по своему району ({facilitatorRegion || "свой район"}).
                     </span>
                   </div>
                 )}
                 <div className="text-sm text-slate-600 mb-2">
                   Выберите режим формирования Каталога для печати:
                 </div>
-                <label className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${
-                  showFacilitatorPrintWarning 
-                    ? "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed select-none" 
-                    : "border-slate-200 cursor-pointer hover:bg-slate-50"
-                }`}>
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
                   <input
                     type="radio"
                     name="printMode"
                     checked={catalogPrintMode === "all"}
-                    onChange={() => !showFacilitatorPrintWarning && setCatalogPrintMode("all")}
-                    disabled={showFacilitatorPrintWarning}
-                    className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                    onChange={() => setCatalogPrintMode("all")}
+                    className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
                   />
                   <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                    <span className="text-sm font-semibold text-slate-800">
                       Все цены (3 поставщика)
-                      {showFacilitatorPrintWarning && <Lock className="w-3.5 h-3.5 text-slate-400" />}
                     </span>
-                    {showFacilitatorPrintWarning && (
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Недоступно для фасилитаторов
-                      </span>
-                    )}
                   </div>
                 </label>
                 <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">

@@ -287,40 +287,41 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
       { key: "index", width: 8 },
       { key: "code", width: 15 },
       { key: "name", width: 55 },
+      { key: "sphere", width: 22 },
       { key: "unit", width: 15 },
       { key: "qty", width: 12 },
       { key: "price", width: 18 },
       { key: "total", width: 20 }
     ];
 
-    summaryWs.mergeCells("A1:G1");
+    summaryWs.mergeCells("A1:H1");
     const titleCell = summaryWs.getCell("A1");
     titleCell.value = "Буҷети сармоягузорӣ";
     titleCell.font = { bold: true, size: 12 };
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } };
-    for (let c = 1; c <= 7; c++) {
+    for (let c = 1; c <= 8; c++) {
       summaryWs.getCell(1, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
 
     // Add info rows for Region and Sphere under the title block
-    const infoRow1 = summaryWs.addRow(["Минтақа (Регион):", selectedRegion || "Ҳамаи минтақаҳо", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B2:G2`);
+    const infoRow1 = summaryWs.addRow(["Минтақа (Регион):", selectedRegion || "Ҳамаи минтақаҳо", "", "", "", "", "", ""]);
+    summaryWs.mergeCells(`B2:H2`);
     infoRow1.getCell(1).font = { bold: true, size: 10 };
     infoRow1.getCell(2).font = { size: 10 };
-    for (let c = 1; c <= 7; c++) {
+    for (let c = 1; c <= 8; c++) {
       summaryWs.getCell(2, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
 
-    const infoRow2 = summaryWs.addRow(["Сфера (Бахш):", selectedSphere || "Ҳамаи сфераҳо", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B3:G3`);
+    const infoRow2 = summaryWs.addRow(["Сфера (Бахш):", selectedSphere || "Ҳамаи сфераҳо", "", "", "", "", "", ""]);
+    summaryWs.mergeCells(`B3:H3`);
     infoRow2.getCell(1).font = { bold: true, size: 10 };
     infoRow2.getCell(2).font = { size: 10 };
-    for (let c = 1; c <= 7; c++) {
+    for (let c = 1; c <= 8; c++) {
       summaryWs.getCell(3, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
 
-    const headerRow = summaryWs.addRow(["#", "ID товара", "Ном ва хусусиятҳо", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);
+    const headerRow = summaryWs.addRow(["#", "ID товара", "Ном ва хусусиятҳо", "Сфера", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true };
       cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -347,10 +348,10 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
       const itemsInSphere = supplierItems.filter(i => itemToPrimarySphere.get(i.product.id) === sphere);
       if (itemsInSphere.length === 0) continue;
 
-      const sRow = summaryWs.addRow(["", sphere, "", "", "", "", ""]);
+      const sRow = summaryWs.addRow(["", sphere, "", "", "", "", "", ""]);
       sRow.getCell(2).font = { bold: true, underline: true };
       sRow.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
-      for (let c = 1; c <= 7; c++) {
+      for (let c = 1; c <= 8; c++) {
         sRow.getCell(c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       }
 
@@ -359,10 +360,23 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
         const sum = item.quantity * item.selectedPrice;
         sphereTotal += sum;
         const codeVal = item.product.code || item.product.id?.substring(0, 8) || "";
+
+        // Determine the sphere to write in the column
+        let displaySphere = "Общее";
+        if (selectedSphere) {
+          displaySphere = selectedSphere;
+        } else {
+          const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
+            ? item.product.spheres 
+            : [item.product.sphere || "Общее"];
+          displaySphere = prodSpheres.join(", ");
+        }
+
         const r = summaryWs.addRow([
           idx + 1,
           codeVal,
           item.product.name,
+          displaySphere,
           item.product.unit || "шт.",
           item.quantity,
           item.selectedPrice > 0 ? item.selectedPrice : "-",
@@ -374,6 +388,8 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
           if (colNumber === 2) horz = "center";
           if (colNumber === 3) horz = "left";
           if (colNumber === 4) horz = "center";
+          if (colNumber === 5) horz = "center";
+          if (colNumber === 6) horz = "center";
 
           cell.alignment = { vertical: "middle", horizontal: horz, wrapText: true };
           cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
@@ -382,31 +398,33 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
 
       overallExcelTotal += sphereTotal;
 
-      const subRow = summaryWs.addRow(["", "", "", "", "", "Ҷамъ", sphereTotal]);
+      const subRow = summaryWs.addRow(["", "", "", "", "", "", "Ҷамъ", sphereTotal]);
       subRow.eachCell((cell) => {
         cell.alignment = { vertical: "middle", horizontal: "right" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       });
-      subRow.getCell(6).font = { bold: true };
       subRow.getCell(7).font = { bold: true };
+      subRow.getCell(8).font = { bold: true };
     }
 
     if (logisticsCost > 0) {
-      const logRow = summaryWs.addRow(["", "", "Логистика", "", "", "", logisticsCost]);
+      const logRow = summaryWs.addRow(["", "", "", "Логистика", "", "", "", logisticsCost]);
       overallExcelTotal += logisticsCost;
       logRow.eachCell((cell) => {
         cell.alignment = { vertical: "middle", horizontal: "right" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       });
+      logRow.getCell(4).font = { bold: true };
+      logRow.getCell(8).font = { bold: true };
     }
 
-    const totalRow = summaryWs.addRow(["", "", "", "", "", "Ҳамагӣ", overallExcelTotal]);
+    const totalRow = summaryWs.addRow(["", "", "", "", "", "", "Ҳамагӣ", overallExcelTotal]);
     totalRow.eachCell((cell) => {
       cell.alignment = { vertical: "middle", horizontal: "right" };
       cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     });
-    totalRow.getCell(6).font = { bold: true };
     totalRow.getCell(7).font = { bold: true };
+    totalRow.getCell(8).font = { bold: true };
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

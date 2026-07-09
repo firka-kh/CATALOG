@@ -478,6 +478,23 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [selectedSphere, setSelectedSphere] = useState(
     () => localStorage.getItem("catalog_sphere") || "",
   );
+
+  useEffect(() => {
+    if (portalFacilitator && isFacilitatorAuthenticated) {
+      const unsub = onSnapshot(doc(db, "facilitator_states", portalFacilitator), (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data?.sphere !== undefined) {
+            setSelectedSphere(data.sphere);
+          }
+          if (data?.region !== undefined) {
+            setSelectedRegion(data.region);
+          }
+        }
+      });
+      return () => unsub();
+    }
+  }, [portalFacilitator, isFacilitatorAuthenticated]);
   const [showOnlyNew, setShowOnlyNew] = useState(false);
   const [aiSelectedSpheres, setAiSelectedSpheres] = useState<string[]>(() => {
     const saved = localStorage.getItem("catalog_sphere");
@@ -1014,7 +1031,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   useEffect(() => {
     localStorage.setItem("catalog_region", selectedRegion);
-  }, [selectedRegion]);
+    if (portalFacilitator && isFacilitatorAuthenticated && selectedRegion) {
+      setDoc(doc(db, "facilitator_states", portalFacilitator), { region: selectedRegion }, { merge: true })
+        .catch(e => console.error("Error syncing region to firestore:", e));
+    }
+  }, [selectedRegion, portalFacilitator, isFacilitatorAuthenticated]);
 
   useEffect(() => {
     localStorage.setItem("catalog_supplier", selectedSupplier);
@@ -1022,7 +1043,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   useEffect(() => {
     localStorage.setItem("catalog_sphere", selectedSphere);
-  }, [selectedSphere]);
+    if (portalFacilitator && isFacilitatorAuthenticated) {
+      setDoc(doc(db, "facilitator_states", portalFacilitator), { sphere: selectedSphere }, { merge: true })
+        .catch(e => console.error("Error syncing sphere to firestore:", e));
+    }
+  }, [selectedSphere, portalFacilitator, isFacilitatorAuthenticated]);
 
   useEffect(() => {
     localStorage.setItem(

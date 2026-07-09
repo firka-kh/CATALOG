@@ -2,13 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from './types';
-import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X } from 'lucide-react';
+import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check } from 'lucide-react';
 import { PrintCatalogView } from './PrintCatalogView';
 
 export default function MiniApp({ portalFacilitator }: { portalFacilitator?: string }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState<Record<string, number>>({});
+  const [cart, setCart] = useState<Record<string, { qty: number; supplier: 'supplier2' | 'supplier3' | 'supplier4' }>>({});
+  const [tempSelectedSuppliers, setTempSelectedSuppliers] = useState<Record<string, 'supplier2' | 'supplier3' | 'supplier4'>>({});
   const [search, setSearch] = useState("");
   const [globalDict, setGlobalDict] = useState<any>({});
   const [region, setRegion] = useState("");
@@ -169,17 +170,35 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
       });
     }
 
+    // 3. Listen to facilitator status document if portalFacilitator is active
+    let unsubFacilitator: (() => void) | undefined;
+    if (portalFacilitator) {
+      unsubFacilitator = onSnapshot(doc(db, "facilitator_states", portalFacilitator), (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (data?.sphere !== undefined) setSphere(data.sphere);
+          if (data?.region !== undefined) setRegion(data.region);
+        }
+      }, (error) => {
+        console.error("Error listening to facilitator state:", error);
+      });
+    }
+
     return () => {
       unsubDict();
       if (unsubUser) unsubUser();
+      if (unsubFacilitator) unsubFacilitator();
     };
-  }, [tg?.initDataUnsafe?.user?.id]);
+  }, [tg?.initDataUnsafe?.user?.id, portalFacilitator]);
 
   const handleSetRegion = async (r: string) => {
      setRegion(r);
      const userId = tg?.initDataUnsafe?.user?.id;
      if (userId) {
         await setDoc(doc(db, "telegram_users", userId.toString()), { region: r }, { merge: true });
+     }
+     if (portalFacilitator) {
+        await setDoc(doc(db, "facilitator_states", portalFacilitator), { region: r }, { merge: true });
      }
   };
 
@@ -188,6 +207,9 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
      const userId = tg?.initDataUnsafe?.user?.id;
      if (userId) {
         await setDoc(doc(db, "telegram_users", userId.toString()), { sphere: s }, { merge: true });
+     }
+     if (portalFacilitator) {
+        await setDoc(doc(db, "facilitator_states", portalFacilitator), { sphere: s }, { merge: true });
      }
   };
 
@@ -213,19 +235,32 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     return () => unsub();
   }, []);
 
+  const getDefaultSupplier = (p: Product) => {
+    const s2 = getProductPriceForSupplierAndRegion(p, "supplier2", region);
+    const s3 = getProductPriceForSupplierAndRegion(p, "supplier3", region);
+    const s4 = getProductPriceForSupplierAndRegion(p, "supplier4", region);
+    let minPrice = Infinity;
+    let best: 'supplier2' | 'supplier3' | 'supplier4' = 'supplier2';
+    if (s2 > 0 && s2 < minPrice) { minPrice = s2; best = 'supplier2'; }
+    if (s3 > 0 && s3 < minPrice) { minPrice = s3; best = 'supplier3'; }
+    if (s4 > 0 && s4 < minPrice) { minPrice = s4; best = 'supplier4'; }
+    return best;
+  };
+
   const cartArray = useMemo(() => {
     return Object.entries(cart)
-      .filter(([_, qty]) => (qty as number) > 0)
-      .map(([id, qty]) => {
+      .filter(([_, item]) => item && (item as any).qty > 0)
+      .map(([id, item]) => {
         const prod = products.find(p => p.id === id);
-        return { prod, qty: qty as number };
+        const casted = item as { qty: number; supplier: 'supplier2' | 'supplier3' | 'supplier4' };
+        return { prod, qty: casted.qty, selectedSupplier: casted.supplier };
       });
   }, [cart, products]);
 
   const totalSum = useMemo(() => {
     return cartArray.reduce((acc, item) => {
       if (!item.prod) return acc;
-      const price = getProductMinPrice(item.prod) || 0;
+      const price = getProductPriceForSupplierAndRegion(item.prod, item.selectedSupplier, region) || 0;
       return acc + (price * item.qty);
     }, 0);
   }, [cartArray, globalDict, region]);
@@ -262,11 +297,31 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     return () => tg.offEvent('mainButtonClicked', onMainButtonClick);
   }, [cartArray, totalSum]);
 
-  const updateCart = (id: string, delta: number) => {
+  const updateCart = (id: string, delta: number, selectedSup?: 'supplier2' | 'supplier3' | 'supplier4') => {
     setCart(prev => {
-      const newQty = (prev[id] || 0) + delta;
-      return { ...prev, [id]: Math.max(0, newQty) };
+      const existing = prev[id];
+      const sup = selectedSup || existing?.supplier || getDefaultSupplier(products.find(p => p.id === id)!);
+      const newQty = (existing?.qty || 0) + delta;
+      if (newQty <= 0) {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      }
+      return {
+        ...prev,
+        [id]: { qty: newQty, supplier: sup }
+      };
     });
+  };
+
+  const selectSupplierForProduct = (productId: string, sup: 'supplier2' | 'supplier3' | 'supplier4') => {
+    setTempSelectedSuppliers(prev => ({ ...prev, [productId]: sup }));
+    if (cart[productId]) {
+      setCart(prev => ({
+        ...prev,
+        [productId]: { ...prev[productId], supplier: sup }
+      }));
+    }
   };
 
   const filteredProducts = products.filter(p => {
@@ -346,42 +401,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     );
   }
 
-  if (portalFacilitator && isFacilitatorAuthenticated && !sphere) {
-    if (!globalDict || !globalDict.spheres) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 font-sans text-center p-4">
-          <Loader2 className="animate-spin w-8 h-8 text-blue-500 mb-2" />
-          <div className="text-white text-sm font-medium">Загрузка сфер деятельности...</div>
-        </div>
-      );
-    }
 
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans p-4">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">
-          <div className="w-12 h-12 bg-green-50 dark:bg-green-950/30 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600 dark:text-green-400">
-            <Briefcase className="w-6 h-6" />
-          </div>
-          <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2 text-center text-[15px] sm:text-lg">Выбор сферы занятости</h2>
-          <p className="text-xs text-slate-500 dark:text-gray-400 mb-6 text-center font-medium">
-            Для просмотра каталога вам обязательно нужно выбрать вашу сферу деятельности.
-          </p>
-          <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-1">
-            {globalDict.spheres.map((s: string) => (
-              <button
-                key={s}
-                onClick={() => handleSetSphere(s)}
-                className="w-full text-left bg-slate-50 hover:bg-blue-50 dark:bg-gray-700 dark:hover:bg-gray-600 text-slate-700 dark:text-white font-semibold py-3 px-4 rounded-xl transition-all text-sm border border-slate-200 dark:border-gray-600 hover:border-blue-300 flex items-center justify-between"
-              >
-                <span>{s}</span>
-                <span className="w-2 h-2 bg-slate-300 dark:bg-gray-500 rounded-full"></span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
@@ -410,9 +430,9 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
 
         {showPrintAlert && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs flex items-start gap-2 animate-fade-in shadow-sm print:hidden">
-            <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <Printer className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <strong>Внимание:</strong> как фасилитатор вы можете распечатывать цены только для своего каталога (минимальные цены).
+              <strong>Информация:</strong> как фасилитатор вы можете распечатывать каталог по всем поставщикам, но только по своему району ({region || "свой район"}).
             </div>
             <button onClick={() => setShowPrintAlert(false)} className="text-amber-500 hover:text-amber-700 shrink-0">
               <X className="w-4 h-4" />
@@ -451,8 +471,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
                onChange={(e) => handleSetSphere(e.target.value)}
                className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-green-500"
              >
-               {!portalFacilitator && <option value="">Все сферы</option>}
-               {portalFacilitator && !sphere && <option value="" disabled>Выбрать сферу</option>}
+               <option value="">Все сферы</option>
                {(globalDict.spheres || []).map((s: string) => (
                  <option key={s} value={s}>{s}</option>
                ))}
@@ -491,50 +510,99 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
              <p className="text-gray-500 dark:text-gray-400 font-medium">Товары не найдены</p>
           </div>
         )}
-        {(!loading) && filteredProducts.map(p => (
-          <div key={p.id} className="flex gap-4 p-3 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700 items-center">
-            {p.imageBase64 ? (
-              <img src={p.imageBase64} alt={p.name} className="w-20 h-20 object-cover rounded-xl shrink-0 border border-gray-100 dark:border-gray-700" />
-            ) : (
-              <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-xl shrink-0 flex items-center justify-center text-xs text-gray-400">Нет фото</div>
-            )}
-            
-            <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-sm line-clamp-2 leading-tight">{p.name || 'Без названия'}</h3>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Код: {p.code}</p>
-              <p className="font-bold text-sm mt-1">{getProductMinPrice(p) !== null ? `${getProductMinPrice(p)!.toFixed(2)} c.` : 'Цена не указана'}</p>
-            </div>
-            
-            <div className="shrink-0 flex flex-col items-center gap-2">
-              {getProductMinPrice(p) !== null ? (
-                cart[p.id] ? (
-                   <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-1">
-                     <button onClick={() => updateCart(p.id, -1)} className="w-7 h-7 flex items-center justify-center bg-white dark:bg-gray-600 rounded-full shadow-sm text-blue-600 dark:text-blue-400 active:scale-95 transition-transform">
-                       <Minus className="w-4 h-4" />
-                     </button>
-                     <span className="text-sm font-bold min-w-[1ch] text-center">{cart[p.id]}</span>
-                     <button onClick={() => updateCart(p.id, 1)} className="w-7 h-7 flex items-center justify-center bg-white dark:bg-gray-600 rounded-full shadow-sm text-blue-600 dark:text-blue-400 active:scale-95 transition-transform">
-                       <Plus className="w-4 h-4" />
-                     </button>
-                   </div>
+        {(!loading) && filteredProducts.map(p => {
+          const currentSupplier = tempSelectedSuppliers[p.id] || cart[p.id]?.supplier || getDefaultSupplier(p);
+          const activePrice = getProductPriceForSupplierAndRegion(p, currentSupplier, region);
+          
+          return (
+            <div key={p.id} className="flex flex-col p-4 rounded-2xl bg-white dark:bg-gray-800 shadow-sm border border-gray-100 dark:border-gray-700">
+              <div className="flex gap-4 items-center">
+                {p.imageBase64 ? (
+                  <img src={p.imageBase64} alt={p.name} className="w-20 h-20 object-cover rounded-xl shrink-0 border border-gray-100 dark:border-gray-700" />
                 ) : (
-                  <button 
-                    onClick={() => updateCart(p.id, 1)}
-                    className="w-10 h-10 flex items-center justify-center bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95 transition-transform"
-                  >
-                    <Plus className="w-5 h-5" />
-                  </button>
-                )
-              ) : (
-                <div className="text-xs text-red-500 text-center font-medium bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">Нет цены</div>
-              )}
+                  <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-xl shrink-0 flex items-center justify-center text-xs text-gray-400">Нет фото</div>
+                )}
+                
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-semibold text-sm line-clamp-2 leading-tight">{p.name || 'Без названия'}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Код: {p.code}</p>
+                  <p className="font-bold text-sm mt-1 text-blue-600 dark:text-blue-400">
+                    {activePrice > 0 ? `${activePrice.toFixed(2)} c.` : 'Цена не указана'}
+                  </p>
+                </div>
+                
+                <div className="shrink-0 flex flex-col items-center gap-2">
+                  {activePrice > 0 ? (
+                    cart[p.id] ? (
+                       <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-1">
+                         <button onClick={() => updateCart(p.id, -1, currentSupplier)} className="w-7 h-7 flex items-center justify-center bg-white dark:bg-gray-600 rounded-full shadow-sm text-blue-600 dark:text-blue-400 active:scale-95 transition-transform">
+                           <Minus className="w-4 h-4" />
+                         </button>
+                         <span className="text-sm font-bold min-w-[1ch] text-center">{cart[p.id].qty}</span>
+                         <button onClick={() => updateCart(p.id, 1, currentSupplier)} className="w-7 h-7 flex items-center justify-center bg-white dark:bg-gray-600 rounded-full shadow-sm text-blue-600 dark:text-blue-400 active:scale-95 transition-transform">
+                           <Plus className="w-4 h-4" />
+                         </button>
+                       </div>
+                    ) : (
+                      <button 
+                        onClick={() => updateCart(p.id, 1, currentSupplier)}
+                        className="w-10 h-10 flex items-center justify-center bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95 transition-transform"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    )
+                  ) : (
+                    <div className="text-xs text-red-500 text-center font-medium bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">Нет цены</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Supplier Offers Choice */}
+              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5 w-full">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Предложения поставщиков:</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { key: 'supplier2' as const, label: globalDict?.suppliers?.[0] || 'Поставщик 1' },
+                    { key: 'supplier3' as const, label: globalDict?.suppliers?.[1] || 'Поставщик 2' },
+                    { key: 'supplier4' as const, label: globalDict?.suppliers?.[2] || 'Поставщик 3' },
+                  ].map((s) => {
+                    const price = getProductPriceForSupplierAndRegion(p, s.key, region);
+                    const isSelected = currentSupplier === s.key;
+                    const hasPrice = price > 0;
+                    return (
+                      <button
+                        key={s.key}
+                        disabled={!hasPrice}
+                        onClick={() => selectSupplierForProduct(p.id, s.key)}
+                        className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all duration-200 relative ${
+                          isSelected
+                            ? 'bg-blue-50/80 dark:bg-blue-900/20 border-blue-500 text-blue-600 dark:text-blue-400 font-semibold shadow-sm'
+                            : hasPrice
+                            ? 'bg-gray-50/50 dark:bg-gray-800/30 border-gray-100 dark:border-gray-700 hover:bg-gray-50 text-gray-700 dark:text-gray-300'
+                            : 'bg-gray-50/30 dark:bg-gray-900/10 border-gray-100/50 dark:border-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50'
+                        }`}
+                      >
+                        <span className="text-[9px] font-medium truncate max-w-full uppercase tracking-tight">{s.label}</span>
+                        <span className="text-xs font-bold mt-0.5 whitespace-nowrap">
+                          {hasPrice ? `${price.toFixed(2)} с.` : '—'}
+                        </span>
+                        {isSelected && (
+                          <span className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full p-0.5 shadow-sm border border-white">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <PrintCatalogView
-        printMode="lowest"
+        printMode="all"
         suppliers={globalDict?.suppliers}
         selectedRegion={region}
         selectedSupplier={null}

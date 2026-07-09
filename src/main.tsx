@@ -1,3 +1,25 @@
+// Suppress benign Firestore clock drift console warnings/errors
+const originalWarn = console.warn;
+const originalError = console.error;
+
+const shouldSuppressFirestoreClockWarning = (args: any[]) => {
+  return args.some(arg => {
+    if (!arg) return false;
+    const str = typeof arg === 'string' ? arg : (arg.message || String(arg));
+    return typeof str === 'string' && str.includes('Detected an update time');
+  });
+};
+
+console.warn = function (...args: any[]) {
+  if (shouldSuppressFirestoreClockWarning(args)) return;
+  originalWarn.apply(console, args);
+};
+
+console.error = function (...args: any[]) {
+  if (shouldSuppressFirestoreClockWarning(args)) return;
+  originalError.apply(console, args);
+};
+
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';

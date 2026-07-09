@@ -88,12 +88,12 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     return { key: "", code: "", name: "Фасилитатор", region: "" };
   }, [portalFacilitator, globalDict]);
 
-  // Set facilitator's region once loaded & authenticated
+  // Set facilitator's region once loaded
   useEffect(() => {
-    if (portalFacilitator && isFacilitatorAuthenticated && resolvedFacilitator.region) {
+    if (portalFacilitator && resolvedFacilitator.region) {
       setRegion(resolvedFacilitator.region);
     }
-  }, [portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region]);
+  }, [portalFacilitator, resolvedFacilitator.region]);
 
   const getProductMinPrice = (p: Product) => {
     let minP = Infinity;
@@ -167,7 +167,9 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
       unsubUser = onSnapshot(doc(db, "telegram_users", userId.toString()), (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if (data?.region) setRegion(data.region);
+          if (!portalFacilitator) {
+            if (data?.region) setRegion(data.region);
+          }
           if (data?.sphere) setSphere(data.sphere);
         }
       }, (error) => {
@@ -182,7 +184,6 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (data?.sphere !== undefined) setSphere(data.sphere);
-          if (data?.region !== undefined) setRegion(data.region);
         }
       }, (error) => {
         console.error("Error listening to facilitator state:", error);
@@ -448,26 +449,21 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
         {/* Region & Sphere Selectors */}
         <div className="flex gap-2 w-full">
            <div className="relative flex-1">
-             <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-blue-500" />
-             {portalFacilitator ? (
-               <input
-                 type="text"
-                 readOnly
-                 value={region || "Загрузка региона..."}
-                 className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm outline-none text-slate-500 dark:text-slate-400 font-semibold"
-               />
-             ) : (
-               <select 
-                 value={region} 
-                 onChange={(e) => handleSetRegion(e.target.value)}
-                 className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-blue-500"
-               >
-                 <option value="" disabled>Выбрать регион</option>
-                 {(globalDict.regions || []).map((r: string) => (
-                   <option key={r} value={r}>{r}</option>
-                 ))}
-               </select>
-             )}
+             <MapPin className="absolute left-3 top-2.5 w-4 h-4 text-blue-500 z-10" />
+             <select 
+               disabled={!!portalFacilitator}
+               value={region} 
+               onChange={(e) => handleSetRegion(e.target.value)}
+               className="w-full pl-9 pr-8 py-2 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm text-sm appearance-none outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-75 disabled:bg-gray-50 dark:disabled:bg-gray-800 disabled:cursor-not-allowed font-medium text-slate-700 dark:text-slate-300"
+             >
+               <option value="" disabled>Выбрать регион</option>
+               {portalFacilitator && region && !globalDict.regions?.includes(region) && (
+                 <option value={region}>{region}</option>
+               )}
+               {(globalDict.regions || []).map((r: string) => (
+                 <option key={r} value={r}>{r}</option>
+               ))}
+             </select>
            </div>
            <div className="relative flex-1">
              <Briefcase className="absolute left-3 top-2.5 w-4 h-4 text-green-500" />
@@ -531,9 +527,33 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-sm line-clamp-2 leading-tight">{p.name || 'Без названия'}</h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Код: {p.code}</p>
-                  <p className="font-bold text-sm mt-1 text-blue-600 dark:text-blue-400">
-                    {activePrice > 0 ? `${activePrice.toFixed(2)} c.` : 'Цена не указана'}
-                  </p>
+                  
+                  {portalFacilitator ? (
+                    <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                      {[
+                        { key: 'supplier2' as const, label: globalDict?.suppliers?.[0] || 'Поставщик 1' },
+                        { key: 'supplier3' as const, label: globalDict?.suppliers?.[1] || 'Поставщик 2' },
+                        { key: 'supplier4' as const, label: globalDict?.suppliers?.[2] || 'Поставщик 3' },
+                      ].map((s) => {
+                        const price = getProductPriceForSupplierAndRegion(p, s.key, region);
+                        const isSelected = currentSupplier === s.key;
+                        return (
+                          <div key={s.key} className="flex items-center justify-between text-xs py-0.5">
+                            <span className="text-gray-500 dark:text-gray-400 font-medium truncate max-w-[120px]">
+                              {s.label}
+                            </span>
+                            <span className={`font-bold whitespace-nowrap ${price > 0 ? (isSelected ? 'text-blue-600 dark:text-blue-400 text-sm' : 'text-slate-700 dark:text-slate-300') : 'text-gray-300 dark:text-gray-600'}`}>
+                              {price > 0 ? `${price.toFixed(2)} с.` : '—'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="font-bold text-sm mt-1 text-blue-600 dark:text-blue-400">
+                      {activePrice > 0 ? `${activePrice.toFixed(2)} c.` : 'Цена не указана'}
+                    </p>
+                  )}
                 </div>
                 
                 <div className="shrink-0 flex flex-col items-center gap-2">
@@ -599,6 +619,12 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
                       </button>
                     );
                   })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
         {visibleCount < filteredProducts.length && (
           <div className="flex justify-center pt-2 pb-6">
             <button
@@ -609,11 +635,6 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
             </button>
           </div>
         )}
-      </div>
-              </div>
-            </div>
-          );
-        })}
       </div>
 
       <PrintCatalogView

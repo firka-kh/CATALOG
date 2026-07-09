@@ -2310,6 +2310,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       return codeA.localeCompare(codeB) || a.name.localeCompare(b.name);
     });
 
+  const hasGkPrice = displayProducts.some((p) => p.price !== undefined && p.price > 0);
+
   const isUploadBlocked = aiSelectedSpheres.length === 0;
 
   if (portalFacilitator && !isInitialLoadDone) {
@@ -2861,7 +2863,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       </th>
                       {(isAdminMode || !!portalFacilitator) && (
                         <>
-                          {isReallyAdmin && (
+                          {isReallyAdmin && hasGkPrice && (
                             <th className="px-4 py-3 align-middle w-32 text-left text-slate-700 font-bold bg-slate-50 border-r border-slate-200">
                               ГК
                             </th>
@@ -2892,7 +2894,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     {displayProducts.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7 + (isReallyAdmin ? 4 : portalFacilitator ? 3 : 0) + (showBestPrice ? 1 : 0)}
+                          colSpan={7 + (isReallyAdmin ? (hasGkPrice ? 4 : 3) : portalFacilitator ? 3 : 0) + (showBestPrice ? 1 : 0)}
                           className="px-6 py-12 text-center text-slate-500 bg-slate-50/50"
                         >
                           {isParsing ? (
@@ -3067,7 +3069,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           </td>
                           {(isAdminMode || !!portalFacilitator) && (
                             <>
-                              {isReallyAdmin && (
+                              {isReallyAdmin && hasGkPrice && (
                                 <td className="px-4 py-4 bg-slate-50 border-r border-slate-100 font-mono font-semibold text-xs text-slate-800">
                                   {p.price !== undefined && p.price > 0 ? (
                                     <div className="flex items-center justify-start">

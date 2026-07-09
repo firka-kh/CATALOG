@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { db } from './lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from './types';
-import { Loader2, Plus, Minus, Search, MapPin, Briefcase } from 'lucide-react';
+import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X } from 'lucide-react';
+import { PrintCatalogView } from './PrintCatalogView';
 
 export default function MiniApp({ portalFacilitator }: { portalFacilitator?: string }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -12,6 +13,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
   const [globalDict, setGlobalDict] = useState<any>({});
   const [region, setRegion] = useState("");
   const [sphere, setSphere] = useState("");
+  const [showPrintAlert, setShowPrintAlert] = useState(false);
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
     if (!portalFacilitator) return false;
@@ -105,6 +107,40 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
       return null;
     }
     return minP;
+  };
+
+  const getProductPriceForSupplierAndRegion = (
+    p: Product,
+    supplier: "supplier1" | "supplier2" | "supplier3" | "supplier4",
+    reg: string,
+  ): number => {
+    if (supplier === "supplier1") {
+      return globalDict?.logisticsCosts?.[reg] || 0;
+    }
+
+    if (
+      reg &&
+      p.prices?.[supplier]?.[reg] !== undefined &&
+      p.prices[supplier][reg] !== null
+    ) {
+      const customPrice = parseFloat(String(p.prices[supplier][reg])) || 0;
+      if (customPrice > 0) {
+        return customPrice;
+      }
+    }
+
+    const mapId =
+      supplier === "supplier2"
+        ? "priceSupplier2"
+        : supplier === "supplier3"
+          ? "priceSupplier3"
+          : "priceSupplier4";
+    const legacyPrice = parseFloat(String(p[mapId as keyof Product])) || 0;
+    if (legacyPrice > 0) {
+      return legacyPrice;
+    }
+
+    return 0;
   };
 
   // Load settings and user profile with real-time cached onSnapshot
@@ -351,9 +387,36 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
       <div className="sticky top-0 z-10 bg-[var(--tg-theme-bg-color,#f3f4f6)] pb-4 space-y-3">
         {portalFacilitator && (
-          <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-2.5 rounded-xl text-xs flex justify-between items-center shadow-sm">
-            <span>Вошли как: <strong className="font-bold">{resolvedFacilitator.name}</strong></span>
-            <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-semibold">Региональный доступ</span>
+          <div className="flex flex-col gap-2">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-2.5 rounded-xl text-xs flex justify-between items-center shadow-sm">
+              <span>Вошли как: <strong className="font-bold">{resolvedFacilitator.name}</strong></span>
+              <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-semibold">Региональный доступ</span>
+            </div>
+            <button
+              onClick={() => {
+                setShowPrintAlert(true);
+                // Briefly pause before print to ensure the alert renders
+                setTimeout(() => {
+                  window.print();
+                }, 800);
+              }}
+              className="w-full bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-2 border border-indigo-200/50 print:hidden shadow-sm"
+            >
+              <Printer className="w-4 h-4 text-indigo-600" />
+              Распечатать каталог
+            </button>
+          </div>
+        )}
+
+        {showPrintAlert && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs flex items-start gap-2 animate-fade-in shadow-sm print:hidden">
+            <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <strong>Внимание:</strong> как фасилитатор вы можете распечатывать цены только для своего каталога (минимальные цены).
+            </div>
+            <button onClick={() => setShowPrintAlert(false)} className="text-amber-500 hover:text-amber-700 shrink-0">
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 
@@ -469,6 +532,23 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
           </div>
         ))}
       </div>
+
+      <PrintCatalogView
+        printMode="lowest"
+        suppliers={globalDict?.suppliers}
+        selectedRegion={region}
+        selectedSupplier={null}
+        products={products.map((p) => {
+          const productRegion = region || "Душанбе";
+          return {
+            ...p,
+            priceSupplier1: getProductPriceForSupplierAndRegion(p, "supplier1", productRegion),
+            priceSupplier2: getProductPriceForSupplierAndRegion(p, "supplier2", productRegion),
+            priceSupplier3: getProductPriceForSupplierAndRegion(p, "supplier3", productRegion),
+            priceSupplier4: getProductPriceForSupplierAndRegion(p, "supplier4", productRegion),
+          };
+        })}
+      />
     </div>
   );
 }

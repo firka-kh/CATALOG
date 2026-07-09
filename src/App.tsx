@@ -616,6 +616,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     return saved !== "false"; // default is true
   });
   const [isPrintOptionsOpen, setIsPrintOptionsOpen] = useState(false);
+  const [showFacilitatorPrintWarning, setShowFacilitatorPrintWarning] = useState(false);
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
   const [isGenerateIdsModalOpen, setIsGenerateIdsModalOpen] = useState(false);
   const [isBestPricePasswordModalOpen, setIsBestPricePasswordModalOpen] = useState(false);
@@ -1709,6 +1710,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const pdfRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => {
+    if (portalFacilitator && isFacilitatorAuthenticated) {
+      setCatalogPrintMode("lowest");
+      setShowFacilitatorPrintWarning(true);
+    } else {
+      setShowFacilitatorPrintWarning(false);
+    }
     setIsPrintOptionsOpen(true);
   };
 
@@ -3822,20 +3829,41 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               </div>
 
               <div className="p-6 flex flex-col gap-4">
+                {showFacilitatorPrintWarning && (
+                  <div className="mb-2 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs leading-relaxed flex items-start gap-2 shadow-sm">
+                    <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Внимание:</strong> как фасилитатор вы можете распечатывать цены только для своего каталога (минимальные цены).
+                    </span>
+                  </div>
+                )}
                 <div className="text-sm text-slate-600 mb-2">
                   Выберите режим формирования Каталога для печати:
                 </div>
-                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                <label className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${
+                  showFacilitatorPrintWarning 
+                    ? "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed select-none" 
+                    : "border-slate-200 cursor-pointer hover:bg-slate-50"
+                }`}>
                   <input
                     type="radio"
                     name="printMode"
                     checked={catalogPrintMode === "all"}
-                    onChange={() => setCatalogPrintMode("all")}
-                    className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                    onChange={() => !showFacilitatorPrintWarning && setCatalogPrintMode("all")}
+                    disabled={showFacilitatorPrintWarning}
+                    className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
                   />
-                  <span className="text-sm font-semibold text-slate-800">
-                    Все цены (3 поставщика)
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-semibold text-slate-800 flex items-center gap-1.5">
+                      Все цены (3 поставщика)
+                      {showFacilitatorPrintWarning && <Lock className="w-3.5 h-3.5 text-slate-400" />}
+                    </span>
+                    {showFacilitatorPrintWarning && (
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Недоступно для фасилитаторов
+                      </span>
+                    )}
+                  </div>
                 </label>
                 <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
                   <input
@@ -4708,6 +4736,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         <PrintCatalogView
           printMode={catalogPrintMode}
           suppliers={globalDict.suppliers}
+          selectedRegion={selectedRegion}
+          selectedSupplier={selectedSupplier}
           products={(() => {
             let filtered = products;
             if (exportScope === "sphere" || exportScope === "region_sphere") {

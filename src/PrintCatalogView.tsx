@@ -5,11 +5,15 @@ import { Package, BookOpen } from "lucide-react";
 export const PrintCatalogView = ({
   products,
   suppliers,
-  printMode = "all"
+  printMode = "all",
+  selectedRegion,
+  selectedSupplier,
 }: {
   products: Product[];
   suppliers?: string[];
   printMode?: 'all' | 'lowest';
+  selectedRegion?: string;
+  selectedSupplier?: "supplier1" | "supplier2" | "supplier3" | "supplier4" | null;
 }) => {
   const getSupLabel = (
     sup: "supplier1" | "supplier2" | "supplier3" | "supplier4",
@@ -162,8 +166,18 @@ export const PrintCatalogView = ({
 
         <div className="text-center w-full mb-8">
           <div className="text-slate-700 text-xs font-bold uppercase tracking-[0.25em] leading-relaxed max-w-md mx-auto">
-            {getSupLabel("supplier1")} • {getSupLabel("supplier2")} <br />
-            {getSupLabel("supplier3")} • {getSupLabel("supplier4")}
+            {selectedSupplier && selectedRegion ? (
+              <span>{getSupLabel(selectedSupplier)} • {selectedRegion}</span>
+            ) : selectedSupplier ? (
+              <span>{getSupLabel(selectedSupplier)}</span>
+            ) : selectedRegion ? (
+              <span>{selectedRegion}</span>
+            ) : (
+              <>
+                {getSupLabel("supplier1")} • {getSupLabel("supplier2")} <br />
+                {getSupLabel("supplier3")} • {getSupLabel("supplier4")}
+              </>
+            )}
           </div>
           <div className="border-t border-slate-200 pt-6 mt-8 max-w-sm mx-auto flex justify-between text-[11px] text-slate-400 font-mono tracking-wider">
             <span>ДАТА: {new Date().toLocaleDateString("ru-RU")}</span>

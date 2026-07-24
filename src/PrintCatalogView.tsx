@@ -8,12 +8,14 @@ export const PrintCatalogView = ({
   printMode = "all",
   selectedRegion,
   selectedSupplier,
+  isFacilitator = false,
 }: {
   products: Product[];
   suppliers?: string[];
   printMode?: 'all' | 'lowest';
   selectedRegion?: string;
   selectedSupplier?: "supplier1" | "supplier2" | "supplier3" | "supplier4" | null;
+  isFacilitator?: boolean;
 }) => {
   const getSupLabel = (
     sup: "supplier1" | "supplier2" | "supplier3" | "supplier4",
@@ -111,14 +113,26 @@ export const PrintCatalogView = ({
       <div className="print-cover-page border-[6px] border-double border-slate-900 rounded-lg m-1">
         <div className="text-center w-full mt-8 border-b-2 border-slate-100 pb-8">
           <span className="text-xs font-bold uppercase tracking-[0.4em] text-slate-400 block mb-2">
-            Каталог Товарных Категорий
+            {isFacilitator
+              ? "Каталог Товарных Категорий"
+              : !selectedSupplier
+              ? "Каталог Товарных Категорий • Все Поставщики"
+              : "Каталог Товарных Категорий"}
           </span>
           <h1 className="text-5xl font-black uppercase tracking-wider text-slate-950 my-4 leading-tight">
-            ОБЩИЙ КАТАЛОГ
+            {isFacilitator
+              ? "КАТАЛОГ ТОВАРОВ"
+              : !selectedSupplier
+              ? "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ"
+              : "КАТАЛОГ ТОВАРОВ"}
           </h1>
           <div className="h-1 bg-slate-900 w-28 mx-auto mt-6 mb-2"></div>
           <p className="text-xs text-slate-500 font-mono tracking-widest mt-2">
-            B2B СИСТЕМА ДИСТРИБЬЮЦИИ
+            {isFacilitator
+              ? "B2B СИСТЕМА ДИСТРИБЬЮЦИИ"
+              : !selectedSupplier
+              ? "B2B СИСТЕМА ДИСТРИБЬЮЦИИ • ПОЛНЫЙ АССОРТИМЕНТ"
+              : "B2B СИСТЕМА ДИСТРИБЬЮЦИИ"}
           </p>
         </div>
 
@@ -166,17 +180,18 @@ export const PrintCatalogView = ({
 
         <div className="text-center w-full mb-8">
           <div className="text-slate-700 text-xs font-bold uppercase tracking-[0.25em] leading-relaxed max-w-md mx-auto">
-            {selectedSupplier && selectedRegion ? (
-              <span>{getSupLabel(selectedSupplier)} • {selectedRegion}</span>
+            {isFacilitator ? (
+              selectedRegion ? <span>{selectedRegion}</span> : null
+            ) : selectedSupplier && selectedRegion ? (
+              <span>ПОСТАВЩИК: {getSupLabel(selectedSupplier)} • {selectedRegion}</span>
             ) : selectedSupplier ? (
-              <span>{getSupLabel(selectedSupplier)}</span>
+              <span>ПОСТАВЩИК: {getSupLabel(selectedSupplier)}</span>
             ) : selectedRegion ? (
-              <span>{selectedRegion}</span>
+              <span>{selectedRegion} • ВСЕ ПОСТАВЩИКИ</span>
             ) : (
-              <>
-                {getSupLabel("supplier1")} • {getSupLabel("supplier2")} <br />
-                {getSupLabel("supplier3")} • {getSupLabel("supplier4")}
-              </>
+              <span>
+                ВСЕ ПОСТАВЩИКИ ({getSupLabel("supplier2")} • {getSupLabel("supplier3")} • {getSupLabel("supplier4")})
+              </span>
             )}
           </div>
           <div className="border-t border-slate-200 pt-6 mt-8 max-w-sm mx-auto flex justify-between text-[11px] text-slate-400 font-mono tracking-wider">

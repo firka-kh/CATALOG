@@ -4810,6 +4810,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           suppliers={globalDict.suppliers}
           selectedRegion={selectedRegion}
           selectedSupplier={selectedSupplier}
+          isFacilitator={!!portalFacilitator}
           products={(() => {
             let filtered = products;
             if (exportScope === "sphere" || exportScope === "region_sphere") {

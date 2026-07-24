@@ -642,6 +642,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
         suppliers={globalDict?.suppliers}
         selectedRegion={region}
         selectedSupplier={null}
+        isFacilitator={true}
         products={products.map((p) => {
           const productRegion = region || "Душанбе";
           return {

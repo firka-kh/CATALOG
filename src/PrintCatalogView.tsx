@@ -9,13 +9,17 @@ export const PrintCatalogView = ({
   selectedRegion,
   selectedSupplier,
   isFacilitator = false,
+  catalogType = "full",
+  selectedSphere,
 }: {
   products: Product[];
   suppliers?: string[];
-  printMode?: 'all' | 'lowest';
+  printMode?: "all" | "lowest";
   selectedRegion?: string;
   selectedSupplier?: "supplier1" | "supplier2" | "supplier3" | "supplier4" | null;
   isFacilitator?: boolean;
+  catalogType?: "full" | "filtered";
+  selectedSphere?: string;
 }) => {
   const getSupLabel = (
     sup: "supplier1" | "supplier2" | "supplier3" | "supplier4",
@@ -26,6 +30,45 @@ export const PrintCatalogView = ({
     if (sup === "supplier3") return list[1] || "Поставщик 2";
     return list[2] || "Поставщик 3";
   };
+
+  let coverTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
+  let coverSubtext = "В каталоге представлены цены всех трех поставщиков";
+  let coverBottomLabel = "";
+
+  if (isFacilitator) {
+    coverTitle = "КАТАЛОГ ТОВАРОВ";
+    coverSubtext = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
+    coverBottomLabel = selectedRegion ? selectedRegion.toUpperCase() : "РЕГИОНАЛЬНЫЙ КАТАЛОГ";
+  } else if (catalogType === "full" || (!selectedRegion && !selectedSupplier)) {
+    coverTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
+    coverSubtext = "В каталоге представлены цены всех трех поставщиков";
+    coverBottomLabel = `ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ (${getSupLabel("supplier2")} • ${getSupLabel("supplier3")} • ${getSupLabel("supplier4")})`;
+  } else {
+    const regText = selectedRegion ? selectedRegion.toUpperCase() : "";
+    const supText = selectedSupplier ? getSupLabel(selectedSupplier).toUpperCase() : "";
+
+    if (selectedRegion && selectedSupplier) {
+      coverTitle = `КАТАЛОГ ${regText}`;
+      coverSubtext = `ПОСТАВЩИК: ${supText}`;
+      coverBottomLabel = `КАТАЛОГ: ${regText} • ${supText}`;
+    } else if (selectedRegion) {
+      coverTitle = `КАТАЛОГ ${regText}`;
+      coverSubtext = "В каталоге представлены цены всех трех поставщиков";
+      coverBottomLabel = `РЕГИОН: ${regText} • ВСЕ ПОСТАВЩИКИ`;
+    } else if (selectedSupplier) {
+      coverTitle = `КАТАЛОГ: ${supText}`;
+      coverSubtext = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
+      coverBottomLabel = `ПОСТАВЩИК: ${supText} • ВСЕ РЕГИОНЫ`;
+    } else {
+      coverTitle = "КАТАЛОГ ТОВАРОВ";
+      coverSubtext = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
+      coverBottomLabel = "ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ";
+    }
+  }
+
+  if (selectedSphere) {
+    coverBottomLabel += ` • СФЕРА: ${selectedSphere.toUpperCase()}`;
+  }
 
   const grouped = products.reduce(
     (acc, p) => {
@@ -113,41 +156,25 @@ export const PrintCatalogView = ({
       <div className="print-cover-page border-[6px] border-double border-slate-900 rounded-lg m-1">
         <div className="text-center w-full mt-8 border-b-2 border-slate-100 pb-8">
           <span className="text-xs font-bold uppercase tracking-[0.4em] text-slate-400 block mb-2">
-            {isFacilitator
-              ? "Каталог Товарных Категорий"
-              : !selectedSupplier
-              ? "Каталог Товарных Категорий • Все Поставщики"
-              : "Каталог Товарных Категорий"}
+            Каталог Товарных Категорий
           </span>
-          <h1 className="text-5xl font-black uppercase tracking-wider text-slate-950 my-4 leading-tight">
-            {isFacilitator
-              ? "КАТАЛОГ ТОВАРОВ"
-              : !selectedSupplier
-              ? "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ"
-              : "КАТАЛОГ ТОВАРОВ"}
+          <h1 className="text-4xl sm:text-5xl font-black uppercase tracking-wider text-slate-950 my-4 leading-tight">
+            {coverTitle}
           </h1>
-          <div className="h-1 bg-slate-900 w-28 mx-auto mt-6 mb-2"></div>
-          <p className="text-xs text-slate-500 font-mono tracking-widest mt-2">
-            {isFacilitator
-              ? "B2B СИСТЕМА ДИСТРИБЬЮЦИИ"
-              : !selectedSupplier
-              ? "B2B СИСТЕМА ДИСТРИБЬЮЦИИ • ПОЛНЫЙ АССОРТИМЕНТ"
-              : "B2B СИСТЕМА ДИСТРИБЬЮЦИИ"}
+          <div className="h-1 bg-slate-900 w-28 mx-auto mt-6 mb-3"></div>
+          <p className="text-xs text-slate-600 font-medium tracking-wide mt-2">
+            {coverSubtext}
           </p>
         </div>
 
         {/* Central Logo */}
         <div className="flex-1 flex items-center justify-center w-full py-10">
           <div className="relative w-64 h-64 flex items-center justify-center bg-white p-4">
-            {/* 
-              Пользователь может загрузить свой логотип в папку public с именем logo.png (или logo.jpg) 
-            */}
             <img 
               src="/logo.png" 
               alt="Логотип" 
               className="w-full h-full object-contain"
               onError={(e) => {
-                // Фоллбэк, если logo.png не найден
                 e.currentTarget.style.display = "none";
                 const fallback = document.getElementById("logo-fallback");
                 if (fallback) fallback.style.display = "flex";
@@ -163,36 +190,9 @@ export const PrintCatalogView = ({
           </div>
         </div>
 
-        {/* Banner with secure fallbacks */}
-        <div className="w-full flex justify-center my-4 max-w-lg hidden">
-          <div className="w-full max-h-[85mm] overflow-hidden rounded-xl border border-slate-200 shadow-sm flex items-center justify-center bg-slate-50">
-            <img
-              src="/banner.jpg"
-              alt="Баннер"
-              className="w-full h-full object-contain max-h-[85mm]"
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-                e.currentTarget.parentElement!.style.display = "none";
-              }}
-            />
-          </div>
-        </div>
-
         <div className="text-center w-full mb-8">
-          <div className="text-slate-700 text-xs font-bold uppercase tracking-[0.25em] leading-relaxed max-w-md mx-auto">
-            {isFacilitator ? (
-              selectedRegion ? <span>{selectedRegion}</span> : null
-            ) : selectedSupplier && selectedRegion ? (
-              <span>ПОСТАВЩИК: {getSupLabel(selectedSupplier)} • {selectedRegion}</span>
-            ) : selectedSupplier ? (
-              <span>ПОСТАВЩИК: {getSupLabel(selectedSupplier)}</span>
-            ) : selectedRegion ? (
-              <span>{selectedRegion} • ВСЕ ПОСТАВЩИКИ</span>
-            ) : (
-              <span>
-                ВСЕ ПОСТАВЩИКИ ({getSupLabel("supplier2")} • {getSupLabel("supplier3")} • {getSupLabel("supplier4")})
-              </span>
-            )}
+          <div className="text-slate-800 text-xs font-bold uppercase tracking-[0.2em] leading-relaxed max-w-lg mx-auto bg-slate-50 py-2.5 px-4 rounded-md border border-slate-200">
+            {coverBottomLabel}
           </div>
           <div className="border-t border-slate-200 pt-6 mt-8 max-w-sm mx-auto flex justify-between text-[11px] text-slate-400 font-mono tracking-wider">
             <span>ДАТА: {new Date().toLocaleDateString("ru-RU")}</span>
@@ -289,7 +289,19 @@ export const PrintCatalogView = ({
 
                     {/* Sequential pricing list under each other or Lowest Price */}
                     <div className="border border-slate-100 bg-slate-50/70 rounded-lg p-2 space-y-1">
-                      {printMode === 'all' ? (
+                      {selectedSupplier ? (
+                        <div className="flex justify-between items-center text-[9.5px] py-1">
+                          <span className="text-slate-600 font-bold truncate max-w-[124px]">
+                            {getSupLabel(selectedSupplier)}:
+                          </span>
+                          <span className="font-extrabold text-indigo-700 text-[12px]">
+                            {(() => {
+                              const val = selectedSupplier === "supplier2" ? p.priceSupplier2 : selectedSupplier === "supplier3" ? p.priceSupplier3 : p.priceSupplier4;
+                              return val !== undefined && val > 0 ? `${val} с.` : "—";
+                            })()}
+                          </span>
+                        </div>
+                      ) : printMode === 'all' ? (
                         <div className="w-full flex flex-col gap-1">
                           <div className="flex justify-between items-center text-[8.5px] pb-1 border-b border-slate-200/40">
                             <span className="text-slate-400 font-medium truncate max-w-[124px]">{getSupLabel("supplier2")}:</span>

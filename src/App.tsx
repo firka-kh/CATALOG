@@ -640,6 +640,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   });
   const [isPrintOptionsOpen, setIsPrintOptionsOpen] = useState(false);
   const [showFacilitatorPrintWarning, setShowFacilitatorPrintWarning] = useState(false);
+  const [printCatalogType, setPrintCatalogType] = useState<"full" | "filtered">("full");
+  const [printSelectedRegion, setPrintSelectedRegion] = useState<string>("");
+  const [printSelectedSupplier, setPrintSelectedSupplier] = useState<"supplier1" | "supplier2" | "supplier3" | "supplier4" | null>(null);
+  const [printSelectedSphere, setPrintSelectedSphere] = useState<string>("");
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState(false);
   const [isGenerateIdsModalOpen, setIsGenerateIdsModalOpen] = useState(false);
   const [isBestPricePasswordModalOpen, setIsBestPricePasswordModalOpen] = useState(false);
@@ -1749,8 +1753,16 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const handlePrint = () => {
     if (portalFacilitator && isFacilitatorAuthenticated) {
       setShowFacilitatorPrintWarning(true);
+      setPrintCatalogType("filtered");
+      setPrintSelectedRegion(facilitatorRegion || selectedRegion || "");
+      setPrintSelectedSupplier(null);
+      setPrintSelectedSphere(selectedSphere || "");
     } else {
       setShowFacilitatorPrintWarning(false);
+      setPrintCatalogType("full");
+      setPrintSelectedRegion(selectedRegion || "");
+      setPrintSelectedSupplier(selectedSupplier || null);
+      setPrintSelectedSphere(selectedSphere || "");
     }
     setIsPrintOptionsOpen(true);
   };
@@ -3862,71 +3874,292 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         {/* Print Options Modal */}
         {isPrintOptionsOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm print:hidden">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b border-slate-100">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-4 px-6 border-b border-slate-100 bg-slate-50/50">
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <Printer className="w-5 h-5 text-indigo-500" />
-                  Настройки печати
+                  <Printer className="w-5 h-5 text-indigo-600" />
+                  Настройки печати каталога
                 </h2>
                 <button
                   onClick={() => setIsPrintOptionsOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-md transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="p-6 flex flex-col gap-4">
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto flex flex-col gap-5 text-left">
                 {showFacilitatorPrintWarning && (
-                  <div className="mb-2 p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-xs leading-relaxed flex items-start gap-2 shadow-sm">
+                  <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs leading-relaxed flex items-start gap-2 shadow-sm">
                     <Printer className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                     <span>
-                      <strong>Информация:</strong> как фасилитатор вы можете распечатывать каталог по всем поставщикам, но только по своему району ({facilitatorRegion || "свой район"}).
+                      <strong>Режим Фасилитатора:</strong> распечатывается каталог по вашему району (<strong>{facilitatorRegion || selectedRegion || "Ваш район"}</strong>).
                     </span>
                   </div>
                 )}
-                <div className="text-sm text-slate-600 mb-2">
-                  Выберите режим формирования Каталога для печати:
-                </div>
-                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
-                  <input
-                    type="radio"
-                    name="printMode"
-                    checked={catalogPrintMode === "all"}
-                    onChange={() => setCatalogPrintMode("all")}
-                    className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  <div className="flex flex-col">
-                    <span className="text-sm font-semibold text-slate-800">
-                      Все цены (3 поставщика)
-                    </span>
+
+                {/* 1. Catalog Cover / Scope Choice */}
+                {!portalFacilitator && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                      1. Вариант обложки и объем каталога:
+                    </label>
+                    <div className="grid grid-cols-1 gap-2.5">
+                      <label
+                        onClick={() => setPrintCatalogType("full")}
+                        className={`flex items-start gap-3 p-3.5 border rounded-xl cursor-pointer transition-all ${
+                          printCatalogType === "full"
+                            ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
+                            : "border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="printCatalogType"
+                          checked={printCatalogType === "full"}
+                          onChange={() => setPrintCatalogType("full")}
+                          className="mt-1 w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                            ПОЛНЫЙ КАТАЛОГ ТОВАРОВ
+                            <span className="bg-indigo-100 text-indigo-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                              Все 3 поставщика
+                            </span>
+                          </span>
+                          <span className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                            Печать всего ассортимента. На обложке выводится заголовок <strong>«ПОЛНЫЙ КАТАЛОГ ТОВАРОВ»</strong> и подпись <em>«В каталоге представлены цены всех трех поставщиков»</em>.
+                          </span>
+                        </div>
+                      </label>
+
+                      <label
+                        onClick={() => setPrintCatalogType("filtered")}
+                        className={`flex items-start gap-3 p-3.5 border rounded-xl cursor-pointer transition-all ${
+                          printCatalogType === "filtered"
+                            ? "border-indigo-600 bg-indigo-50/40 ring-2 ring-indigo-500/20"
+                            : "border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="printCatalogType"
+                          checked={printCatalogType === "filtered"}
+                          onChange={() => setPrintCatalogType("filtered")}
+                          className="mt-1 w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-bold text-slate-900">
+                            ВЫБОРОЧНЫЙ КАТАЛОГ (По фильтрам)
+                          </span>
+                          <span className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                            Настройка под регион, поставщика или сферу. На обложке выводится, например: <strong>«КАТАЛОГ ДУШАНБЕ • ПОСТАВЩИК 1»</strong>.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
                   </div>
-                </label>
-                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
-                  <input
-                    type="radio"
-                    name="printMode"
-                    checked={catalogPrintMode === "lowest"}
-                    onChange={() => setCatalogPrintMode("lowest")}
-                    className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer"
-                  />
-                  <span className="text-sm font-semibold text-slate-800">
-                    Только минимальные цены
+                )}
+
+                {/* 2. Filter Parameters */}
+                <div className={`space-y-3 p-3.5 rounded-xl border transition-all ${
+                  printCatalogType === "filtered" ? "bg-slate-50/80 border-slate-200" : "bg-slate-50/40 border-slate-100 opacity-85"
+                }`}>
+                  <span className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                    2. Фильтры и поставщики:
                   </span>
-                </label>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* Region Select */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Регион:
+                      </label>
+                      <select
+                        value={printSelectedRegion}
+                        disabled={!!portalFacilitator}
+                        onChange={(e) => {
+                          setPrintSelectedRegion(e.target.value);
+                          if (printCatalogType === "full") setPrintCatalogType("filtered");
+                        }}
+                        className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none disabled:bg-slate-100"
+                      >
+                        <option value="">Все регионы</option>
+                        {(globalDict.regions || Object.keys(DISTRICTS_BY_REGION)).map((r: string) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Supplier Select */}
+                    {!portalFacilitator && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">
+                          Поставщик:
+                        </label>
+                        <select
+                          value={printSelectedSupplier || ""}
+                          onChange={(e) => {
+                            const val = e.target.value as "supplier2" | "supplier3" | "supplier4" | "";
+                            setPrintSelectedSupplier(val ? val : null);
+                            if (printCatalogType === "full") setPrintCatalogType("filtered");
+                          }}
+                          className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                        >
+                          <option value="">Все поставщики</option>
+                          <option value="supplier2">{globalDict.suppliers?.[0] || "Поставщик 1"}</option>
+                          <option value="supplier3">{globalDict.suppliers?.[1] || "Поставщик 2"}</option>
+                          <option value="supplier4">{globalDict.suppliers?.[2] || "Поставщик 3"}</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Sphere Select */}
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Сфера применения (Категория):
+                      </label>
+                      <select
+                        value={printSelectedSphere}
+                        onChange={(e) => {
+                          setPrintSelectedSphere(e.target.value);
+                          if (printCatalogType === "full") setPrintCatalogType("filtered");
+                        }}
+                        className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                      >
+                        <option value="">Все сферы (Все товары)</option>
+                        {(globalDict.spheres || []).map((s: string) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Pricing Display Mode */}
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
+                    3. Формат отображения цен:
+                  </label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <label className={`flex items-center gap-2.5 p-3 border rounded-xl cursor-pointer transition-colors ${
+                      catalogPrintMode === "all" ? "border-indigo-600 bg-indigo-50/50" : "border-slate-200 hover:bg-slate-50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="printMode"
+                        checked={catalogPrintMode === "all"}
+                        onChange={() => setCatalogPrintMode("all")}
+                        className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-800">
+                        Все 3 поставщика
+                      </span>
+                    </label>
+                    <label className={`flex items-center gap-2.5 p-3 border rounded-xl cursor-pointer transition-colors ${
+                      catalogPrintMode === "lowest" ? "border-indigo-600 bg-indigo-50/50" : "border-slate-200 hover:bg-slate-50"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="printMode"
+                        checked={catalogPrintMode === "lowest"}
+                        onChange={() => setCatalogPrintMode("lowest")}
+                        className="w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
+                      />
+                      <span className="text-xs font-semibold text-slate-800">
+                        Только мин. цена
+                      </span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Live Cover Preview Box */}
+                {(() => {
+                  const getSupName = (supKey: string) => {
+                    if (supKey === "supplier2") return globalDict.suppliers?.[0] || "Поставщик 1";
+                    if (supKey === "supplier3") return globalDict.suppliers?.[1] || "Поставщик 2";
+                    if (supKey === "supplier4") return globalDict.suppliers?.[2] || "Поставщик 3";
+                    return "Поставщик";
+                  };
+
+                  let pTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
+                  let pSub = "В каталоге представлены цены всех трех поставщиков";
+                  let pStamp = `ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ (${getSupName("supplier2")} • ${getSupName("supplier3")} • ${getSupName("supplier4")})`;
+
+                  if (portalFacilitator) {
+                    pTitle = "КАТАЛОГ ТОВАРОВ";
+                    pSub = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
+                    pStamp = printSelectedRegion ? printSelectedRegion.toUpperCase() : "РЕГИОНАЛЬНЫЙ КАТАЛОГ";
+                  } else if (printCatalogType === "full") {
+                    pTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
+                    pSub = "В каталоге представлены цены всех трех поставщиков";
+                    pStamp = `ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ (${getSupName("supplier2")} • ${getSupName("supplier3")} • ${getSupName("supplier4")})`;
+                  } else {
+                    const rText = printSelectedRegion ? printSelectedRegion.toUpperCase() : "";
+                    const sText = printSelectedSupplier ? getSupName(printSelectedSupplier).toUpperCase() : "";
+
+                    if (printSelectedRegion && printSelectedSupplier) {
+                      pTitle = `КАТАЛОГ ${rText}`;
+                      pSub = `ПОСТАВЩИК: ${sText}`;
+                      pStamp = `КАТАЛОГ: ${rText} • ${sText}`;
+                    } else if (printSelectedRegion) {
+                      pTitle = `КАТАЛОГ ${rText}`;
+                      pSub = "В каталоге представлены цены всех трех поставщиков";
+                      pStamp = `РЕГИОН: ${rText} • ВСЕ ПОСТАВЩИКИ`;
+                    } else if (printSelectedSupplier) {
+                      pTitle = `КАТАЛОГ: ${sText}`;
+                      pSub = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
+                      pStamp = `ПОСТАВЩИК: ${sText} • ВСЕ РЕГИОНЫ`;
+                    } else {
+                      pTitle = "КАТАЛОГ ТОВАРОВ";
+                      pSub = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
+                      pStamp = "ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ";
+                    }
+                  }
+
+                  if (printSelectedSphere && printCatalogType === "filtered") {
+                    pStamp += ` • СФЕРА: ${printSelectedSphere.toUpperCase()}`;
+                  }
+
+                  return (
+                    <div className="bg-slate-900 text-white rounded-xl p-4 border border-slate-800 shadow-inner space-y-1.5 text-center">
+                      <div className="text-[10px] uppercase font-bold text-slate-400 tracking-widest flex items-center justify-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                        Предпросмотр надписи на обложке
+                      </div>
+                      <div className="text-base sm:text-lg font-black tracking-wide text-white uppercase mt-1">
+                        {pTitle}
+                      </div>
+                      <div className="text-xs text-indigo-200 font-medium italic">
+                        {pSub}
+                      </div>
+                      <div className="text-[10px] text-slate-300 font-mono uppercase tracking-wider bg-slate-800/80 px-2.5 py-1 rounded mt-2 border border-slate-700/60 inline-block">
+                        {pStamp}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
-              <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+              {/* Modal Footer */}
+              <div className="p-4 px-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
                 <button
                   onClick={() => setIsPrintOptionsOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-md transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleConfirmPrint}
-                  className="px-4 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm shadow-indigo-500/30 transition-all flex items-center gap-2"
+                  className="px-5 py-2 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-md shadow-indigo-500/20 transition-all flex items-center gap-2"
                 >
+                  <Printer className="w-4 h-4" />
                   Распечатать
                 </button>
               </div>
@@ -4808,44 +5041,51 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         <PrintCatalogView
           printMode={catalogPrintMode}
           suppliers={globalDict.suppliers}
-          selectedRegion={selectedRegion}
-          selectedSupplier={selectedSupplier}
+          selectedRegion={printCatalogType === "full" ? "" : printSelectedRegion}
+          selectedSupplier={printCatalogType === "full" ? null : printSelectedSupplier}
+          catalogType={printCatalogType}
+          selectedSphere={printCatalogType === "full" ? "" : printSelectedSphere}
           isFacilitator={!!portalFacilitator}
           products={(() => {
             let filtered = products;
-            if (exportScope === "sphere" || exportScope === "region_sphere") {
+
+            // Filter by sphere if in filtered catalog mode and sphere chosen
+            const sphereToUse = printCatalogType === "filtered" ? printSelectedSphere : "";
+            if (sphereToUse) {
               filtered = filtered.filter((p) => {
-                  const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
-                  return prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
+                const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+                return prodSpheres.some(s => s === sphereToUse || s.includes(sphereToUse) || sphereToUse.includes(s));
               });
             }
-            return filtered;
-          })().map((p) => {
-            const productRegion = selectedRegion || "Душанбе";
-            return {
-              ...p,
-              priceSupplier1: getProductPriceForSupplierAndRegion(
-                p,
-                "supplier1",
-                productRegion,
-              ),
-              priceSupplier2: getProductPriceForSupplierAndRegion(
-                p,
-                "supplier2",
-                productRegion,
-              ),
-              priceSupplier3: getProductPriceForSupplierAndRegion(
-                p,
-                "supplier3",
-                productRegion,
-              ),
-              priceSupplier4: getProductPriceForSupplierAndRegion(
-                p,
-                "supplier4",
-                productRegion,
-              ),
-            };
-          })}
+
+            const productRegion = (printCatalogType === "filtered" ? printSelectedRegion : "") || selectedRegion || "Душанбе";
+
+            return filtered.map((p) => {
+              return {
+                ...p,
+                priceSupplier1: getProductPriceForSupplierAndRegion(
+                  p,
+                  "supplier1",
+                  productRegion,
+                ),
+                priceSupplier2: getProductPriceForSupplierAndRegion(
+                  p,
+                  "supplier2",
+                  productRegion,
+                ),
+                priceSupplier3: getProductPriceForSupplierAndRegion(
+                  p,
+                  "supplier3",
+                  productRegion,
+                ),
+                priceSupplier4: getProductPriceForSupplierAndRegion(
+                  p,
+                  "supplier4",
+                  productRegion,
+                ),
+              };
+            });
+          })()}
         />
       )}
 

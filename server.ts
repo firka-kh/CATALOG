@@ -2,9 +2,9 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-import google from "googlethis";
 import dotenv from "dotenv";
 import { bot } from "./bot.ts";
+import { searchImages } from "./src/lib/imageSearch.ts";
 
 dotenv.config();
 
@@ -228,29 +228,11 @@ app.post("/api/search-images", async (req, res) => {
       res.status(400).json({ error: "No query provided" });
       return;
     }
-    const options = {
-      page: 0,
-      safe: false,
-      additional_params: {},
-    };
-    try {
-      const timeoutPromise = new Promise<any[]>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(new Error("Таймаут поиска изображений, сервер перегружен.")),
-          8000,
-        ),
-      );
-      const results = await Promise.race([
-        google.image(query, options),
-        timeoutPromise,
-      ]);
-      res.json({ results: results.map((r: any) => ({ url: r.url })) });
-    } catch (e: any) {
-      res.status(500).json({ error: "Error searching images: " + e.message });
-    }
+    const results = await searchImages(query);
+    res.json({ results });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("Error searching images:", error);
+    res.status(500).json({ error: "Error searching images: " + error.message });
   }
 });
 
@@ -263,10 +245,17 @@ app.post("/api/fetch-image", async (req, res) => {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
 
     try {
-      const imageRes = await fetch(url, { signal: controller.signal });
+      const imageRes = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        },
+      });
       clearTimeout(timeout);
 
       if (!imageRes.ok) {
@@ -275,17 +264,21 @@ app.post("/api/fetch-image", async (req, res) => {
       }
       const arrayBuffer = await imageRes.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const mimeType = imageRes.headers.get("content-type") || "image/jpeg";
+      let mimeType = imageRes.headers.get("content-type") || "image/jpeg";
+      if (mimeType.includes(";")) {
+        mimeType = mimeType.split(";")[0].trim();
+      }
+      if (!mimeType.startsWith("image/")) {
+        mimeType = "image/jpeg";
+      }
       const base64 = buffer.toString("base64");
 
       res.json({ mimeType, base64: `data:${mimeType};base64,${base64}` });
     } catch (err: any) {
       clearTimeout(timeout);
-      res
-        .status(500)
-        .json({
-          error: err.name === "AbortError" ? "Таймаут загрузки" : err.message,
-        });
+      res.status(500).json({
+        error: err.name === "AbortError" ? "Таймаут загрузки" : err.message,
+      });
     }
   } catch (e: any) {
     res.status(500).json({ error: e.message });

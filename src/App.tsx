@@ -556,6 +556,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isManualModalOpen, setIsManualModalOpen] = useState(false);
   const [isImageSearchModalOpen, setIsImageSearchModalOpen] = useState(false);
   const [imageSearchResults, setImageSearchResults] = useState<any[]>([]);
+  const [imageSearchQuery, setImageSearchQuery] = useState("");
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
   const [isTabletMode, setIsTabletMode] = useState(
@@ -1281,27 +1282,16 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setIsNormalizeConfirmOpen(true);
   };
 
-  const handleSearchImagesClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!manualForm.name) {
-      alert("Сначала введите название для поиска");
-      return;
-    }
-
-    setIsImageSearchModalOpen(true);
+  const executeImageSearch = async (queryToSearch: string) => {
+    if (!queryToSearch.trim()) return;
     setIsSearchingImages(true);
     setImageSearchResults([]);
 
     try {
-      const queryParts = [manualForm.name];
-      if (manualForm.sphere) queryParts.push(manualForm.sphere);
-      const query = queryParts.join(" ").trim().substring(0, 100);
-
       const res = await fetch("/api/search-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: query.trim() }),
+        body: JSON.stringify({ query: queryToSearch.trim() }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1315,6 +1305,23 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       alert(`Сетевая ошибка при поиске: ${e.message}`);
     }
     setIsSearchingImages(false);
+  };
+
+  const handleSearchImagesClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!manualForm.name) {
+      alert("Сначала введите название для поиска");
+      return;
+    }
+
+    const queryParts = [manualForm.name];
+    if (manualForm.sphere) queryParts.push(manualForm.sphere);
+    const initialQuery = queryParts.join(" ").trim().substring(0, 100);
+
+    setImageSearchQuery(initialQuery);
+    setIsImageSearchModalOpen(true);
+    await executeImageSearch(initialQuery);
   };
 
   const handleSelectImageResult = async (url: string) => {
@@ -3944,6 +3951,35 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 </button>
               </div>
 
+              {/* Search query input inside modal */}
+              <div className="p-3 bg-white border-b border-slate-200 flex gap-2">
+                <input
+                  type="text"
+                  value={imageSearchQuery}
+                  onChange={(e) => setImageSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      executeImageSearch(imageSearchQuery);
+                    }
+                  }}
+                  placeholder="Введите запрос для поиска фото..."
+                  className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  onClick={() => executeImageSearch(imageSearchQuery)}
+                  disabled={isSearchingImages || !imageSearchQuery.trim()}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium text-sm rounded-lg transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  {isSearchingImages ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                  Найти
+                </button>
+              </div>
+
               <div className="p-4 overflow-y-auto flex-1 bg-slate-50">
                 {isSearchingImages ? (
                   <div className="flex flex-col items-center justify-center h-full text-slate-500">
@@ -3960,8 +3996,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       >
                         <img
                           src={img.url}
-                          alt="Search Result"
+                          alt={img.title || "Search Result"}
+                          referrerPolicy="no-referrer"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            // If direct url breaks, hide broken thumbnail
+                            (e.currentTarget.parentElement as HTMLElement).style.display = "none";
+                          }}
                         />
                         <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center">
                           <span className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white text-xs font-semibold px-2 py-1 rounded shadow-sm transition-opacity">
@@ -3972,8 +4013,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
                     <p>Изображения не найдены</p>
+                    <p className="text-xs text-slate-400">Попробуйте изменить поисковый запрос выше</p>
                   </div>
                 )}
               </div>

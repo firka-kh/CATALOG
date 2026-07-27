@@ -232,6 +232,75 @@ const compressImageBase64 = (
   });
 };
 
+const CardSpheres = ({ spheres, region }: { spheres: string[]; region?: string }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!spheres || spheres.length === 0) {
+    if (!region) return null;
+    return (
+      <div className="flex items-center gap-1">
+        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+          {region}
+        </span>
+      </div>
+    );
+  }
+
+  const firstSphere = spheres[0];
+  const extraCount = spheres.length - 1;
+
+  if (expanded) {
+    return (
+      <div className="flex flex-wrap items-center gap-1 my-0.5" onClick={(e) => e.stopPropagation()}>
+        {spheres.map((s, idx) => (
+          <span key={idx} className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
+            {s}
+          </span>
+        ))}
+        {region && (
+          <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+            {region}
+          </span>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(false);
+          }}
+          className="text-[10px] font-bold text-slate-400 hover:text-slate-600 underline ml-1"
+        >
+          свернуть
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap my-0.5" onClick={(e) => e.stopPropagation()}>
+      <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md truncate max-w-[140px]">
+        {firstSphere}
+      </span>
+      {extraCount > 0 && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded(true);
+          }}
+          className="text-[10px] font-bold text-indigo-600 bg-indigo-100/80 hover:bg-indigo-200 border border-indigo-200 px-1.5 py-0.5 rounded-md transition-colors shadow-xs"
+          title={`Показать все сферы (${spheres.length})`}
+        >
+          +{extraCount} сфер
+        </button>
+      )}
+      {region && (
+        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+          {region}
+        </span>
+      )}
+    </div>
+  );
+};
+
 export default function App({ portalFacilitator }: { portalFacilitator?: string }) {
   const {
     needRefresh: [needRefresh, setNeedRefresh],
@@ -2975,18 +3044,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
                             {/* Product Info */}
                             <div className="p-4 space-y-2">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                {((p.spheres && p.spheres.length > 0) ? p.spheres : (p.sphere ? [p.sphere] : [])).map((s, idx) => (
-                                  <span key={idx} className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
-                                    {s}
-                                  </span>
-                                ))}
-                                {selectedRegion && (
-                                  <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
-                                    {selectedRegion}
-                                  </span>
-                                )}
-                              </div>
+                              <CardSpheres
+                                spheres={(p.spheres && p.spheres.length > 0) ? p.spheres : (p.sphere ? [p.sphere] : [])}
+                                region={selectedRegion}
+                              />
 
                               <h3
                                 className="font-bold text-slate-900 text-base leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors"

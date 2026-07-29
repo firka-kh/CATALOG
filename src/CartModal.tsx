@@ -11,6 +11,10 @@ import {
   Check,
   Truck,
   Loader2,
+  User,
+  Archive,
+  BookmarkCheck,
+  CheckCircle2,
 } from "lucide-react";
 import { Product } from "./types";
 import {
@@ -24,6 +28,7 @@ import {
 import { db } from "./lib/firebase";
 
 import { downloadCartExcel } from "./lib/excelExport";
+import { saveQuoteToHistory } from "./lib/quotesHistory";
 
 interface CartItem {
   product: Product;
@@ -42,6 +47,8 @@ interface Props {
     delta: number,
   ) => void;
   onPrint: () => void;
+  onPrintWithMeta?: (clientName: string, facilitatorName: string, note: string) => void;
+  onOpenQuotesHistory?: () => void;
   suppliers: string[];
   products: Product[];
   onAddToCart: (
@@ -68,6 +75,7 @@ interface Props {
   supplierLegalNames?: Record<string, string>;
   selectedSphere?: string;
   onClearCart?: () => void;
+  defaultFacilitatorName?: string;
 }
 
 export function CartModal({
@@ -76,6 +84,8 @@ export function CartModal({
   cart,
   updateQuantity,
   onPrint,
+  onPrintWithMeta,
+  onOpenQuotesHistory,
   suppliers,
   products,
   onAddToCart,
@@ -90,6 +100,7 @@ export function CartModal({
   supplierLegalNames,
   selectedSphere,
   onClearCart,
+  defaultFacilitatorName = "Фасилитатор",
 }: Props) {
   const [addMode, setAddMode] = useState<"single" | "mass">("single");
   const [massInputText, setMassInputText] = useState("");
@@ -101,6 +112,19 @@ export function CartModal({
   const [addedMessage, setAddedMessage] = useState<string | null>(null);
 
   const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+
+  // Customer metadata state
+  const [clientName, setClientName] = useState("");
+  const [facilitatorName, setFacilitatorName] = useState(defaultFacilitatorName);
+  const [note, setNote] = useState("");
+  const [isSavingHistory, setIsSavingHistory] = useState(false);
+  const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (defaultFacilitatorName) {
+      setFacilitatorName(defaultFacilitatorName);
+    }
+  }, [defaultFacilitatorName]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -394,6 +418,76 @@ export function CartModal({
     }
   };
 
+  const handleSaveToHistory = async () => {
+    if (displayedCart.length === 0) return;
+    if (!clientName.trim()) {
+      alert("Пожалуйста, укажите имя/фамилию или объект заказчика перед сохранением!");
+      return;
+    }
+    setIsSavingHistory(true);
+    try {
+      await saveQuoteToHistory({
+        clientName: clientName.trim(),
+        facilitatorName: facilitatorName.trim() || "Фасилитатор",
+        note: note.trim(),
+        selectedRegion: selectedRegion || "Все регионы",
+        selectedSphere: selectedSphere || "Все сферы",
+        logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
+        cart: displayedCart,
+      });
+      setHistorySavedMsg("✓ Сохранено в Архив КП!");
+      setTimeout(() => setHistorySavedMsg(null), 3500);
+    } catch (err: any) {
+      console.error("Error saving quote to history:", err);
+      alert(`Не удалось сохранить подборку в архив: ${err?.message || "Ошибка подключения"}`);
+    } finally {
+      setIsSavingHistory(false);
+    }
+  };
+
+  const handleExcelExport = async () => {
+    await downloadCartExcel(
+      displayedCart,
+      displayedCart.length > 0 ? logisticsCost : 0,
+      suppliers,
+      selectedRegion,
+      selectedSphere,
+      clientName.trim(),
+      facilitatorName.trim(),
+      note.trim()
+    );
+    if (clientName.trim() && displayedCart.length > 0) {
+      saveQuoteToHistory({
+        clientName: clientName.trim(),
+        facilitatorName: facilitatorName.trim() || "Фасилитатор",
+        note: note.trim(),
+        selectedRegion: selectedRegion || "Все регионы",
+        selectedSphere: selectedSphere || "Все сферы",
+        logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
+        cart: displayedCart,
+      }).catch(console.error);
+    }
+  };
+
+  const handlePrintAction = () => {
+    if (onPrintWithMeta) {
+      onPrintWithMeta(clientName.trim(), facilitatorName.trim(), note.trim());
+    } else {
+      onPrint();
+    }
+    if (clientName.trim() && displayedCart.length > 0) {
+      saveQuoteToHistory({
+        clientName: clientName.trim(),
+        facilitatorName: facilitatorName.trim() || "Фасилитатор",
+        note: note.trim(),
+        selectedRegion: selectedRegion || "Все регионы",
+        selectedSphere: selectedSphere || "Все сферы",
+        logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
+        cart: displayedCart,
+      }).catch(console.error);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -418,9 +512,7 @@ export function CartModal({
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto justify-end">
             <button
-              onClick={() => {
-                downloadCartExcel(displayedCart, displayedCart.length > 0 ? logisticsCost : 0, suppliers, selectedRegion, selectedSphere);
-              }}
+              onClick={handleExcelExport}
               disabled={displayedCart.length === 0}
               className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-md transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-none justify-center"
             >
@@ -428,7 +520,7 @@ export function CartModal({
               <span>Excel</span>
             </button>
             <button
-              onClick={onPrint}
+              onClick={handlePrintAction}
               disabled={displayedCart.length === 0}
               className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-md transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-none justify-center"
             >
@@ -440,6 +532,92 @@ export function CartModal({
               className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
             >
               <X className="w-5 h-5 shrink-0" />
+            </button>
+          </div>
+        </div>
+
+        {/* Customer Metadata / Archive KP Card */}
+        <div className="bg-slate-900 text-white p-3.5 sm:p-4 border-b border-slate-800 shrink-0">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2.5">
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="font-bold text-xs sm:text-sm text-white">
+                Карточка клиента / Метаданные выборки
+              </span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                Снимок цен
+              </span>
+            </div>
+            {onOpenQuotesHistory && (
+              <button
+                type="button"
+                onClick={onOpenQuotesHistory}
+                className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-400/30 rounded text-xs font-semibold transition-all self-start md:self-auto"
+              >
+                <Archive className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Реестр (Архив КП)</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Имя Фаслитатора / Клиента <span className="text-rose-400">*</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Имя Фамилия заказчика..."
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Кто создал (Фасилитатор)
+              </label>
+              <input
+                type="text"
+                placeholder="Имя фасилитатора"
+                value={facilitatorName}
+                onChange={(e) => setFacilitatorName(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Заметка к КП
+              </label>
+              <input
+                type="text"
+                placeholder="Примечание к заказу..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2.5 pt-2 border-t border-slate-800">
+            <span className="text-[11px] text-slate-400 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              При сохранении система запечатывает точные цены и коэффициенты
+            </span>
+            <button
+              type="button"
+              onClick={handleSaveToHistory}
+              disabled={isSavingHistory || displayedCart.length === 0}
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white px-3 py-1 rounded text-xs font-bold transition-all shadow-sm shrink-0"
+            >
+              {isSavingHistory ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <BookmarkCheck className="w-4 h-4" />
+              )}
+              <span>{historySavedMsg || "Сохранить подборку в Архив КП"}</span>
             </button>
           </div>
         </div>

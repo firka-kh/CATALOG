@@ -27,7 +27,9 @@ import {
   CheckCircle,
   Clock,
   Lock,
+  Archive,
 } from "lucide-react";
+import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { generateNextProductCode } from "./lib/generateNextCode";
 import {
@@ -332,7 +334,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     // Fail-safe to ensure the app never stays stuck if firestore is slow
     const timer = setTimeout(() => {
       setIsDictLoaded(true);
-    }, 1200);
+      setIsProductsLoaded(true);
+      setIsInitialLoadDone(true);
+    }, 1500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -636,6 +640,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [imageSearchQuery, setImageSearchQuery] = useState("");
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
+  const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
+  const [cartPrintMetadata, setCartPrintMetadata] = useState<{
+    clientName?: string;
+    facilitatorName?: string;
+    note?: string;
+    createdAt?: string;
+  }>({});
   const [isTabletMode, setIsTabletMode] = useState(
     () => localStorage.getItem("catalog_tablet_mode") === "true",
   );
@@ -1023,47 +1034,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isImportingPrices, setIsImportingPrices] = useState(false);
 
   useEffect(() => {
-    let q = query(
+    const q = query(
       collection(db, "products"),
       orderBy("createdAt", "desc")
     );
-
-    // Server-side filtering
-    const conditions = [];
-    
-    // We can only apply range filters on ONE field at a time in Firestore
-    // Prefer searchCode if provided, else searchName
-    
-    if (debouncedSearchCode) {
-       const codeOrId = debouncedSearchCode.trim().replace(/^#/, "");
-       q = query(
-         collection(db, "products"),
-         ...conditions,
-         where("code", ">=", codeOrId),
-         where("code", "<=", codeOrId + "\uf8ff")
-       );
-    } else {
-       if (debouncedSearchName) {
-         conditions.push(where("name", ">=", debouncedSearchName));
-         conditions.push(where("name", "<=", debouncedSearchName + "\uf8ff"));
-       }
-
-       if (conditions.length > 0) {
-         if (debouncedSearchName) {
-           q = query(
-             collection(db, "products"),
-             ...conditions,
-             orderBy("name")
-           );
-         } else {
-           q = query(
-             collection(db, "products"),
-             ...conditions,
-             orderBy("createdAt", "desc")
-           );
-         }
-       }
-    }
 
     const unsub = onSnapshot(
       q,
@@ -1813,7 +1787,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setCart([]);
   };
 
-  const handleCartPrint = () => {
+  const handleCartPrint = (meta?: { clientName?: string; facilitatorName?: string; note?: string; createdAt?: string }) => {
+    if (meta) {
+      setCartPrintMetadata(meta);
+    }
     if (window !== window.parent) {
       setPrintWarningType("cart");
       setShowPrintWarning(true);
@@ -1830,6 +1807,40 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         setTimeout(() => setIsCartPrinting(false), 2000);
       }, 300);
     }
+  };
+
+  const handleLoadQuoteToActiveCart = (
+    items: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[],
+    region?: string,
+    sphere?: string
+  ) => {
+    setCart(items);
+    if (region) setSelectedRegion(region);
+    if (sphere) setSelectedSphere(sphere);
+    setIsQuotesHistoryOpen(false);
+    setIsCartOpen(true);
+  };
+
+  const handleTriggerPdfPrintFromHistory = (data: {
+    clientName: string;
+    facilitatorName: string;
+    note?: string;
+    createdAt?: string;
+    selectedRegion?: string;
+    selectedSphere?: string;
+    logisticsCost?: number;
+    cart: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[];
+  }) => {
+    setCart(data.cart);
+    if (data.selectedRegion) setSelectedRegion(data.selectedRegion);
+    if (data.selectedSphere) setSelectedSphere(data.selectedSphere);
+    setCartPrintMetadata({
+      clientName: data.clientName,
+      facilitatorName: data.facilitatorName,
+      note: data.note,
+      createdAt: data.createdAt,
+    });
+    handleCartPrint();
   };
 
   const pdfRef = useRef<HTMLDivElement>(null);
@@ -2686,10 +2697,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   </a>
                   <a
                     href="#"
-                    className="flex items-center gap-3 px-3 py-2 text-slate-400 hover:bg-slate-800 transition-colors"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsQuotesHistoryOpen(true);
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 transition-colors rounded-md"
                   >
-                    <Download className="w-5 h-5" />
-                    История экспорта
+                    <Archive className="w-5 h-5 text-indigo-400" />
+                    История подборок (Архив КП)
                   </a>
                 </>
               )}
@@ -2814,6 +2829,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <span className="hidden xs:inline">{isTabletMode ? "Обычный режим" : "Режим Планшета"}</span>
                 <span className="xs:hidden">{isTabletMode ? "Обычный" : "Планшет"}</span>
               </button>
+              {!portalFacilitator && (
+                <button
+                  onClick={() => setIsQuotesHistoryOpen(true)}
+                  className="flex items-center gap-1.5 text-xs bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm"
+                  title="История подборок (Архив КП)"
+                >
+                  <Archive className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="hidden sm:inline">Архив КП</span>
+                  <span className="sm:hidden">Архив</span>
+                </button>
+              )}
               {isTabletMode && (
                 <button
                   onClick={() => setIsCartOpen(true)}
@@ -3028,7 +3054,28 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                         <span className="font-medium">ИИ обрабатывает данные...</span>
                       </div>
                     ) : (
-                      "Товары не найдены. Попробуйте изменить параметры поиска или добавить товары вручную."
+                      <div className="flex flex-col items-center gap-3 max-w-sm mx-auto">
+                        <Package className="w-10 h-10 text-slate-300 stroke-1" />
+                        <p className="text-base font-semibold text-slate-700">Товары не найдены</p>
+                        {selectedSphere && (
+                          <p className="text-xs text-slate-500">
+                            Активен фильтр по сфере: <span className="font-semibold text-indigo-600">"{selectedSphere}"</span>
+                          </p>
+                        )}
+                        {(selectedSphere || searchName || searchCode || showOnlyNew) && (
+                          <button
+                            onClick={() => {
+                              setSelectedSphere("");
+                              setSearchName("");
+                              setSearchCode("");
+                              setShowOnlyNew(false);
+                            }}
+                            className="mt-2 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3.5 py-1.5 rounded-lg transition-colors"
+                          >
+                            Показать все сферы и сбросить фильтры
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 ) : (
@@ -3354,7 +3401,28 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               </span>
                             </div>
                           ) : (
-                            "Товары не найдены. Загрузите изображения ниже или добавьте товары вручную."
+                            <div className="flex flex-col items-center gap-2 max-w-sm mx-auto">
+                              <Package className="w-8 h-8 text-slate-300 stroke-1" />
+                              <p className="text-sm font-semibold text-slate-700">Товары не найдены</p>
+                              {selectedSphere && (
+                                <p className="text-xs text-slate-500">
+                                  Активен фильтр по сфере: <span className="font-semibold text-indigo-600">"{selectedSphere}"</span>
+                                </p>
+                              )}
+                              {(selectedSphere || searchName || searchCode || showOnlyNew) && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedSphere("");
+                                    setSearchName("");
+                                    setSearchCode("");
+                                    setShowOnlyNew(false);
+                                  }}
+                                  className="mt-1 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1 rounded-lg transition-colors"
+                                >
+                                  Показать все сферы и сбросить фильтры
+                                </button>
+                              )}
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -5444,6 +5512,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         cart={cart}
         updateQuantity={handleUpdateCartQuantity}
         onPrint={handleCartPrint}
+        onPrintWithMeta={(clientName, facilitatorName, note) => {
+          setCartPrintMetadata({ clientName, facilitatorName, note });
+          handleCartPrint({ clientName, facilitatorName, note });
+        }}
+        onOpenQuotesHistory={!portalFacilitator ? () => setIsQuotesHistoryOpen(true) : undefined}
         suppliers={globalDict.suppliers || []}
         products={products}
         onAddToCart={handleAddToCart}
@@ -5460,6 +5533,15 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         supplierLegalNames={globalDict.supplierLegalNames}
         selectedSphere={selectedSphere}
         onClearCart={handleClearCart}
+        defaultFacilitatorName={getFacilitatorName()}
+      />
+
+      <QuotesHistoryModal
+        isOpen={isQuotesHistoryOpen}
+        onClose={() => setIsQuotesHistoryOpen(false)}
+        onLoadCartToActive={handleLoadQuoteToActiveCart}
+        onTriggerPdfPrint={handleTriggerPdfPrintFromHistory}
+        suppliers={globalDict.suppliers || []}
       />
 
       {!isCartPrinting && (
@@ -5815,6 +5897,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           selectedSphere={selectedSphere}
           supplierPhones={globalDict.supplierPhones}
           supplierLegalNames={globalDict.supplierLegalNames}
+          clientName={cartPrintMetadata.clientName}
+          facilitatorName={cartPrintMetadata.facilitatorName}
+          note={cartPrintMetadata.note}
+          createdAt={cartPrintMetadata.createdAt}
         />
       )}
     </>

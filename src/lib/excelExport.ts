@@ -241,7 +241,16 @@ export async function downloadCatalogExcel(products: Product[], suppliers?: stri
   saveAs(blob, `Каталог_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '_')}.xlsx`);
 }
 
-export async function downloadCartExcel(cart: any[], logisticsCost: number, suppliers?: string[], selectedRegion?: string, selectedSphere?: string) {
+export async function downloadCartExcel(
+  cart: any[],
+  logisticsCost: number,
+  suppliers?: string[],
+  selectedRegion?: string,
+  selectedSphere?: string,
+  clientName?: string,
+  facilitatorName?: string,
+  note?: string
+) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AI Catalog Creator';
   workbook.created = new Date();
@@ -294,31 +303,67 @@ export async function downloadCartExcel(cart: any[], logisticsCost: number, supp
       { key: "total", width: 20 }
     ];
 
-    summaryWs.mergeCells("A1:H1");
-    const titleCell = summaryWs.getCell("A1");
-    titleCell.value = "Буҷети сармоягузорӣ";
+    let rowCursor = 1;
+    summaryWs.mergeCells(`A${rowCursor}:H${rowCursor}`);
+    const titleCell = summaryWs.getCell(`A${rowCursor}`);
+    titleCell.value = "Буҷети сармоягузорӣ / Выборка товаров";
     titleCell.font = { bold: true, size: 12 };
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } };
     for (let c = 1; c <= 8; c++) {
-      summaryWs.getCell(1, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+    }
+    rowCursor++;
+
+    if (clientName) {
+      const clientRow = summaryWs.addRow(["Миҷоз / Заказчик (ФИО):", clientName, "", "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+      clientRow.getCell(1).font = { bold: true, size: 10 };
+      clientRow.getCell(2).font = { bold: true, size: 10 };
+      for (let c = 1; c <= 8; c++) {
+        summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      }
+      rowCursor++;
     }
 
-    // Add info rows for Region and Sphere under the title block
+    if (facilitatorName) {
+      const facRow = summaryWs.addRow(["Фасилитатор:", facilitatorName, "", "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+      facRow.getCell(1).font = { bold: true, size: 10 };
+      facRow.getCell(2).font = { size: 10 };
+      for (let c = 1; c <= 8; c++) {
+        summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      }
+      rowCursor++;
+    }
+
     const infoRow1 = summaryWs.addRow(["Минтақа (Регион):", selectedRegion || "Ҳамаи минтақаҳо", "", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B2:H2`);
+    summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
     infoRow1.getCell(1).font = { bold: true, size: 10 };
     infoRow1.getCell(2).font = { size: 10 };
     for (let c = 1; c <= 8; c++) {
-      summaryWs.getCell(2, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
+    rowCursor++;
 
     const infoRow2 = summaryWs.addRow(["Сфера (Бахш):", selectedSphere || "Ҳамаи сфераҳо", "", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B3:H3`);
+    summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
     infoRow2.getCell(1).font = { bold: true, size: 10 };
     infoRow2.getCell(2).font = { size: 10 };
     for (let c = 1; c <= 8; c++) {
-      summaryWs.getCell(3, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+    }
+    rowCursor++;
+
+    if (note) {
+      const noteRow = summaryWs.addRow(["Заметка:", note, "", "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+      noteRow.getCell(1).font = { bold: true, size: 10 };
+      noteRow.getCell(2).font = { size: 10 };
+      for (let c = 1; c <= 8; c++) {
+        summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      }
+      rowCursor++;
     }
 
     const headerRow = summaryWs.addRow(["#", "ID товара", "Ном ва хусусиятҳо", "Сфера", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);

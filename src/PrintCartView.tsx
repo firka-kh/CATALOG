@@ -17,9 +17,13 @@ interface Props {
   selectedSphere?: string;
   supplierPhones?: Record<string, string>;
   supplierLegalNames?: Record<string, string>;
+  clientName?: string;
+  facilitatorName?: string;
+  note?: string;
+  createdAt?: string;
 }
 
-export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames }, ref) => {
+export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames, clientName, facilitatorName, note, createdAt }, ref) => {
   if (!isPrinting) return null;
 
   // Filter cart items by selected sphere if provided
@@ -71,15 +75,30 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
             <div className="flex items-center justify-between mb-6 border-b-2 border-black pb-4">
               <div>
                 <h1 className="text-2xl font-bold uppercase tracking-wider">Лист выборки товаров</h1>
-                <p className="text-gray-600 mt-1">Официальный каталог продукции</p>
+                <p className="text-gray-600 mt-1">Официальный коммерческий пакет</p>
               </div>
               <div className="text-right">
-                <p className="font-semibold">Дата формирования: {new Date().toLocaleDateString('ru-RU')}</p>
+                <p className="font-semibold">Дата формирования: {createdAt || new Date().toLocaleDateString('ru-RU')}</p>
                 <p className="text-gray-500">Документ сгенерирован автоматически</p>
               </div>
             </div>
 
-            {/* Supplier and Selection Parameters Header Section */}
+            {/* Client, Facilitator, Supplier and Selection Parameters Header Section */}
+            {clientName && (
+              <div className="mb-4 p-4 border border-slate-300 rounded-lg bg-indigo-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">Заказчик (ФИО / Объект):</div>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">{clientName}</div>
+                </div>
+                {facilitatorName && (
+                  <div className="text-right">
+                    <div className="text-xs font-semibold uppercase text-slate-500">Фасилитатор:</div>
+                    <div className="text-sm font-bold text-slate-800">{facilitatorName}</div>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mb-6 grid grid-cols-2 gap-4">
               <div className="p-4 border border-gray-300 rounded-lg bg-gray-50/70">
                 <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Выбранный поставщик:</div>
@@ -103,7 +122,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
 
               <div className="p-4 border border-gray-300 rounded-lg bg-gray-50/70">
                 <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Параметры формирования листа:</div>
-                <div className="text-sm space-y-2 mt-2">
+                <div className="text-sm space-y-1.5 mt-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-500">Регион:</span>
                     <span className="font-bold text-slate-900 bg-slate-200 px-2.5 py-0.5 rounded text-xs border border-slate-300">
@@ -116,6 +135,11 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                       {selectedSphere || "Все сферы"}
                     </span>
                   </div>
+                  {note && (
+                    <div className="text-xs text-slate-600 italic mt-1 pt-1 border-t border-slate-200">
+                      Заметка: {note}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

@@ -54,5 +54,13 @@ service cloud.firestore {
     match /counters/{docId} {
       allow read, write: if true;
     }
+
+    match /quotes_history/{quoteId} {
+      allow read, write: if true;
+    }
+
+    match /facilitator_states/{docId} {
+      allow read, write: if true;
+    }
   }
 }

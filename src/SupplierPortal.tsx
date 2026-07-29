@@ -845,14 +845,16 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             )}
           </div>
 
-          {/* Add Product Button */}
-          <button
-            onClick={handleOpenAddProduct}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-lg shadow-sm transition-all text-sm shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Добавить товар</span>
-          </button>
+          {/* Add Product Button (hidden by request; set to true to show again) */}
+          {false && (
+            <button
+              onClick={handleOpenAddProduct}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-lg shadow-sm transition-all text-sm shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Добавить товар</span>
+            </button>
+          )}
 
           <input
             type="text"

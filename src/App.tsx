@@ -357,6 +357,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   });
   const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
+  const [isAdminPageAuthenticated, setIsAdminPageAuthenticated] = useState(() => {
+    return sessionStorage.getItem("main_admin_auth") === "true";
+  });
+  const [adminPageInputCode, setAdminPageInputCode] = useState("");
+
   const [products, setProducts] = useState<Product[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -384,6 +389,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     facilitators?: string[];
     facilitatorRegions?: Record<string, string>;
     facilitatorCodes?: Record<string, string>;
+    adminPassword?: string;
   }>(() => {
     try {
       const cached = localStorage.getItem("global_dict_cache");
@@ -408,6 +414,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
             facilitators: parsed.facilitators || [],
             facilitatorRegions: parsed.facilitatorRegions || {},
             facilitatorCodes: parsed.facilitatorCodes || {},
+            adminPassword: parsed.adminPassword || "020779",
           };
         }
       }
@@ -431,6 +438,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       facilitators: [],
       facilitatorRegions: {},
       facilitatorCodes: {},
+      adminPassword: "020779",
     };
   });
 
@@ -2453,6 +2461,45 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           <div className="text-sm font-medium text-slate-600 animate-pulse">
             {loadingText}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!portalFacilitator && !isAdminPageAuthenticated) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-900 font-sans">
+        <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 max-w-sm w-full mx-4">
+          <h2 className="text-xl font-bold text-slate-800 mb-2 text-center">Вход Администратора</h2>
+          <p className="text-sm text-slate-500 mb-6 text-center">Введите пароль для доступа к основному каталогу.</p>
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              const expectedPassword = globalDict.adminPassword || "020779";
+              if (adminPageInputCode === expectedPassword) {
+                sessionStorage.setItem("main_admin_auth", "true");
+                setIsAdminPageAuthenticated(true);
+              } else {
+                alert("Неверный пароль!");
+                setAdminPageInputCode("");
+              }
+            }}
+            className="flex flex-col gap-4"
+          >
+            <input 
+              type="password"
+              placeholder="Пароль"
+              value={adminPageInputCode}
+              onChange={(e) => setAdminPageInputCode(e.target.value)}
+              className="w-full text-center tracking-widest border border-slate-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition-colors shadow-sm"
+            >
+              Войти
+            </button>
+          </form>
         </div>
       </div>
     );

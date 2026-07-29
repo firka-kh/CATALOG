@@ -96,11 +96,27 @@ try {
   } else {
     bot = new TelegramBot(token, { polling: true });
     console.log("Telegram Bot running in Polling mode.");
+  }
 
-    bot.on("polling_error", (error: any) => {
-      if (error?.code !== "ETELEGRAM") {
-        console.log("Polling error:", error.message);
+  if (bot) {
+    bot.on("error", (error: any) => {
+      const errMsg = error?.message || String(error);
+      if (errMsg.includes("409 Conflict") || errMsg.includes("ETELEGRAM")) {
+        console.warn("Telegram Bot error (conflict/network):", errMsg);
+      } else {
+        console.error("Telegram Bot error:", errMsg);
       }
+    });
+    bot.on("polling_error", (error: any) => {
+      const errMsg = error?.message || String(error);
+      if (errMsg.includes("409 Conflict") || errMsg.includes("ETELEGRAM")) {
+        console.warn("Telegram Bot polling conflict (another instance active):", errMsg);
+      } else {
+        console.error("Telegram Bot polling error:", errMsg);
+      }
+    });
+    bot.on("webhook_error", (error: any) => {
+      console.error("Telegram Bot webhook error:", error?.message || error);
     });
   }
 

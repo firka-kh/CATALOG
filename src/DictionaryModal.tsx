@@ -19,6 +19,7 @@ interface DictionaryData {
   facilitators?: string[];
   facilitatorRegions?: Record<string, string>;
   facilitatorCodes?: Record<string, string>;
+  adminPassword?: string;
 }
 
 interface Props {
@@ -29,7 +30,7 @@ interface Props {
 }
 
 export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
-  const [tab, setTab] = useState<'regions' | 'spheres' | 'suppliers' | 'logistics' | 'facilitators'>('regions');
+  const [tab, setTab] = useState<'regions' | 'spheres' | 'suppliers' | 'logistics' | 'facilitators' | 'settings'>('regions');
   const [localData, setLocalData] = useState<DictionaryData>(data);
   const [expandedRegion, setExpandedRegion] = useState<string | null>(null);
 
@@ -297,6 +298,7 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
             <button onClick={() => setTab('suppliers')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'suppliers' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Поставщики</button>
             <button onClick={() => setTab('facilitators')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'facilitators' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Фасилитаторы</button>
             <button onClick={() => setTab('logistics')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'logistics' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Логистика</button>
+<button onClick={() => setTab('settings')} className={`px-3 py-1.5 md:px-4 md:py-2.5 text-xs md:text-sm font-medium rounded-md text-left transition-colors whitespace-nowrap ${tab === 'settings' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-600 hover:bg-slate-200'}`}>Настройки</button>
           </div>
 
           <div className="flex-1 flex flex-col min-w-0 bg-white">
@@ -802,6 +804,28 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                           })}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {tab === 'settings' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-800 mb-2">Настройки безопасности</h3>
+                    <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+                      Установите пароль администратора. Он необходим для доступа к основной странице каталога.
+                    </p>
+                    <div className="max-w-sm">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Пароль администратора
+                      </label>
+                      <input
+                        type="text"
+                        value={localData.adminPassword || ''}
+                        onChange={(e) => setLocalData(prev => ({ ...prev, adminPassword: e.target.value }))}
+                        className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                        placeholder="Например: 020779"
+                      />
                     </div>
                   </div>
                 </div>

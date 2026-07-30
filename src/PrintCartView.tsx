@@ -129,12 +129,6 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                       {selectedRegion || "—"}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-500">Сфера деятельности:</span>
-                    <span className="font-bold text-indigo-900 bg-indigo-100 px-2.5 py-0.5 rounded text-xs border border-indigo-200">
-                      {selectedSphere || "Все сферы"}
-                    </span>
-                  </div>
                   {note && (
                     <div className="text-xs text-slate-600 italic mt-1 pt-1 border-t border-slate-200">
                       Заметка: {note}

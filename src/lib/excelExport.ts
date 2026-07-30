@@ -345,15 +345,6 @@ export async function downloadCartExcel(
     }
     rowCursor++;
 
-    const infoRow2 = summaryWs.addRow(["Сфера (Бахш):", selectedSphere || "Ҳамаи сфераҳо", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
-    infoRow2.getCell(1).font = { bold: true, size: 10 };
-    infoRow2.getCell(2).font = { size: 10 };
-    for (let c = 1; c <= 7; c++) {
-      summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-    }
-    rowCursor++;
-
     if (note) {
       const noteRow = summaryWs.addRow(["Заметка:", note, "", "", "", "", ""]);
       summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
@@ -373,73 +364,36 @@ export async function downloadCartExcel(
       cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     });
 
-    // Assign each item to exactly one primary sphere to prevent duplicate listing in different spheres
-    const itemToPrimarySphere = new Map<string, string>();
-    supplierItems.forEach((i) => {
-      const pSpheres = i.product.spheres && i.product.spheres.length > 0 ? i.product.spheres : [i.product.sphere || "Общее"];
-      let primary = pSpheres[0] || "Общее";
-      if (selectedSphere && pSpheres.includes(selectedSphere)) {
-        primary = selectedSphere;
-      }
-      itemToPrimarySphere.set(i.product.id, primary);
-    });
-
-    const spheresSet = new Set<string>(itemToPrimarySphere.values());
-
     let overallExcelTotal = 0;
 
-    for (const sphere of Array.from(spheresSet)) {
-      const itemsInSphere = supplierItems.filter(i => itemToPrimarySphere.get(i.product.id) === sphere);
-      if (itemsInSphere.length === 0) continue;
+    supplierItems.forEach((item, idx) => {
+      const sum = item.quantity * item.selectedPrice;
+      overallExcelTotal += sum;
+      const codeVal = item.product.code || item.product.id?.substring(0, 8) || "";
 
-      const sRow = summaryWs.addRow(["", sphere, "", "", "", "", ""]);
-      summaryWs.mergeCells(`B${summaryWs.rowCount}:G${summaryWs.rowCount}`);
-      sRow.getCell(2).font = { bold: true, underline: true };
-      sRow.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
-      for (let c = 1; c <= 7; c++) {
-        sRow.getCell(c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-      }
+      const r = summaryWs.addRow([
+        idx + 1,
+        codeVal,
+        item.product.name,
+        item.product.unit || "шт.",
+        item.quantity,
+        item.selectedPrice > 0 ? item.selectedPrice : "-",
+        item.selectedPrice > 0 ? sum : "-"
+      ]);
+      r.eachCell((cell, colNumber) => {
+        let horz: "left" | "center" | "right" = "right";
+        if (colNumber === 1) horz = "center";
+        if (colNumber === 2) horz = "center";
+        if (colNumber === 3) horz = "left";
+        if (colNumber === 4) horz = "center";
+        if (colNumber === 5) horz = "center";
+        if (colNumber === 6) horz = "right";
+        if (colNumber === 7) horz = "right";
 
-      let sphereTotal = 0;
-      itemsInSphere.forEach((item, idx) => {
-        const sum = item.quantity * item.selectedPrice;
-        sphereTotal += sum;
-        const codeVal = item.product.code || item.product.id?.substring(0, 8) || "";
-
-        const r = summaryWs.addRow([
-          idx + 1,
-          codeVal,
-          item.product.name,
-          item.product.unit || "шт.",
-          item.quantity,
-          item.selectedPrice > 0 ? item.selectedPrice : "-",
-          item.selectedPrice > 0 ? sum : "-"
-        ]);
-        r.eachCell((cell, colNumber) => {
-          let horz: "left" | "center" | "right" = "right";
-          if (colNumber === 1) horz = "center";
-          if (colNumber === 2) horz = "center";
-          if (colNumber === 3) horz = "left";
-          if (colNumber === 4) horz = "center";
-          if (colNumber === 5) horz = "center";
-          if (colNumber === 6) horz = "right";
-          if (colNumber === 7) horz = "right";
-
-          cell.alignment = { vertical: "middle", horizontal: horz, wrapText: true };
-          cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
-        });
-      });
-
-      overallExcelTotal += sphereTotal;
-
-      const subRow = summaryWs.addRow(["", "", "", "", "", "Ҷамъ", sphereTotal]);
-      subRow.eachCell((cell) => {
-        cell.alignment = { vertical: "middle", horizontal: "right" };
+        cell.alignment = { vertical: "middle", horizontal: horz, wrapText: true };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       });
-      subRow.getCell(6).font = { bold: true };
-      subRow.getCell(7).font = { bold: true };
-    }
+    });
 
     if (logisticsCost > 0) {
       const logRow = summaryWs.addRow(["", "", "", "Логистика", "", "", logisticsCost]);

@@ -938,6 +938,47 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         )}
       </div>
 
+      {/* Floating Bottom Sticky Cart Bar on Mobile/Tablet */}
+      {cartArray.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-3 bg-slate-900/95 backdrop-blur-md text-white border-t border-slate-800 shadow-2xl flex items-center justify-between gap-3 print:hidden">
+          <div className="flex flex-col min-w-0">
+            <span className="text-[11px] text-slate-400 font-medium truncate">
+              Выбрано: <strong className="text-white font-bold">{cartArray.length} поз.</strong>
+            </span>
+            <span className="text-base font-extrabold font-mono text-emerald-400">
+              {totalSum.toFixed(2)} с.
+            </span>
+          </div>
+
+          <button
+            onClick={() => {
+              if (!isSavedToHistory) {
+                handleSaveToHistory();
+              } else {
+                handleCartExcelExport();
+              }
+            }}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md active:scale-95 shrink-0 ${
+              isSavedToHistory
+                ? "bg-emerald-600 text-white"
+                : "bg-indigo-600 hover:bg-indigo-500 text-white"
+            }`}
+          >
+            {isSavedToHistory ? (
+              <>
+                <FileDown className="w-4 h-4" />
+                <span>Скачать Excel</span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+                <span>Сохранить в Архив КП</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
       <PrintCatalogView
         printMode="all"
         suppliers={globalDict?.suppliers}

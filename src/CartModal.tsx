@@ -710,7 +710,7 @@ export function CartModal({
         </div>
 
         {/* Quick Add Form Section */}
-        <div className="bg-slate-100 border-b border-slate-200 px-6 py-4 shrink-0 flex flex-col gap-3 relative z-20">
+        <div className="bg-slate-100 border-b border-slate-200 px-3.5 sm:px-6 py-3 sm:py-4 shrink-0 flex flex-col gap-3 relative z-20">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white border border-slate-200/65 p-3 rounded-xl shadow-sm">
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg border border-slate-200">
@@ -1102,7 +1102,7 @@ export function CartModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-slate-50 relative z-10">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 bg-slate-50 relative z-10">
           {displayedCart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-500 py-16">
               <Package className="w-12 h-12 mb-4 text-slate-300" />
@@ -1312,7 +1312,7 @@ export function CartModal({
 
         {/* Footer */}
         {displayedCart.length > 0 && (
-          <div className="border-t border-slate-200 p-4 sm:p-6 bg-slate-50 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="border-t border-slate-200 p-3.5 sm:p-6 bg-slate-50 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
             <button
               onClick={handleClearCartClick}
               className={`flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 rounded-lg border transition-all text-xs sm:text-sm font-semibold w-full sm:w-auto justify-center shadow-sm ${

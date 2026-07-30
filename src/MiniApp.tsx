@@ -160,6 +160,13 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
       return legacyPrice;
     }
 
+    const basePrice = parseFloat(String(p.price)) || 0;
+    if (basePrice > 0) {
+      const markup = (reg && globalDict?.pricingRules?.[supplier]?.[reg]) ?? 0;
+      const autoPrice = basePrice * (1 + markup / 100);
+      return Math.round(autoPrice * 100) / 100;
+    }
+
     return 0;
   };
 
@@ -855,9 +862,16 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                       })}
                     </div>
                   ) : (
-                    <p className="font-bold text-sm mt-1 text-blue-600 dark:text-blue-400">
-                      {activePrice > 0 ? `${activePrice.toFixed(2)} c.` : 'Цена не указана'}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="font-bold text-sm text-blue-600 dark:text-blue-400">
+                        {activePrice > 0 ? `${activePrice.toFixed(2)} c.` : 'Цена не указана'}
+                      </span>
+                      {activePrice > 0 && (
+                        <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-full truncate max-w-[130px]">
+                          {supplierList.find(s => s.key === currentSupplier)?.label || 'Поставщик'}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
                 

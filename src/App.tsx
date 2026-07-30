@@ -1557,6 +1557,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       return legacyPrice;
     }
 
+    const basePrice = parseFloat(String(p.price)) || 0;
+    if (basePrice > 0) {
+      const markup = (region && globalDict?.pricingRules?.[supplier]?.[region]) ?? 0;
+      const autoPrice = basePrice * (1 + markup / 100);
+      return Math.round(autoPrice * 100) / 100;
+    }
+
     return 0;
   };
 

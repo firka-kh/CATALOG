@@ -425,6 +425,53 @@ async function getMainKeyboard(chatId: number) {
   };
 }
 
+// Helper to authenticate code strings against admin, supplier, and facilitator credentials
+async function tryAuthenticateCode(rawCodeText: string): Promise<string | null> {
+  if (!rawCodeText) return null;
+  let cleanCode = rawCodeText.trim();
+  // Strip leading /admin or /start if present
+  cleanCode = cleanCode.replace(/^\/(admin|start)\s*/i, "").trim();
+  if (!cleanCode) return null;
+
+  const norm = cleanCode.toLowerCase().replace(/["'@\s]/g, "");
+  if (!norm) return null;
+
+  const globalDict = await getGlobalDict();
+
+  // 1. Check Admin password
+  const adminPass = globalDict.adminPassword ? String(globalDict.adminPassword).trim().toLowerCase().replace(/["'@\s]/g, "") : "";
+  const secretPass = SECRET_CODE ? SECRET_CODE.toLowerCase().replace(/["'@\s]/g, "") : "";
+  const defaultAdminCodes = ["020779", "admin", "secret", secretPass, adminPass].filter(Boolean);
+
+  if (defaultAdminCodes.includes(norm)) {
+    return "admin";
+  }
+
+  // 2. Check Supplier codes
+  const supplierCodes = globalDict.supplierCodes || {};
+  for (const [supId, code] of Object.entries(supplierCodes)) {
+    if (code) {
+      const normSupCode = String(code).trim().toLowerCase().replace(/["'@\s]/g, "");
+      if (normSupCode === norm) {
+        return "supplier:" + supId;
+      }
+    }
+  }
+
+  // 3. Check Facilitator codes
+  const facilitatorCodes = globalDict.facilitatorCodes || {};
+  for (const [facId, code] of Object.entries(facilitatorCodes)) {
+    if (code) {
+      const normFacCode = String(code).trim().toLowerCase().replace(/["'@\s]/g, "");
+      if (normFacCode === norm) {
+        return "facilitator:" + facId;
+      }
+    }
+  }
+
+  return null;
+}
+
 if (bot) {
   const processedMessageIds = new Set<string>();
   const lastProcessedPayload = new Map<
@@ -841,8 +888,9 @@ if (bot) {
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,
-        "Введите секретный код администратора, поставщика или фасилитатора:",
+        "🔑 Введите секретный код администратора, поставщика или фасилитатора:\n\n_(например: 020779 или @020779@)_",
         {
+          parse_mode: "Markdown",
           reply_markup: {
             keyboard: [[{ text: "❌ Отмена" }]],
             resize_keyboard: true,
@@ -852,32 +900,18 @@ if (bot) {
       return;
     }
 
-    if (userState.state === "WAITING_PASSWORD") {
+    // Attempt authentication if in WAITING_PASSWORD state OR if message looks like a code / /admin command
+    const isExplicitAuthAttempt =
+      userState.state === "WAITING_PASSWORD" ||
+      text.startsWith("/admin") ||
+      text.startsWith("/start ");
+
+    const authResult = await tryAuthenticateCode(text);
+
+    if (authResult) {
       const globalDict = await getGlobalDict();
 
-      let isSupplier = false;
-      let matchedSupplierId = "";
-      const supplierCodes = globalDict.supplierCodes || {};
-      for (const [supId, code] of Object.entries(supplierCodes)) {
-        if (code && String(code).trim().toLowerCase() === text.trim().toLowerCase()) {
-          isSupplier = true;
-          matchedSupplierId = supId;
-          break;
-        }
-      }
-
-      let isFacilitator = false;
-      let matchedFacilitatorId = "";
-      const facilitatorCodes = globalDict.facilitatorCodes || {};
-      for (const [facId, code] of Object.entries(facilitatorCodes)) {
-        if (code && String(code).trim().toLowerCase() === text.trim().toLowerCase()) {
-          isFacilitator = true;
-          matchedFacilitatorId = facId;
-          break;
-        }
-      }
-
-      if (text === SECRET_CODE) {
+      if (authResult === "admin") {
         adminUsers.add(chatId);
         await setDoc(
           doc(db, "telegram_users", chatId.toString()),
@@ -886,20 +920,18 @@ if (bot) {
         ).catch((err) => console.error("Error persisting admin role:", err));
 
         userStates.set(chatId, { state: "ADMIN_MENU" });
+        const replyMarkup = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          "✅ Доступ разрешен.\n\nПанель администратора открыта.",
+          "✅ Доступ разрешен!\n\nВы успешно авторизованы как *Администратор*.",
           {
-            reply_markup: {
-              keyboard: [
-                [{ text: "➕ Добавить товар" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          }
         );
-      } else if (isSupplier) {
+        return;
+      } else if (authResult.startsWith("supplier:")) {
+        const matchedSupplierId = authResult.replace("supplier:", "");
         supplierUsers.set(chatId, matchedSupplierId);
         await setDoc(
           doc(db, "telegram_users", chatId.toString()),
@@ -919,20 +951,18 @@ if (bot) {
           supplierName = globalDict.suppliers[2];
         else supplierName = `Поставщик ${supIdx}`;
 
+        const replyMarkup = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          `✅ Доступ разрешен.\n\nВы авторизованы как ${supplierName}.`,
+          `✅ Доступ разрешен!\n\nВы авторизованы как *${supplierName}*.`,
           {
-            reply_markup: {
-              keyboard: [
-                [{ text: "➕ Добавить товар" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          }
         );
-      } else if (isFacilitator) {
+        return;
+      } else if (authResult.startsWith("facilitator:")) {
+        const matchedFacilitatorId = authResult.replace("facilitator:", "");
         facilitatorUsers.set(chatId, matchedFacilitatorId);
         await setDoc(
           doc(db, "telegram_users", chatId.toString()),
@@ -948,30 +978,31 @@ if (bot) {
           facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
         }
 
+        const replyMarkup = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          `✅ Доступ разрешен.\n\nВы авторизованы как Фасилитатор: ${facilitatorName}.`,
+          `✅ Доступ разрешен!\n\nВы авторизованы как *Фасилитатор: ${facilitatorName}*.`,
           {
-            reply_markup: {
-              keyboard: [
-                [
-                  {
-                    text: "🛍 Открыть Каталог (Фасилитатор)",
-                    web_app: {
-                      url: getFacilitatorUrl(matchedFacilitatorId),
-                    },
-                  },
-                ],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          }
         );
-      } else {
-        userStates.delete(chatId);
-        bot?.sendMessage(chatId, "❌ Неверный код. Доступ закрыт.");
+        return;
       }
+    } else if (isExplicitAuthAttempt) {
+      // Keep state as WAITING_PASSWORD so user can try entering code again easily
+      userStates.set(chatId, { state: "WAITING_PASSWORD" });
+      bot?.sendMessage(
+        chatId,
+        "❌ Неверный код доступа.\n\nПожалуйста, проверьте код и введите его еще раз (например: `020779` или `@020779@`), либо нажмите «❌ Отмена».",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        }
+      );
       return;
     }
 

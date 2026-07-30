@@ -336,26 +336,12 @@ function getFacilitatorUrl(facilitatorId: string) {
   return `${miniAppUrl}?portal=${facilitatorId}`;
 }
 
-// Helper to ensure user role is restored from Firestore
+// Helper to check user role (kept in-memory for active session security)
 async function ensureUserRoleLoaded(chatId: number) {
-  if (adminUsers.has(chatId) || supplierUsers.has(chatId) || facilitatorUsers.has(chatId)) {
-    return;
-  }
-  try {
-    const userDoc = await getDoc(doc(db, "telegram_users", chatId.toString()));
-    if (userDoc.exists()) {
-      const userData = userDoc.data();
-      if (userData.role === "admin") {
-        adminUsers.add(chatId);
-      } else if (userData.role === "supplier" && userData.supplierId) {
-        supplierUsers.set(chatId, userData.supplierId);
-      } else if (userData.role === "facilitator" && userData.facilitatorId) {
-        facilitatorUsers.set(chatId, userData.facilitatorId);
-      }
-    }
-  } catch (e) {
-    console.error("Failed to restore user role from Firestore", e);
-  }
+  // Privileged roles (admin, supplier, facilitator) are kept in memory only during active usage.
+  // We intentionally DO NOT restore roles from persistent Firestore database on startup,
+  // so that users must always enter their password/passcode upon a new login session.
+  return;
 }
 
 // Helper to get Main Menu Keyboard depending on user role

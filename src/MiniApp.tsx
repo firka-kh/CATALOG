@@ -611,7 +611,24 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
           <div className="flex flex-col gap-2">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-2.5 rounded-xl text-xs flex justify-between items-center shadow-sm">
               <span>Вошли как: <strong className="font-bold">{resolvedFacilitator.name}</strong></span>
-              <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-semibold">Региональный доступ</span>
+              <div className="flex items-center gap-2">
+                <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-semibold">Региональный доступ</span>
+                <button
+                  onClick={() => {
+                    setIsFacilitatorAuthenticated(false);
+                    setFacilitatorInputCode("");
+                    sessionStorage.removeItem("auth_resolved");
+                    sessionStorage.removeItem("auth_facilitator_key");
+                    if (portalFacilitator) {
+                      sessionStorage.removeItem(`auth_${portalFacilitator}`);
+                    }
+                  }}
+                  className="bg-red-500/80 hover:bg-red-600 active:scale-95 text-white px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors shadow-sm"
+                  title="Заблокировать / Выйти из сессии"
+                >
+                  Выйти
+                </button>
+              </div>
             </div>
             <button
               onClick={handlePrintCatalog}

@@ -883,6 +883,20 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               {globalDict.regions.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           )}
+
+          {requiresAuth && isAuthenticated && (
+            <button
+              onClick={() => {
+                setIsAuthenticated(false);
+                setInputCode('');
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-bold transition-colors shrink-0"
+              title="Выйти и заблокировать вход"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Выйти</span>
+            </button>
+          )}
         </div>
       </div>
 

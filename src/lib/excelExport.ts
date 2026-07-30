@@ -296,7 +296,6 @@ export async function downloadCartExcel(
       { key: "index", width: 8 },
       { key: "code", width: 15 },
       { key: "name", width: 55 },
-      { key: "sphere", width: 22 },
       { key: "unit", width: 15 },
       { key: "qty", width: 12 },
       { key: "price", width: 18 },
@@ -304,69 +303,69 @@ export async function downloadCartExcel(
     ];
 
     let rowCursor = 1;
-    summaryWs.mergeCells(`A${rowCursor}:H${rowCursor}`);
+    summaryWs.mergeCells(`A${rowCursor}:G${rowCursor}`);
     const titleCell = summaryWs.getCell(`A${rowCursor}`);
     titleCell.value = "Буҷети сармоягузорӣ / Выборка товаров";
     titleCell.font = { bold: true, size: 12 };
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } };
-    for (let c = 1; c <= 8; c++) {
+    for (let c = 1; c <= 7; c++) {
       summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
     rowCursor++;
 
     if (clientName) {
-      const clientRow = summaryWs.addRow(["Миҷоз / Заказчик (ФИО):", clientName, "", "", "", "", "", ""]);
-      summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+      const clientRow = summaryWs.addRow(["Миҷоз / Заказчик (ФИО):", clientName, "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
       clientRow.getCell(1).font = { bold: true, size: 10 };
       clientRow.getCell(2).font = { bold: true, size: 10 };
-      for (let c = 1; c <= 8; c++) {
+      for (let c = 1; c <= 7; c++) {
         summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       }
       rowCursor++;
     }
 
     if (facilitatorName) {
-      const facRow = summaryWs.addRow(["Фасилитатор:", facilitatorName, "", "", "", "", "", ""]);
-      summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+      const facRow = summaryWs.addRow(["Фасилитатор:", facilitatorName, "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
       facRow.getCell(1).font = { bold: true, size: 10 };
       facRow.getCell(2).font = { size: 10 };
-      for (let c = 1; c <= 8; c++) {
+      for (let c = 1; c <= 7; c++) {
         summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       }
       rowCursor++;
     }
 
-    const infoRow1 = summaryWs.addRow(["Минтақа (Регион):", selectedRegion || "Ҳамаи минтақаҳо", "", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+    const infoRow1 = summaryWs.addRow(["Минтақа (Регион):", selectedRegion || "Ҳамаи минтақаҳо", "", "", "", "", ""]);
+    summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
     infoRow1.getCell(1).font = { bold: true, size: 10 };
     infoRow1.getCell(2).font = { size: 10 };
-    for (let c = 1; c <= 8; c++) {
+    for (let c = 1; c <= 7; c++) {
       summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
     rowCursor++;
 
-    const infoRow2 = summaryWs.addRow(["Сфера (Бахш):", selectedSphere || "Ҳамаи сфераҳо", "", "", "", "", "", ""]);
-    summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+    const infoRow2 = summaryWs.addRow(["Сфера (Бахш):", selectedSphere || "Ҳамаи сфераҳо", "", "", "", "", ""]);
+    summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
     infoRow2.getCell(1).font = { bold: true, size: 10 };
     infoRow2.getCell(2).font = { size: 10 };
-    for (let c = 1; c <= 8; c++) {
+    for (let c = 1; c <= 7; c++) {
       summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
     rowCursor++;
 
     if (note) {
-      const noteRow = summaryWs.addRow(["Заметка:", note, "", "", "", "", "", ""]);
-      summaryWs.mergeCells(`B${rowCursor}:H${rowCursor}`);
+      const noteRow = summaryWs.addRow(["Заметка:", note, "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
       noteRow.getCell(1).font = { bold: true, size: 10 };
       noteRow.getCell(2).font = { size: 10 };
-      for (let c = 1; c <= 8; c++) {
+      for (let c = 1; c <= 7; c++) {
         summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       }
       rowCursor++;
     }
 
-    const headerRow = summaryWs.addRow(["#", "ID товара", "Ном ва хусусиятҳо", "Сфера", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);
+    const headerRow = summaryWs.addRow(["#", "ID товара", "Ном ва хусусиятҳо", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);
     headerRow.eachCell((cell) => {
       cell.font = { bold: true };
       cell.alignment = { horizontal: "center", vertical: "middle" };
@@ -393,10 +392,11 @@ export async function downloadCartExcel(
       const itemsInSphere = supplierItems.filter(i => itemToPrimarySphere.get(i.product.id) === sphere);
       if (itemsInSphere.length === 0) continue;
 
-      const sRow = summaryWs.addRow(["", sphere, "", "", "", "", "", ""]);
+      const sRow = summaryWs.addRow(["", sphere, "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${summaryWs.rowCount}:G${summaryWs.rowCount}`);
       sRow.getCell(2).font = { bold: true, underline: true };
       sRow.getCell(2).alignment = { horizontal: "center", vertical: "middle" };
-      for (let c = 1; c <= 8; c++) {
+      for (let c = 1; c <= 7; c++) {
         sRow.getCell(c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       }
 
@@ -406,22 +406,10 @@ export async function downloadCartExcel(
         sphereTotal += sum;
         const codeVal = item.product.code || item.product.id?.substring(0, 8) || "";
 
-        // Determine the sphere to write in the column
-        let displaySphere = "Общее";
-        if (selectedSphere) {
-          displaySphere = selectedSphere;
-        } else {
-          const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
-            ? item.product.spheres 
-            : [item.product.sphere || "Общее"];
-          displaySphere = prodSpheres.join(", ");
-        }
-
         const r = summaryWs.addRow([
           idx + 1,
           codeVal,
           item.product.name,
-          displaySphere,
           item.product.unit || "шт.",
           item.quantity,
           item.selectedPrice > 0 ? item.selectedPrice : "-",
@@ -434,7 +422,8 @@ export async function downloadCartExcel(
           if (colNumber === 3) horz = "left";
           if (colNumber === 4) horz = "center";
           if (colNumber === 5) horz = "center";
-          if (colNumber === 6) horz = "center";
+          if (colNumber === 6) horz = "right";
+          if (colNumber === 7) horz = "right";
 
           cell.alignment = { vertical: "middle", horizontal: horz, wrapText: true };
           cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
@@ -443,33 +432,33 @@ export async function downloadCartExcel(
 
       overallExcelTotal += sphereTotal;
 
-      const subRow = summaryWs.addRow(["", "", "", "", "", "", "Ҷамъ", sphereTotal]);
+      const subRow = summaryWs.addRow(["", "", "", "", "", "Ҷамъ", sphereTotal]);
       subRow.eachCell((cell) => {
         cell.alignment = { vertical: "middle", horizontal: "right" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       });
+      subRow.getCell(6).font = { bold: true };
       subRow.getCell(7).font = { bold: true };
-      subRow.getCell(8).font = { bold: true };
     }
 
     if (logisticsCost > 0) {
-      const logRow = summaryWs.addRow(["", "", "", "Логистика", "", "", "", logisticsCost]);
+      const logRow = summaryWs.addRow(["", "", "", "Логистика", "", "", logisticsCost]);
       overallExcelTotal += logisticsCost;
       logRow.eachCell((cell) => {
         cell.alignment = { vertical: "middle", horizontal: "right" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       });
       logRow.getCell(4).font = { bold: true };
-      logRow.getCell(8).font = { bold: true };
+      logRow.getCell(7).font = { bold: true };
     }
 
-    const totalRow = summaryWs.addRow(["", "", "", "", "", "", "Ҳамагӣ", overallExcelTotal]);
+    const totalRow = summaryWs.addRow(["", "", "", "", "", "Ҳамагӣ", overallExcelTotal]);
     totalRow.eachCell((cell) => {
       cell.alignment = { vertical: "middle", horizontal: "right" };
       cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     });
+    totalRow.getCell(6).font = { bold: true };
     totalRow.getCell(7).font = { bold: true };
-    totalRow.getCell(8).font = { bold: true };
   }
 
   const buffer = await workbook.xlsx.writeBuffer();

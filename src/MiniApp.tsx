@@ -1,20 +1,43 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from './lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from './types';
-import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check } from 'lucide-react';
+import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check, User, AlertTriangle, FileDown, ShoppingBag } from 'lucide-react';
 import { PrintCatalogView } from './PrintCatalogView';
+import { PrintCartView } from './PrintCartView';
+import { downloadCartExcel } from './lib/excelExport';
+import { saveQuoteToHistory } from './lib/quotesHistory';
 
-export default function MiniApp({ portalFacilitator }: { portalFacilitator?: string }) {
+export default function MiniApp({ portalFacilitator: initialPortalFacilitator }: { portalFacilitator?: string }) {
+  const params = new URLSearchParams(window.location.search);
+  const portalFacilitator = initialPortalFacilitator || params.get('facilitator') || params.get('portal') || params.get('startapp') || params.get('tgWebAppStartParam') || undefined;
+
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState<Record<string, { qty: number; supplier: 'supplier2' | 'supplier3' | 'supplier4' }>>({});
-  const [tempSelectedSuppliers, setTempSelectedSuppliers] = useState<Record<string, 'supplier2' | 'supplier3' | 'supplier4'>>({});
+  const [cart, setCart] = useState<Record<string, { qty: number; supplier: string }>>({});
+  const [tempSelectedSuppliers, setTempSelectedSuppliers] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [globalDict, setGlobalDict] = useState<any>({});
   const [region, setRegion] = useState("");
   const [sphere, setSphere] = useState("");
   const [visibleCount, setVisibleCount] = useState(30);
+
+  // Customer Metadata state in MiniApp
+  const [clientName, setClientName] = useState("");
+  const [facilitatorName, setFacilitatorName] = useState("");
+  const [note, setNote] = useState("");
+  const [clientNameError, setClientNameError] = useState(false);
+  const [isSavedToHistory, setIsSavedToHistory] = useState(false);
+  const [saveRequiredError, setSaveRequiredError] = useState(false);
+  const [isSavingHistory, setIsSavingHistory] = useState(false);
+  const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
+  const [isCartPrinting, setIsCartPrinting] = useState(false);
+  const clientNameInputRef = useRef<HTMLInputElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+
+  const [authenticatedFacilitatorKey, setAuthenticatedFacilitatorKey] = useState(() => {
+    return sessionStorage.getItem("auth_facilitator_key") || "";
+  });
 
   useEffect(() => {
     setVisibleCount(30);
@@ -22,31 +45,47 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
   const [showPrintAlert, setShowPrintAlert] = useState(false);
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
+    if (sessionStorage.getItem("auth_resolved") === "true") return true;
     if (!portalFacilitator) return false;
-    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true" || sessionStorage.getItem("auth_resolved") === "true";
+    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
   });
   const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
   const tg = (window as any).Telegram?.WebApp;
 
+  // Dynamic supplier list derived from globalDict
+  const supplierList = useMemo(() => {
+    const list = (globalDict?.suppliers && Array.isArray(globalDict.suppliers) && globalDict.suppliers.length > 0)
+      ? globalDict.suppliers
+      : ["Поставщик 1", "Поставщик 2", "Поставщик 3"];
+    return list.map((name: string, idx: number) => ({
+      key: `supplier${idx + 2}`,
+      label: name || `Поставщик ${idx + 1}`,
+      index: idx,
+    }));
+  }, [globalDict?.suppliers]);
+
+  const activeFacilitatorKey = authenticatedFacilitatorKey || portalFacilitator || "";
+
   const resolvedFacilitator = useMemo(() => {
-    if (!portalFacilitator || !globalDict?.facilitatorCodes) {
+    const targetKey = activeFacilitatorKey;
+    if (!targetKey || !globalDict?.facilitatorCodes) {
       return { key: "", code: "", name: "Фасилитатор", region: "" };
     }
     // 1. Direct match
-    if (globalDict.facilitatorCodes[portalFacilitator]) {
-      const idx = parseInt(portalFacilitator.replace("facilitator", ""), 10) - 2;
+    if (globalDict.facilitatorCodes[targetKey]) {
+      const idx = parseInt(targetKey.replace("facilitator", ""), 10) - 2;
       const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-      const region = globalDict.facilitatorRegions?.[portalFacilitator] || "";
+      const region = globalDict.facilitatorRegions?.[targetKey] || "";
       return {
-        key: portalFacilitator,
-        code: String(globalDict.facilitatorCodes[portalFacilitator]),
+        key: targetKey,
+        code: String(globalDict.facilitatorCodes[targetKey]),
         name,
         region,
       };
     }
     // 2. Fallback
-    let numStr = portalFacilitator.replace("facilitator", "");
+    let numStr = targetKey.replace("facilitator", "");
     let num = parseInt(numStr, 10);
     if (isNaN(num)) {
       num = 2;
@@ -86,38 +125,18 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
       };
     }
     return { key: "", code: "", name: "Фасилитатор", region: "" };
-  }, [portalFacilitator, globalDict]);
+  }, [activeFacilitatorKey, globalDict]);
 
-  // Set facilitator's region once loaded
+  // Set facilitator's assigned region once loaded or authenticated
   useEffect(() => {
-    if (portalFacilitator && resolvedFacilitator.region) {
+    if (resolvedFacilitator.region) {
       setRegion(resolvedFacilitator.region);
     }
-  }, [portalFacilitator, resolvedFacilitator.region]);
-
-  const getProductMinPrice = (p: Product) => {
-    let minP = Infinity;
-    const sups = ["supplier2", "supplier3", "supplier4"];
-    for (const sup of sups) {
-      let pr = 0;
-      if (region && p.prices?.[sup]?.[region] !== undefined && p.prices[sup][region] !== null) {
-         pr = parseFloat(String(p.prices[sup][region])) || 0;
-      } else {
-         const mapId = sup === "supplier2" ? "priceSupplier2" : sup === "supplier3" ? "priceSupplier3" : "priceSupplier4";
-         pr = parseFloat(p[mapId as keyof Product] as string) || 0;
-      }
-      if (pr > 0 && pr < minP) minP = pr;
-    }
-    
-    if (minP === Infinity) {
-      return null;
-    }
-    return minP;
-  };
+  }, [resolvedFacilitator.region]);
 
   const getProductPriceForSupplierAndRegion = (
     p: Product,
-    supplier: "supplier1" | "supplier2" | "supplier3" | "supplier4",
+    supplier: string,
     reg: string,
   ): number => {
     if (supplier === "supplier1") {
@@ -126,27 +145,35 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
 
     if (
       reg &&
-      p.prices?.[supplier]?.[reg] !== undefined &&
-      p.prices[supplier][reg] !== null
+      (p.prices as any)?.[supplier]?.[reg] !== undefined &&
+      (p.prices as any)?.[supplier]?.[reg] !== null
     ) {
-      const customPrice = parseFloat(String(p.prices[supplier][reg])) || 0;
+      const customPrice = parseFloat(String((p.prices as any)[supplier][reg])) || 0;
       if (customPrice > 0) {
         return customPrice;
       }
     }
 
-    const mapId =
-      supplier === "supplier2"
-        ? "priceSupplier2"
-        : supplier === "supplier3"
-          ? "priceSupplier3"
-          : "priceSupplier4";
-    const legacyPrice = parseFloat(String(p[mapId as keyof Product])) || 0;
+    const mapId = `price${supplier.charAt(0).toUpperCase() + supplier.slice(1)}`;
+    const legacyPrice = parseFloat(String((p as any)[mapId])) || 0;
     if (legacyPrice > 0) {
       return legacyPrice;
     }
 
     return 0;
+  };
+
+  const getProductMinPrice = (p: Product) => {
+    let minP = Infinity;
+    for (const sup of supplierList) {
+      const pr = getProductPriceForSupplierAndRegion(p, sup.key, region);
+      if (pr > 0 && pr < minP) minP = pr;
+    }
+    
+    if (minP === Infinity) {
+      return null;
+    }
+    return minP;
   };
 
   // Load settings and user profile with real-time cached onSnapshot
@@ -242,14 +269,15 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
   }, []);
 
   const getDefaultSupplier = (p: Product) => {
-    const s2 = getProductPriceForSupplierAndRegion(p, "supplier2", region);
-    const s3 = getProductPriceForSupplierAndRegion(p, "supplier3", region);
-    const s4 = getProductPriceForSupplierAndRegion(p, "supplier4", region);
     let minPrice = Infinity;
-    let best: 'supplier2' | 'supplier3' | 'supplier4' = 'supplier2';
-    if (s2 > 0 && s2 < minPrice) { minPrice = s2; best = 'supplier2'; }
-    if (s3 > 0 && s3 < minPrice) { minPrice = s3; best = 'supplier3'; }
-    if (s4 > 0 && s4 < minPrice) { minPrice = s4; best = 'supplier4'; }
+    let best = supplierList[0]?.key || 'supplier2';
+    for (const sup of supplierList) {
+      const pr = getProductPriceForSupplierAndRegion(p, sup.key, region);
+      if (pr > 0 && pr < minPrice) {
+        minPrice = pr;
+        best = sup.key;
+      }
+    }
     return best;
   };
 
@@ -258,7 +286,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
       .filter(([_, item]) => item && (item as any).qty > 0)
       .map(([id, item]) => {
         const prod = products.find(p => p.id === id);
-        const casted = item as { qty: number; supplier: 'supplier2' | 'supplier3' | 'supplier4' };
+        const casted = item as { qty: number; supplier: string };
         return { prod, qty: casted.qty, selectedSupplier: casted.supplier };
       });
   }, [cart, products]);
@@ -270,6 +298,127 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
       return acc + (price * item.qty);
     }, 0);
   }, [cartArray, globalDict, region]);
+
+  useEffect(() => {
+    if (resolvedFacilitator.name && !facilitatorName) {
+      setFacilitatorName(resolvedFacilitator.name);
+    }
+  }, [resolvedFacilitator.name]);
+
+  // Reset saved state if cart or metadata changes
+  useEffect(() => {
+    setIsSavedToHistory(false);
+    setSaveRequiredError(false);
+  }, [clientName, facilitatorName, note, cartArray, region, sphere]);
+
+  const validateClientName = (): boolean => {
+    if (!clientName.trim()) {
+      setClientNameError(true);
+      setSaveRequiredError(false);
+      if (clientNameInputRef.current) {
+        clientNameInputRef.current.focus();
+        clientNameInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
+    }
+    setClientNameError(false);
+    return true;
+  };
+
+  const validateCanExportOrPrint = (): boolean => {
+    if (!validateClientName()) return false;
+    if (!isSavedToHistory) {
+      setSaveRequiredError(true);
+      if (saveButtonRef.current) {
+        saveButtonRef.current.focus();
+        saveButtonRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
+    }
+    setSaveRequiredError(false);
+    return true;
+  };
+
+  const handleSaveToHistory = async () => {
+    if (cartArray.length === 0) return;
+    if (!validateClientName()) return;
+    setIsSavingHistory(true);
+    try {
+      const formattedCart = cartArray
+        .filter((i) => i.prod)
+        .map((i) => ({
+          product: i.prod!,
+          quantity: i.qty,
+          selectedSupplier: (i.selectedSupplier || "supplier2") as any,
+          selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region) || 0,
+        }));
+
+      await saveQuoteToHistory({
+        clientName: clientName.trim(),
+        facilitatorName: facilitatorName.trim() || resolvedFacilitator.name || "Фасилитатор",
+        note: note.trim(),
+        selectedRegion: region || "Все регионы",
+        selectedSphere: sphere || "Все сферы",
+        logisticsCost: cartArray.length > 0 ? (globalDict?.logisticsCosts?.[region] || 0) : 0,
+        cart: formattedCart,
+      });
+
+      setIsSavedToHistory(true);
+      setSaveRequiredError(false);
+      setHistorySavedMsg("✓ Сохранено в Архив КП!");
+      setTimeout(() => setHistorySavedMsg(null), 3500);
+    } catch (err: any) {
+      console.error("Error saving quote in MiniApp:", err);
+      alert(`Не удалось сохранить в архив: ${err?.message || "Ошибка соединения"}`);
+    } finally {
+      setIsSavingHistory(false);
+    }
+  };
+
+  const handlePrintCatalog = () => {
+    if (!validateCanExportOrPrint()) return;
+    setShowPrintAlert(true);
+    setTimeout(() => {
+      window.print();
+    }, 800);
+  };
+
+  const handlePrintCartInvoice = () => {
+    if (!validateCanExportOrPrint()) return;
+    setIsCartPrinting(true);
+    const afterPrint = () => {
+      setIsCartPrinting(false);
+      window.removeEventListener("afterprint", afterPrint);
+    };
+    window.addEventListener("afterprint", afterPrint);
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => setIsCartPrinting(false), 2000);
+    }, 400);
+  };
+
+  const handleCartExcelExport = async () => {
+    if (!validateCanExportOrPrint()) return;
+    const formattedCart = cartArray
+      .filter((i) => i.prod)
+      .map((i) => ({
+        product: i.prod!,
+        quantity: i.qty,
+        selectedSupplier: (i.selectedSupplier || "supplier2") as any,
+        selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region),
+      }));
+    const logCost = globalDict?.logisticsCosts?.[region] || 0;
+    await downloadCartExcel(
+      formattedCart,
+      logCost,
+      globalDict?.suppliers,
+      region,
+      sphere,
+      clientName.trim(),
+      facilitatorName.trim() || resolvedFacilitator.name || "Фасилитатор",
+      note.trim()
+    );
+  };
 
   useEffect(() => {
     if (!tg) return;
@@ -285,6 +434,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
 
     let clicked = false;
     const onMainButtonClick = () => {
+      if (!validateCanExportOrPrint()) return;
       if (clicked) return;
       clicked = true;
       const itemsString = cartArray
@@ -301,9 +451,9 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
 
     tg.onEvent('mainButtonClicked', onMainButtonClick);
     return () => tg.offEvent('mainButtonClicked', onMainButtonClick);
-  }, [cartArray, totalSum]);
+  }, [cartArray, totalSum, clientName]);
 
-  const updateCart = (id: string, delta: number, selectedSup?: 'supplier2' | 'supplier3' | 'supplier4') => {
+  const updateCart = (id: string, delta: number, selectedSup?: string) => {
     setCart(prev => {
       const existing = prev[id];
       const sup = selectedSup || existing?.supplier || getDefaultSupplier(products.find(p => p.id === id)!);
@@ -320,7 +470,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     });
   };
 
-  const selectSupplierForProduct = (productId: string, sup: 'supplier2' | 'supplier3' | 'supplier4') => {
+  const selectSupplierForProduct = (productId: string, sup: string) => {
     setTempSelectedSuppliers(prev => ({ ...prev, [productId]: sup }));
     if (cart[productId]) {
       setCart(prev => ({
@@ -347,46 +497,56 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
     return true;
   });
 
-  if (portalFacilitator && !isFacilitatorAuthenticated) {
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const inputClean = facilitatorInputCode.trim().toLowerCase();
+    if (!inputClean) return;
+
+    let matchedKey: string | null = null;
+    if (globalDict?.facilitatorCodes) {
+      for (const [key, codeVal] of Object.entries(globalDict.facilitatorCodes)) {
+        if (String(codeVal).trim().toLowerCase() === inputClean) {
+          matchedKey = key;
+          break;
+        }
+      }
+    }
+
     const expectedCode = resolvedFacilitator.code || "";
-    if (!globalDict || Object.keys(globalDict).length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 font-sans text-center p-4">
-          <Loader2 className="animate-spin w-8 h-8 text-blue-500 mb-2" />
-          <div className="text-white text-sm font-medium">Загрузка данных авторизации...</div>
-        </div>
-      );
+
+    if (matchedKey) {
+      setIsFacilitatorAuthenticated(true);
+      setAuthenticatedFacilitatorKey(matchedKey);
+      sessionStorage.setItem("auth_facilitator_key", matchedKey);
+      sessionStorage.setItem(`auth_${portalFacilitator || matchedKey}`, "true");
+      sessionStorage.setItem("auth_resolved", "true");
+
+      const matchedRegion = globalDict?.facilitatorRegions?.[matchedKey];
+      if (matchedRegion) {
+        setRegion(matchedRegion);
+        if (portalFacilitator) {
+          setDoc(doc(db, "facilitator_states", portalFacilitator), { region: matchedRegion }, { merge: true }).catch(console.error);
+        }
+      }
+    } else if (expectedCode && inputClean === expectedCode.trim().toLowerCase()) {
+      setIsFacilitatorAuthenticated(true);
+      sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
+      sessionStorage.setItem("auth_resolved", "true");
+      if (resolvedFacilitator.region) {
+        setRegion(resolvedFacilitator.region);
+      }
+    } else {
+      alert("Неверный код доступа");
     }
-    if (!expectedCode) {
-      return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans text-center p-4">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">
-            <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2">Доступ не настроен</h2>
-            <p className="text-xs text-slate-500 dark:text-gray-400">
-              Код доступа для данного фасилитатора еще не задан администратором в справочнике.
-            </p>
-          </div>
-        </div>
-      );
-    }
+  };
+
+  if ((portalFacilitator || activeFacilitatorKey) && !isFacilitatorAuthenticated) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans p-4">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">
           <h2 className="text-lg font-bold text-slate-800 dark:text-white mb-2 text-center">Вход для Фасилитаторов</h2>
           <p className="text-xs text-slate-500 dark:text-gray-400 mb-6 text-center font-medium">Введите секретный код для доступа к каталогу фасилитатора.</p>
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (facilitatorInputCode.trim().toLowerCase() === expectedCode.trim().toLowerCase()) {
-                setIsFacilitatorAuthenticated(true);
-                sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
-                sessionStorage.setItem("auth_resolved", "true");
-              } else {
-                alert("Неверный код");
-              }
-            }}
-            className="flex flex-col gap-4"
-          >
+          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
             <input 
               type="password" 
               value={facilitatorInputCode} 
@@ -412,6 +572,34 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
   return (
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
       <div className="sticky top-0 z-10 bg-[var(--tg-theme-bg-color,#f3f4f6)] pb-4 space-y-3">
+        {clientNameError && (
+          <div className="bg-rose-500/15 border border-rose-500/40 text-rose-800 dark:text-rose-200 p-3 rounded-xl text-xs flex items-center justify-between gap-2 shadow-md animate-pulse print:hidden">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              <span>
+                <strong>Ошибка:</strong> Пожалуйста, укажите <strong>Ф.И.О Бенефициара / Клиента *</strong> перед сохранением, печатью или скачиванием Excel!
+              </span>
+            </div>
+            <button onClick={() => setClientNameError(false)} className="text-rose-500 hover:text-rose-700 p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {saveRequiredError && !clientNameError && (
+          <div className="bg-amber-500/20 border border-amber-500/50 text-amber-900 dark:text-amber-200 p-3 rounded-xl text-xs flex items-center justify-between gap-2 shadow-md animate-pulse print:hidden">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>
+                <strong>Предупреждение:</strong> Необходимы данные! Подборка ещё не сохранена в Архив КП. Нажмите синюю кнопку <strong>«Сохранить подборку в Архив КП»</strong> для получения доступа к Excel и печати!
+              </span>
+            </div>
+            <button onClick={() => setSaveRequiredError(false)} className="text-amber-500 hover:text-amber-700 p-1">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {portalFacilitator && (
           <div className="flex flex-col gap-2">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-2.5 rounded-xl text-xs flex justify-between items-center shadow-sm">
@@ -419,13 +607,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
               <span className="bg-white/20 px-2.5 py-0.5 rounded-full text-[10px] font-semibold">Региональный доступ</span>
             </div>
             <button
-              onClick={() => {
-                setShowPrintAlert(true);
-                // Briefly pause before print to ensure the alert renders
-                setTimeout(() => {
-                  window.print();
-                }, 800);
-              }}
+              onClick={handlePrintCatalog}
               className="w-full bg-indigo-50/80 hover:bg-indigo-100 text-indigo-700 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-2 border border-indigo-200/50 print:hidden shadow-sm"
             >
               <Printer className="w-4 h-4 text-indigo-600" />
@@ -433,6 +615,133 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
             </button>
           </div>
         )}
+
+        {/* Customer Metadata Card in MiniApp */}
+        <div className="bg-slate-900 text-white p-3.5 rounded-2xl shadow-sm border border-slate-800 print:hidden space-y-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-indigo-400 shrink-0" />
+              <span className="font-bold text-xs text-white uppercase tracking-wider">
+                Карточка клиента / Метаданные выборки
+              </span>
+            </div>
+            {isSavedToHistory ? (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                <Check className="w-3 h-3 text-emerald-400" /> В Архиве КП
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется архив
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Ф.И.О Бенефициара / Клиента <span className="text-rose-400">*</span>
+              </label>
+              <input
+                ref={clientNameInputRef}
+                type="text"
+                placeholder="Ф.И.О бенефициара / клиента..."
+                value={clientName}
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                  if (e.target.value.trim()) setClientNameError(false);
+                }}
+                className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all ${
+                  clientNameError
+                    ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
+                    : "border-slate-700 focus:border-indigo-500"
+                }`}
+              />
+              {clientNameError && (
+                <span className="text-[10px] font-bold text-rose-400 mt-1 block">
+                  Заполните Ф.И.О Бенефициара / Клиента!
+                </span>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Кто создал (Фасилитатор)
+              </label>
+              <input
+                type="text"
+                placeholder="Имя фасилитатора"
+                value={facilitatorName}
+                onChange={(e) => setFacilitatorName(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Заметка к КП
+              </label>
+              <input
+                type="text"
+                placeholder="Примечание к заказу..."
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+              />
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+            <button
+              ref={saveButtonRef}
+              type="button"
+              onClick={handleSaveToHistory}
+              disabled={isSavingHistory || cartArray.length === 0}
+              className={`w-full font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${
+                isSavedToHistory
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
+                  : saveRequiredError
+                  ? "bg-rose-600 hover:bg-rose-500 text-white ring-4 ring-rose-500/50 animate-bounce"
+                  : "bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white"
+              }`}
+            >
+              {isSavingHistory ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isSavedToHistory ? (
+                <Check className="w-4 h-4 text-white" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 text-amber-300" />
+              )}
+              <span>
+                {isSavingHistory
+                  ? "Сохранение..."
+                  : isSavedToHistory
+                  ? "✓ Сохранено в Архив КП (Экспорт разрешён)"
+                  : historySavedMsg || "Сохранить подборку в Архив КП (Обязательно)"}
+              </span>
+            </button>
+
+            {cartArray.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintCartInvoice}
+                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 border border-slate-700 shadow-sm active:scale-95"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Печать (Лист выборки)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCartExcelExport}
+                  className="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  <span>Скачать Excel</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
 
         {showPrintAlert && (
           <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded-xl text-xs flex items-start gap-2 animate-fade-in shadow-sm print:hidden">
@@ -530,11 +839,7 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
                   
                   {portalFacilitator ? (
                     <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                      {[
-                        { key: 'supplier2' as const, label: globalDict?.suppliers?.[0] || 'Поставщик 1' },
-                        { key: 'supplier3' as const, label: globalDict?.suppliers?.[1] || 'Поставщик 2' },
-                        { key: 'supplier4' as const, label: globalDict?.suppliers?.[2] || 'Поставщик 3' },
-                      ].map((s) => {
+                      {supplierList.map((s) => {
                         const price = getProductPriceForSupplierAndRegion(p, s.key, region);
                         const isSelected = currentSupplier === s.key;
                         return (
@@ -585,12 +890,8 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
               {/* Supplier Offers Choice */}
               <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5 w-full">
                 <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Предложения поставщиков:</div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { key: 'supplier2' as const, label: globalDict?.suppliers?.[0] || 'Поставщик 1' },
-                    { key: 'supplier3' as const, label: globalDict?.suppliers?.[1] || 'Поставщик 2' },
-                    { key: 'supplier4' as const, label: globalDict?.suppliers?.[2] || 'Поставщик 3' },
-                  ].map((s) => {
+                <div className={`grid gap-1.5 ${supplierList.length > 3 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
+                  {supplierList.map((s) => {
                     const price = getProductPriceForSupplierAndRegion(p, s.key, region);
                     const isSelected = currentSupplier === s.key;
                     const hasPrice = price > 0;
@@ -653,6 +954,23 @@ export default function MiniApp({ portalFacilitator }: { portalFacilitator?: str
             priceSupplier4: getProductPriceForSupplierAndRegion(p, "supplier4", productRegion),
           };
         })}
+      />
+
+      <PrintCartView
+        cart={cartArray.map((i) => ({
+          product: i.prod!,
+          quantity: i.qty,
+          selectedSupplier: (i.selectedSupplier || "supplier2") as any,
+          selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region) || 0,
+        }))}
+        isPrinting={isCartPrinting}
+        suppliers={globalDict?.suppliers}
+        logisticsCost={cartArray.length > 0 ? (globalDict?.logisticsCosts?.[region] || 0) : 0}
+        selectedRegion={region}
+        selectedSphere={sphere}
+        clientName={clientName}
+        facilitatorName={facilitatorName}
+        note={note}
       />
     </div>
   );

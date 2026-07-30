@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import {
   X,
   Printer,
@@ -15,6 +15,7 @@ import {
   Archive,
   BookmarkCheck,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { Product } from "./types";
 import {
@@ -119,6 +120,59 @@ export function CartModal({
   const [note, setNote] = useState("");
   const [isSavingHistory, setIsSavingHistory] = useState(false);
   const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
+  const [clientNameError, setClientNameError] = useState(false);
+  const [isSavedToHistory, setIsSavedToHistory] = useState(false);
+  const [saveRequiredError, setSaveRequiredError] = useState(false);
+  const clientNameInputRef = useRef<HTMLInputElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+
+  const displayedCart = useMemo(() => {
+    if (!selectedSphere) return cart;
+    return cart.filter((item) => {
+      const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
+        ? item.product.spheres 
+        : [item.product.sphere || "Общее"];
+      return prodSpheres.some(s => 
+        s === selectedSphere || 
+        s.includes(selectedSphere) || 
+        selectedSphere.includes(s)
+      );
+    });
+  }, [cart, selectedSphere]);
+
+  // Reset saved status if quote data changes
+  useEffect(() => {
+    setIsSavedToHistory(false);
+    setSaveRequiredError(false);
+  }, [clientName, facilitatorName, note, displayedCart, selectedRegion, selectedSphere]);
+
+  const validateClientName = (): boolean => {
+    if (!clientName.trim()) {
+      setClientNameError(true);
+      setSaveRequiredError(false);
+      if (clientNameInputRef.current) {
+        clientNameInputRef.current.focus();
+        clientNameInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
+    }
+    setClientNameError(false);
+    return true;
+  };
+
+  const validateCanExportOrPrint = (): boolean => {
+    if (!validateClientName()) return false;
+    if (!isSavedToHistory) {
+      setSaveRequiredError(true);
+      if (saveButtonRef.current) {
+        saveButtonRef.current.focus();
+        saveButtonRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
+    }
+    setSaveRequiredError(false);
+    return true;
+  };
 
   useEffect(() => {
     if (defaultFacilitatorName) {
@@ -147,20 +201,6 @@ export function CartModal({
       return () => clearTimeout(t);
     }
   }, [isConfirmingClear]);
-
-  const displayedCart = useMemo(() => {
-    if (!selectedSphere) return cart;
-    return cart.filter((item) => {
-      const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
-        ? item.product.spheres 
-        : [item.product.sphere || "Общее"];
-      return prodSpheres.some(s => 
-        s === selectedSphere || 
-        s.includes(selectedSphere) || 
-        selectedSphere.includes(s)
-      );
-    });
-  }, [cart, selectedSphere]);
 
   const cartLinesTotal = displayedCart.reduce(
     (sum, item) => sum + (item.selectedPrice === Infinity ? 0 : (item.selectedPrice || 0)) * item.quantity,
@@ -420,10 +460,7 @@ export function CartModal({
 
   const handleSaveToHistory = async () => {
     if (displayedCart.length === 0) return;
-    if (!clientName.trim()) {
-      alert("Пожалуйста, укажите имя/фамилию или объект заказчика перед сохранением!");
-      return;
-    }
+    if (!validateClientName()) return;
     setIsSavingHistory(true);
     try {
       await saveQuoteToHistory({
@@ -435,7 +472,9 @@ export function CartModal({
         logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
         cart: displayedCart,
       });
-      setHistorySavedMsg("✓ Сохранено в Архив КП!");
+      setIsSavedToHistory(true);
+      setSaveRequiredError(false);
+      setHistorySavedMsg("✓ Успешно сохранено в Архив КП!");
       setTimeout(() => setHistorySavedMsg(null), 3500);
     } catch (err: any) {
       console.error("Error saving quote to history:", err);
@@ -446,6 +485,7 @@ export function CartModal({
   };
 
   const handleExcelExport = async () => {
+    if (!validateCanExportOrPrint()) return;
     await downloadCartExcel(
       displayedCart,
       displayedCart.length > 0 ? logisticsCost : 0,
@@ -456,35 +496,14 @@ export function CartModal({
       facilitatorName.trim(),
       note.trim()
     );
-    if (clientName.trim() && displayedCart.length > 0) {
-      saveQuoteToHistory({
-        clientName: clientName.trim(),
-        facilitatorName: facilitatorName.trim() || "Фасилитатор",
-        note: note.trim(),
-        selectedRegion: selectedRegion || "Все регионы",
-        selectedSphere: selectedSphere || "Все сферы",
-        logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
-        cart: displayedCart,
-      }).catch(console.error);
-    }
   };
 
   const handlePrintAction = () => {
+    if (!validateCanExportOrPrint()) return;
     if (onPrintWithMeta) {
       onPrintWithMeta(clientName.trim(), facilitatorName.trim(), note.trim());
     } else {
       onPrint();
-    }
-    if (clientName.trim() && displayedCart.length > 0) {
-      saveQuoteToHistory({
-        clientName: clientName.trim(),
-        facilitatorName: facilitatorName.trim() || "Фасилитатор",
-        note: note.trim(),
-        selectedRegion: selectedRegion || "Все регионы",
-        selectedSphere: selectedSphere || "Все сферы",
-        logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
-        cart: displayedCart,
-      }).catch(console.error);
     }
   };
 
@@ -538,15 +557,55 @@ export function CartModal({
 
         {/* Customer Metadata / Archive KP Card */}
         <div className="bg-slate-900 text-white p-3.5 sm:p-4 border-b border-slate-800 shrink-0">
+          {clientNameError && (
+            <div className="bg-rose-500/20 border border-rose-500/50 text-rose-200 p-3 rounded-lg text-xs flex items-center justify-between gap-2 mb-3 shadow-lg animate-pulse">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  <strong>Ошибка:</strong> Пожалуйста, укажите <strong>Ф.И.О Бенефициара / Клиента *</strong> перед сохранением, печатью или скачиванием Excel!
+                </span>
+              </div>
+              <button
+                onClick={() => setClientNameError(false)}
+                className="text-rose-400 hover:text-white p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {saveRequiredError && !clientNameError && (
+            <div className="bg-amber-500/20 border border-amber-500/50 text-amber-200 p-3 rounded-lg text-xs flex items-center justify-between gap-2 mb-3 shadow-lg animate-pulse">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Предупреждение:</strong> Необходимы данные! Подборка ещё не сохранена в Архив КП. Нажмите синюю кнопку <strong>«Сохранить подборку в Архив КП»</strong> для получения доступа к Excel и печати!
+                </span>
+              </div>
+              <button
+                onClick={() => setSaveRequiredError(false)}
+                className="text-amber-400 hover:text-white p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2.5">
             <div className="flex items-center gap-2">
               <User className="w-4 h-4 text-indigo-400 shrink-0" />
               <span className="font-bold text-xs sm:text-sm text-white">
                 Карточка клиента / Метаданные выборки
               </span>
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                Снимок цен
-              </span>
+              {isSavedToHistory ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Сохранено в Архив
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется сохранение
+                </span>
+              )}
             </div>
             {onOpenQuotesHistory && (
               <button
@@ -563,15 +622,28 @@ export function CartModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Имя Фаслитатора / Клиента <span className="text-rose-400">*</span>
+                Ф.И.О Бенефициара / Клиента <span className="text-rose-400">*</span>
               </label>
               <input
+                ref={clientNameInputRef}
                 type="text"
-                placeholder="Имя Фамилия заказчика..."
+                placeholder="Ф.И.О бенефициара / клиента..."
                 value={clientName}
-                onChange={(e) => setClientName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                  if (e.target.value.trim()) setClientNameError(false);
+                }}
+                className={`w-full bg-slate-800 border rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all ${
+                  clientNameError
+                    ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
+                    : "border-slate-700 focus:border-indigo-500"
+                }`}
               />
+              {clientNameError && (
+                <span className="text-[10px] font-bold text-rose-400 mt-1 block">
+                  Заполните Ф.И.О Бенефициара / Клиента!
+                </span>
+              )}
             </div>
 
             <div>
@@ -604,20 +676,35 @@ export function CartModal({
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2.5 pt-2 border-t border-slate-800">
             <span className="text-[11px] text-slate-400 flex items-center gap-1">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              При сохранении система запечатывает точные цены и коэффициенты
+              При сохранении система запечатывает точные цены и открывает экспорт/печать
             </span>
             <button
+              ref={saveButtonRef}
               type="button"
               onClick={handleSaveToHistory}
               disabled={isSavingHistory || displayedCart.length === 0}
-              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white px-3 py-1 rounded text-xs font-bold transition-all shadow-sm shrink-0"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-md shrink-0 active:scale-95 ${
+                isSavedToHistory
+                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
+                  : saveRequiredError
+                  ? "bg-rose-600 hover:bg-rose-500 text-white ring-4 ring-rose-500/50 animate-bounce"
+                  : "bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white"
+              }`}
             >
               {isSavingHistory ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : isSavedToHistory ? (
+                <CheckCircle2 className="w-4 h-4 text-white" />
               ) : (
                 <BookmarkCheck className="w-4 h-4" />
               )}
-              <span>{historySavedMsg || "Сохранить подборку в Архив КП"}</span>
+              <span>
+                {isSavingHistory
+                  ? "Сохранение..."
+                  : isSavedToHistory
+                  ? "✓ Сохранено в Архив КП"
+                  : historySavedMsg || "Сохранить подборку в Архив КП"}
+              </span>
             </button>
           </div>
         </div>

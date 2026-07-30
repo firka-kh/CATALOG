@@ -377,7 +377,6 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                               <th className="p-2.5 w-12 text-center">№</th>
                               <th className="p-2.5">Код / ID</th>
                               <th className="p-2.5">Наименование товара</th>
-                              <th className="p-2.5">Сфера</th>
                               <th className="p-2.5 text-center">Кол-во</th>
                               <th className="p-2.5 text-right">Зафиксированная цена</th>
                               <th className="p-2.5 text-right">Сумма</th>
@@ -395,9 +394,6 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                                   <td className="p-2.5 font-medium text-slate-900">
                                     {item.product.name}
                                   </td>
-                                  <td className="p-2.5 text-slate-500">
-                                    {item.product.sphere || "—"}
-                                  </td>
                                   <td className="p-2.5 text-center font-mono font-semibold text-slate-700">
                                     {item.quantity} {item.product.unit || 'шт.'}
                                   </td>
@@ -413,7 +409,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
 
                             {quote.logisticsCost > 0 && (
                               <tr className="bg-indigo-50/40 font-semibold text-indigo-950">
-                                <td colSpan={6} className="p-2.5 text-right">
+                                <td colSpan={5} className="p-2.5 text-right">
                                   Логистика ({quote.selectedRegion}):
                                 </td>
                                 <td className="p-2.5 text-right font-mono font-bold">
@@ -423,7 +419,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                             )}
 
                             <tr className="bg-slate-100/90 font-bold text-slate-900 border-t border-slate-300">
-                              <td colSpan={6} className="p-3 text-right uppercase text-[11px]">
+                              <td colSpan={5} className="p-3 text-right uppercase text-[11px]">
                                 Итого зафиксировано к оплате:
                               </td>
                               <td className="p-3 text-right font-mono text-sm text-indigo-900">

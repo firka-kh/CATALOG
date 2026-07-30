@@ -355,9 +355,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     }
   }, [isDictLoaded, isProductsLoaded]);
 
+  const [authenticatedFacilitatorKey, setAuthenticatedFacilitatorKey] = useState(() => {
+    return sessionStorage.getItem("auth_facilitator_key") || "";
+  });
+
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
+    if (sessionStorage.getItem("auth_resolved") === "true") return true;
     if (!portalFacilitator) return false;
-    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true" || sessionStorage.getItem("auth_resolved") === "true";
+    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
   });
   const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
@@ -448,25 +453,26 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   // Robust facilitator lookup that automatically handles off-by-one errors and resolves single/nearby-id matches
   const getResolvedFacilitator = () => {
-    if (!portalFacilitator || !globalDict.facilitatorCodes) {
+    const activeKey = authenticatedFacilitatorKey || portalFacilitator || "";
+    if (!activeKey || !globalDict.facilitatorCodes) {
       return { key: "", code: "", name: "Фасилитатор", region: "" };
     }
     
     // 1. Direct match (e.g. facilitator2)
-    if (globalDict.facilitatorCodes[portalFacilitator]) {
-      const idx = parseInt(portalFacilitator.replace("facilitator", ""), 10) - 2;
+    if (globalDict.facilitatorCodes[activeKey]) {
+      const idx = parseInt(activeKey.replace("facilitator", ""), 10) - 2;
       const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-      const region = globalDict.facilitatorRegions?.[portalFacilitator] || "";
+      const region = globalDict.facilitatorRegions?.[activeKey] || "";
       return {
-        key: portalFacilitator,
-        code: String(globalDict.facilitatorCodes[portalFacilitator]),
+        key: activeKey,
+        code: String(globalDict.facilitatorCodes[activeKey]),
         name,
         region
       };
     }
 
     // 2. Fallback check for nearby ID matches (e.g. facilitator1 vs facilitator2, or just "facilitator")
-    let numStr = portalFacilitator.replace("facilitator", "");
+    let numStr = activeKey.replace("facilitator", "");
     if (numStr === "" || numStr === "1") {
       numStr = "2"; // First facilitator is facilitator2
     }
@@ -2538,12 +2544,42 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           <form 
             onSubmit={(e) => {
               e.preventDefault();
-              if (facilitatorInputCode.trim().toLowerCase() === expectedCode.trim().toLowerCase()) {
+              const inputClean = facilitatorInputCode.trim().toLowerCase();
+              if (!inputClean) return;
+
+              let matchedKey: string | null = null;
+              if (globalDict?.facilitatorCodes) {
+                for (const [key, codeVal] of Object.entries(globalDict.facilitatorCodes)) {
+                  if (String(codeVal).trim().toLowerCase() === inputClean) {
+                    matchedKey = key;
+                    break;
+                  }
+                }
+              }
+
+              if (matchedKey) {
+                setIsFacilitatorAuthenticated(true);
+                setAuthenticatedFacilitatorKey(matchedKey);
+                sessionStorage.setItem("auth_facilitator_key", matchedKey);
+                sessionStorage.setItem(`auth_${portalFacilitator || matchedKey}`, "true");
+                sessionStorage.setItem("auth_resolved", "true");
+
+                const matchedRegion = globalDict?.facilitatorRegions?.[matchedKey];
+                if (matchedRegion) {
+                  setSelectedRegion(matchedRegion);
+                  if (portalFacilitator) {
+                    setDoc(doc(db, "facilitator_states", portalFacilitator), { region: matchedRegion }, { merge: true }).catch(console.error);
+                  }
+                }
+              } else if (expectedCode && inputClean === expectedCode.trim().toLowerCase()) {
                 setIsFacilitatorAuthenticated(true);
                 sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
                 sessionStorage.setItem("auth_resolved", "true");
+                if (facilitatorRegion) {
+                  setSelectedRegion(facilitatorRegion);
+                }
               } else {
-                alert("Неверный код");
+                alert("Неверный код доступа");
               }
             }}
             className="flex flex-col gap-4"

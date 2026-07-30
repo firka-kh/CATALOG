@@ -150,7 +150,6 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                   <th className="p-3 w-16">№</th>
                   <th className="p-3 w-20">Фото</th>
                   <th className="p-3">Наименование</th>
-                  <th className="p-3 w-28 font-semibold">Сфера</th>
                   <th className="p-3 w-24 text-right border-l border-gray-200">Цена</th>
                   <th className="p-3 w-24 text-center border-l border-gray-200">Кол-во</th>
                   <th className="p-3 w-28 text-right border-l border-gray-200">Сумма</th>
@@ -179,25 +178,6 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                         </span>
                       </div>
                     </td>
-                    <td className="p-3 text-xs text-gray-700 font-semibold">
-                      {selectedSphere ? (
-                        (() => {
-                          const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
-                            ? item.product.spheres 
-                            : [item.product.sphere || "Общее"];
-                          const matched = prodSpheres.find(s => 
-                            s === selectedSphere || 
-                            s.includes(selectedSphere) || 
-                            selectedSphere.includes(s)
-                          );
-                          return matched || selectedSphere;
-                        })()
-                      ) : (
-                        item.product.spheres && item.product.spheres.length > 0 
-                          ? item.product.spheres.join(", ") 
-                          : (item.product.sphere || "—")
-                      )}
-                    </td>
                     <td className="p-3 text-right font-mono border-l border-gray-100">
                       {(!item.selectedPrice || item.selectedPrice === Infinity) ? (
                         <span className="text-red-600 font-bold">НЕТ ЦЕНЫ</span>
@@ -220,14 +200,14 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                 {/* Logistics cost and Total row directly in tbody to prevent multi-page tfoot repetition and overlapping issues */}
                 {logisticsCost > 0 && (
                   <tr className="font-semibold text-base bg-gray-50/50 break-inside-avoid border-t-2 border-black">
-                     <td colSpan={6} className="p-4 text-right">Логистика ({selectedRegion || "Все регионы"}):</td>
+                     <td colSpan={5} className="p-4 text-right">Логистика ({selectedRegion || "Все регионы"}):</td>
                      <td className="p-4 text-right font-mono">
                          {logisticsCost.toFixed(2)} с.
                      </td>
                   </tr>
                 )}
                 <tr className="border-t-2 border-black font-bold text-base bg-gray-50/80 break-inside-avoid">
-                   <td colSpan={6} className="p-4 text-right uppercase">Итого к оплате:</td>
+                   <td colSpan={5} className="p-4 text-right uppercase">Итого к оплате:</td>
                    <td className="p-4 text-right font-mono whitespace-nowrap">
                        {total.toFixed(2)} с.
                    </td>

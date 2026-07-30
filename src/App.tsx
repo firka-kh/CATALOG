@@ -28,8 +28,10 @@ import {
   Clock,
   Lock,
   Archive,
+  TrendingUp,
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
+import { AnalyticsModal } from "./components/AnalyticsModal";
 import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { generateNextProductCode } from "./lib/generateNextCode";
 import {
@@ -647,6 +649,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
   const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
+  const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
   const [cartPrintMetadata, setCartPrintMetadata] = useState<{
     clientName?: string;
     facilitatorName?: string;
@@ -2060,8 +2063,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setIsManualModalOpen(true);
   };
 
-  const handleEditProduct = (product: Product, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleEditProduct = (product: Product, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setEditingProductId(product.id);
     const standardUnits = [
       "шт.",
@@ -2749,6 +2752,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     <Archive className="w-5 h-5 text-indigo-400" />
                     История подборок (Архив КП)
                   </a>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsAnalyticsModalOpen(true);
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 text-rose-400 hover:bg-slate-800 hover:text-rose-300 transition-colors rounded-md font-semibold"
+                  >
+                    <TrendingUp className="w-5 h-5 text-rose-400" />
+                    Аналитика и Аномалии цен
+                  </a>
                 </>
               )}
             </nav>
@@ -2881,6 +2895,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   <Archive className="w-3.5 h-3.5 text-indigo-400" />
                   <span className="hidden sm:inline">Архив КП</span>
                   <span className="sm:hidden">Архив</span>
+                </button>
+              )}
+              {isReallyAdmin && (
+                <button
+                  onClick={() => setIsAnalyticsModalOpen(true)}
+                  className="flex items-center gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm"
+                  title="Аналитика и Аномалии цен"
+                >
+                  <TrendingUp className="w-3.5 h-3.5 text-rose-200" />
+                  <span className="hidden sm:inline">Аналитика</span>
+                  <span className="sm:hidden">Аналитика</span>
                 </button>
               )}
               {isTabletMode && (
@@ -4794,7 +4819,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
         {/* Manual Entry Modal */}
         {isManualModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
               <div className="flex items-center justify-between p-4 border-b border-slate-100">
                 <h2 className="text-lg font-bold text-slate-800">
@@ -5179,7 +5204,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         )}
         {/* View Product Modal */}
         {viewingProduct && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="flex items-center justify-between p-4 border-b border-slate-100">
                 <h2 className="text-lg font-bold text-slate-800">
@@ -5946,6 +5971,15 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           createdAt={cartPrintMetadata.createdAt}
         />
       )}
+
+      <AnalyticsModal
+        isOpen={isAnalyticsModalOpen}
+        onClose={() => setIsAnalyticsModalOpen(false)}
+        products={products}
+        globalDict={globalDict}
+        onEditProduct={(product) => handleEditProduct(product)}
+        onViewProduct={(product) => setViewingProduct(product)}
+      />
     </>
   );
 }

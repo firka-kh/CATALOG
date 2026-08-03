@@ -2,6 +2,77 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { Product } from '../types';
 
+/**
+ * Converts any image DataURL (including WebP, AVIF, HEIC, etc.)
+ * into a clean JPEG/PNG Base64 string compatible with Microsoft Office 2024.
+ */
+async function processImageForExcel(dataUrl: string): Promise<{ base64: string; extension: 'jpeg' | 'png' } | null> {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image')) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        const maxDim = 300; // Optimal size for Excel cell thumbnails
+        let w = img.width || 120;
+        let h = img.height || 120;
+
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+
+        // Fill white background (handles transparent PNGs nicely when converted to JPEG)
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+
+        const jpegUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const base64Data = jpegUrl.replace(/^data:image\/jpeg;base64,/, '');
+        resolve({ base64: base64Data, extension: 'jpeg' });
+      } catch (e) {
+        console.error("Canvas export failed:", e);
+        const matches = dataUrl.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
+        if (matches && matches[2]) {
+          const format = matches[1].toLowerCase();
+          const ext: 'jpeg' | 'png' = format === 'png' ? 'png' : 'jpeg';
+          resolve({ base64: matches[2], extension: ext });
+        } else {
+          resolve(null);
+        }
+      }
+    };
+    img.onerror = () => {
+      const matches = dataUrl.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches[2]) {
+        const format = matches[1].toLowerCase();
+        const ext: 'jpeg' | 'png' = format === 'png' ? 'png' : 'jpeg';
+        resolve({ base64: matches[2], extension: ext });
+      } else {
+        resolve(null);
+      }
+    };
+    img.src = dataUrl;
+  });
+}
+
 export async function downloadCatalogExcel(products: Product[], suppliers?: string[], selectedSupplierScope?: 'supplier2' | 'supplier3' | 'supplier4') {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AI Catalog Creator';
@@ -203,31 +274,22 @@ export async function downloadCatalogExcel(products: Product[], suppliers?: stri
             }
         });
 
-        // Add image
+        // Add image (processed for MS Office 2024 compatibility)
         if (p.imageBase64) {
             try {
-                // Extract pure base64 data and format
-                const matches = p.imageBase64.match(/^data:image\/([A-Za-z-+\/]+);base64,(.+)$/);
-                let ext: 'jpeg' | 'png' | 'gif' = 'jpeg';
-                let base64Data = p.imageBase64;
-                
-                if (matches && matches.length === 3) {
-                    const format = matches[1].toLowerCase();
-                    if (format === 'png') ext = 'png';
-                    else if (format === 'gif') ext = 'gif';
-                    base64Data = matches[2];
+                const imgData = await processImageForExcel(p.imageBase64);
+                if (imgData) {
+                    const imageId = workbook.addImage({
+                        base64: imgData.base64,
+                        extension: imgData.extension,
+                    });
+                    
+                    ws.addImage(imageId, {
+                        tl: { col: 1, row: rowIndex - 1 },
+                        ext: { width: 110, height: 110 },
+                        editAs: 'oneCell'
+                    });
                 }
-
-                const imageId = workbook.addImage({
-                    base64: base64Data,
-                    extension: ext,
-                });
-                
-                ws.addImage(imageId, {
-                    tl: { col: 1.1, row: rowIndex - 1 + 0.1 },
-                    ext: { width: 110, height: 110 },
-                    editAs: 'oneCell'
-                });
             } catch (e) {
                 console.error("Error adding image to excel", e);
             }

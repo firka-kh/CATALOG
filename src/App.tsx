@@ -656,6 +656,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     facilitatorName?: string;
     note?: string;
     createdAt?: string;
+    selectedRegion?: string;
+    selectedSphere?: string;
+    logisticsCost?: number;
+  }>({});
+  const [restoredCartMeta, setRestoredCartMeta] = useState<{
+    clientName?: string;
+    facilitatorName?: string;
+    note?: string;
   }>({});
   const [isTabletMode, setIsTabletMode] = useState(
     () => localStorage.getItem("catalog_tablet_mode") === "true",
@@ -1647,6 +1655,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     let changed = false;
 
     const updatedCart = cart.map((item) => {
+      const realProd = products.find((p) => p.id === item.product.id || p.code === item.product.code) || item.product;
+
       if (showBestPrice) {
         const sups: ("supplier2" | "supplier3" | "supplier4")[] = [
           "supplier2",
@@ -1659,7 +1669,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
         sups.forEach((sup) => {
           const pr = getProductPriceForSupplierAndRegion(
-            item.product,
+            realProd,
             sup,
             activeReg,
           );
@@ -1671,6 +1681,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
         if (minPrice === Infinity) {
           bestSupplier = item.selectedSupplier || "supplier2";
+          minPrice = (item.selectedPrice > 0 && item.selectedPrice !== Infinity) ? item.selectedPrice : Infinity;
         }
 
         if (
@@ -1685,14 +1696,15 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           };
         }
       } else {
-        // Keep current selected supplier, update price for the new region
+        // Keep current selected supplier, update price for the new region if available
         const currentSup = item.selectedSupplier || "supplier2";
         const newPrice = getProductPriceForSupplierAndRegion(
-          item.product,
+          realProd,
           currentSup,
           activeReg,
         );
-        const finalPrice = newPrice > 0 ? newPrice : Infinity;
+        const existingValidPrice = (item.selectedPrice > 0 && item.selectedPrice !== Infinity) ? item.selectedPrice : 0;
+        const finalPrice = newPrice > 0 ? newPrice : (existingValidPrice > 0 ? existingValidPrice : Infinity);
 
         if (item.selectedPrice !== finalPrice) {
           changed = true;
@@ -1827,11 +1839,23 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const handleLoadQuoteToActiveCart = (
     items: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[],
     region?: string,
-    sphere?: string
+    sphere?: string,
+    clientName?: string,
+    facilitatorName?: string,
+    note?: string
   ) => {
-    setCart(items);
-    if (region) setSelectedRegion(region);
-    if (sphere) setSelectedSphere(sphere);
+    setCart(items || []);
+    if (region !== undefined) {
+      setSelectedRegion(region === "Все регионы" ? "" : region);
+    }
+    if (sphere !== undefined) {
+      setSelectedSphere(sphere === "Все сферы" ? "" : sphere);
+    }
+    setRestoredCartMeta({
+      clientName: clientName || "",
+      facilitatorName: facilitatorName || "",
+      note: note || "",
+    });
     setIsQuotesHistoryOpen(false);
     setIsCartOpen(true);
   };
@@ -1847,13 +1871,16 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     cart: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[];
   }) => {
     setCart(data.cart);
-    if (data.selectedRegion) setSelectedRegion(data.selectedRegion);
-    if (data.selectedSphere) setSelectedSphere(data.selectedSphere);
+    if (data.selectedRegion !== undefined) setSelectedRegion(data.selectedRegion === "Все регионы" ? "" : data.selectedRegion);
+    if (data.selectedSphere !== undefined) setSelectedSphere(data.selectedSphere === "Все сферы" ? "" : data.selectedSphere);
     setCartPrintMetadata({
       clientName: data.clientName,
       facilitatorName: data.facilitatorName,
       note: data.note,
       createdAt: data.createdAt,
+      selectedRegion: data.selectedRegion,
+      selectedSphere: data.selectedSphere,
+      logisticsCost: data.logisticsCost,
     });
     handleCartPrint();
   };
@@ -2445,7 +2472,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       }
       // All products are now global. No region filter required.
       // Sphere filter still applies
-      if (selectedSphere) {
+      if (selectedSphere && selectedSphere !== "Все сферы" && !selectedSphere.toLowerCase().includes("все")) {
           const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
           const isMatch = prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
           if (!isMatch) return false;
@@ -5613,6 +5640,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         selectedSphere={selectedSphere}
         onClearCart={handleClearCart}
         defaultFacilitatorName={getFacilitatorName()}
+        restoredMetadata={restoredCartMeta}
       />
 
       <QuotesHistoryModal
@@ -5970,10 +5998,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           isPrinting={isCartPrinting}
           suppliers={globalDict.suppliers}
           logisticsCost={
-            selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0
+            cartPrintMetadata.logisticsCost !== undefined
+              ? cartPrintMetadata.logisticsCost
+              : (selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0)
           }
-          selectedRegion={selectedRegion}
-          selectedSphere={selectedSphere}
+          selectedRegion={cartPrintMetadata.selectedRegion ?? selectedRegion}
+          selectedSphere={cartPrintMetadata.selectedSphere ?? selectedSphere}
           supplierPhones={globalDict.supplierPhones}
           supplierLegalNames={globalDict.supplierLegalNames}
           clientName={cartPrintMetadata.clientName}

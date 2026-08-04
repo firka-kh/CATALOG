@@ -77,6 +77,7 @@ interface Props {
   selectedSphere?: string;
   onClearCart?: () => void;
   defaultFacilitatorName?: string;
+  restoredMetadata?: { clientName?: string; facilitatorName?: string; note?: string };
 }
 
 export function CartModal({
@@ -102,6 +103,7 @@ export function CartModal({
   selectedSphere,
   onClearCart,
   defaultFacilitatorName = "Фасилитатор",
+  restoredMetadata,
 }: Props) {
   const [addMode, setAddMode] = useState<"single" | "mass">("single");
   const [massInputText, setMassInputText] = useState("");
@@ -126,8 +128,17 @@ export function CartModal({
   const clientNameInputRef = useRef<HTMLInputElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
 
+  useEffect(() => {
+    if (restoredMetadata?.clientName) {
+      setClientName(restoredMetadata.clientName);
+      if (restoredMetadata.facilitatorName) setFacilitatorName(restoredMetadata.facilitatorName);
+      if (restoredMetadata.note !== undefined) setNote(restoredMetadata.note);
+      setIsSavedToHistory(true);
+    }
+  }, [restoredMetadata]);
+
   const displayedCart = useMemo(() => {
-    if (!selectedSphere) return cart;
+    if (!selectedSphere || selectedSphere === "Все сферы" || selectedSphere.toLowerCase().includes("все") || selectedSphere.trim() === "") return cart;
     return cart.filter((item) => {
       const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
         ? item.product.spheres 
@@ -139,12 +150,6 @@ export function CartModal({
       );
     });
   }, [cart, selectedSphere]);
-
-  // Reset saved status if quote data changes
-  useEffect(() => {
-    setIsSavedToHistory(false);
-    setSaveRequiredError(false);
-  }, [clientName, facilitatorName, note, displayedCart, selectedRegion, selectedSphere]);
 
   const validateClientName = (): boolean => {
     if (!clientName.trim()) {
@@ -162,14 +167,6 @@ export function CartModal({
 
   const validateCanExportOrPrint = (): boolean => {
     if (!validateClientName()) return false;
-    if (!isSavedToHistory) {
-      setSaveRequiredError(true);
-      if (saveButtonRef.current) {
-        saveButtonRef.current.focus();
-        saveButtonRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-      return false;
-    }
     setSaveRequiredError(false);
     return true;
   };

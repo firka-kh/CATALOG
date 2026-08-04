@@ -24,7 +24,14 @@ interface QuotesHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   suppliers: string[];
-  onLoadCartToActive: (items: any[], region?: string, sphere?: string) => void;
+  onLoadCartToActive: (
+    items: any[],
+    region?: string,
+    sphere?: string,
+    clientName?: string,
+    facilitatorName?: string,
+    note?: string
+  ) => void;
   onTriggerPdfPrint: (data: {
     cart: any[];
     logisticsCost: number;
@@ -128,7 +135,14 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
 
   const handleRestoreToCart = (quote: QuoteRecord, e: React.MouseEvent) => {
     e.stopPropagation();
-    onLoadCartToActive(quote.items, quote.selectedRegion, quote.selectedSphere);
+    onLoadCartToActive(
+      quote.items,
+      quote.selectedRegion,
+      quote.selectedSphere,
+      quote.clientName,
+      quote.facilitatorName,
+      quote.note
+    );
     showToast(`Товары подборки для "${quote.clientName}" загружены в корзину`);
     onClose();
   };

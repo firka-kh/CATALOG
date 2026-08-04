@@ -28,7 +28,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
 
   // Filter cart items by selected sphere if provided
   let filteredCart = cart;
-  if (selectedSphere) {
+  if (selectedSphere && !selectedSphere.toLowerCase().includes("все") && selectedSphere.trim() !== "") {
     filteredCart = cart.filter(item => {
       const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
         ? item.product.spheres 

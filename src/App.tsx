@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
+import { UpdateNotifier } from "./components/UpdateNotifier";
 import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { generateNextProductCode } from "./lib/generateNextCode";
 import {
@@ -2614,6 +2615,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   return (
     <>
+      <UpdateNotifier />
       <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden outline-none print:hidden">
         {/* Mobile Backdrop overlay */}
         {!isTabletMode && isSidebarVisible && (

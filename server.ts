@@ -18,6 +18,12 @@ process.on("unhandledRejection", (reason, promise) => {
 
 const app = express();
 const PORT = 3000;
+const SERVER_BUILD_ID = Date.now().toString();
+
+app.get("/api/version", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.json({ buildId: SERVER_BUILD_ID });
+});
 
 // Webhook endpoint for Telegram
 app.post("/api/bot-webhook", express.json(), (req, res) => {

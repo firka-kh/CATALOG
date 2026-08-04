@@ -4,6 +4,7 @@ import { db } from './lib/firebase';
 import { Product, GlobalDictionary } from './types';
 import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package } from 'lucide-react';
 import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
+import { UpdateNotifier } from './components/UpdateNotifier';
 
 const UNITS = [
     { value: 'шт.', label: 'шт. (Штука)' },
@@ -817,7 +818,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   }
 
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    <>
+      <UpdateNotifier />
+      <div className="flex flex-col h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
       {/* Header */}
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col lg:flex-row items-center justify-between shadow-sm z-10 shrink-0 gap-4">
         <div className="flex items-center justify-between w-full lg:w-auto">
@@ -1651,5 +1654,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         </div>
       )}
     </div>
+    </>
   );
 }

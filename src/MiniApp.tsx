@@ -45,9 +45,12 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   const [showPrintAlert, setShowPrintAlert] = useState(false);
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
-    if (sessionStorage.getItem("auth_resolved") === "true") return true;
-    if (!portalFacilitator) return false;
-    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
+    if (portalFacilitator) {
+      const savedKey = sessionStorage.getItem("auth_facilitator_key");
+      if (savedKey && savedKey === portalFacilitator) return true;
+      return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
+    }
+    return sessionStorage.getItem("auth_resolved") === "true" || !!sessionStorage.getItem("auth_facilitator_key");
   });
   const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
@@ -65,7 +68,12 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     }));
   }, [globalDict?.suppliers]);
 
-  const activeFacilitatorKey = authenticatedFacilitatorKey || portalFacilitator || "";
+  const activeFacilitatorKey = useMemo(() => {
+    if (portalFacilitator && (globalDict?.facilitatorCodes?.[portalFacilitator] || globalDict?.facilitatorRegions?.[portalFacilitator])) {
+      return portalFacilitator;
+    }
+    return authenticatedFacilitatorKey || portalFacilitator || "";
+  }, [portalFacilitator, authenticatedFacilitatorKey, globalDict]);
 
   const resolvedFacilitator = useMemo(() => {
     const targetKey = activeFacilitatorKey;

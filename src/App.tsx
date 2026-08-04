@@ -363,9 +363,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   });
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
-    if (sessionStorage.getItem("auth_resolved") === "true") return true;
-    if (!portalFacilitator) return false;
-    return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
+    if (portalFacilitator) {
+      const savedKey = sessionStorage.getItem("auth_facilitator_key");
+      if (savedKey && savedKey === portalFacilitator) return true;
+      return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
+    }
+    return sessionStorage.getItem("auth_resolved") === "true" || !!sessionStorage.getItem("auth_facilitator_key");
   });
   const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
@@ -456,7 +459,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   // Robust facilitator lookup that automatically handles off-by-one errors and resolves single/nearby-id matches
   const getResolvedFacilitator = () => {
-    const activeKey = authenticatedFacilitatorKey || portalFacilitator || "";
+    // Prioritize portalFacilitator if present and valid in globalDict to avoid stale session key mismatches
+    let activeKey = "";
+    if (portalFacilitator && (globalDict.facilitatorCodes?.[portalFacilitator] || globalDict.facilitatorRegions?.[portalFacilitator])) {
+      activeKey = portalFacilitator;
+    } else {
+      activeKey = authenticatedFacilitatorKey || portalFacilitator || "";
+    }
+
     if (!activeKey || !globalDict.facilitatorCodes) {
       return { key: "", code: "", name: "Фасилитатор", region: "" };
     }
@@ -525,10 +535,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const facilitatorRegion = resolvedFacilitator.region || null;
 
   useEffect(() => {
-    if (resolvedFacilitator.key && isFacilitatorAuthenticated && resolvedFacilitator.region) {
+    if (resolvedFacilitator.region && (portalFacilitator || isFacilitatorAuthenticated)) {
       setSelectedRegion(resolvedFacilitator.region);
     }
-  }, [resolvedFacilitator.key, isFacilitatorAuthenticated, resolvedFacilitator.region]);
+  }, [resolvedFacilitator.key, portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region]);
 
   const getFacilitatorName = () => {
     return resolvedFacilitator.name || "Фасилитатор";
@@ -577,14 +587,15 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           if (data?.sphere !== undefined) {
             setSelectedSphere(data.sphere);
           }
-          if (data?.region !== undefined) {
+          // Only sync region from facilitator_states if facilitator has NO assigned region in globalDict
+          if (data?.region !== undefined && !resolvedFacilitator.region) {
             setSelectedRegion(data.region);
           }
         }
       });
       return () => unsub();
     }
-  }, [portalFacilitator, isFacilitatorAuthenticated]);
+  }, [portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region]);
   const [showOnlyNew, setShowOnlyNew] = useState(false);
   const [aiSelectedSpheres, setAiSelectedSpheres] = useState<string[]>(() => {
     const saved = localStorage.getItem("catalog_sphere");
@@ -1117,11 +1128,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   useEffect(() => {
     localStorage.setItem("catalog_region", selectedRegion);
-    if (portalFacilitator && isFacilitatorAuthenticated && selectedRegion) {
+    // Do NOT write selectedRegion to facilitator_states if it is bound to resolvedFacilitator.region
+    if (portalFacilitator && isFacilitatorAuthenticated && selectedRegion && !resolvedFacilitator.region) {
       setDoc(doc(db, "facilitator_states", portalFacilitator), { region: selectedRegion }, { merge: true })
         .catch(e => console.error("Error syncing region to firestore:", e));
     }
-  }, [selectedRegion, portalFacilitator, isFacilitatorAuthenticated]);
+  }, [selectedRegion, portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region]);
 
   useEffect(() => {
     localStorage.setItem("catalog_supplier", selectedSupplier);

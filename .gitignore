@@ -8,4 +8,8 @@ coverage/
 !.env.example
 /tests/
 /scripts/
+/android-build/
+/apk-build/
+/apk/
+*.apk
 

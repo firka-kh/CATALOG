@@ -317,19 +317,34 @@ export async function downloadCartExcel(
   workbook.creator = 'AI Catalog Creator';
   workbook.created = new Date();
 
-  // Filter cart items by selected sphere if provided
-  let filteredCart = cart;
-  if (selectedSphere) {
-    filteredCart = cart.filter(item => {
-      const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
+  // Safe cart fallback
+  const rawCart = Array.isArray(cart) ? cart : [];
+
+  // Filter cart items by selected sphere if provided (ignoring "all" filters)
+  let filteredCart = rawCart;
+  if (
+    selectedSphere &&
+    !selectedSphere.toLowerCase().includes("все") &&
+    selectedSphere.trim() !== ""
+  ) {
+    const sLow = selectedSphere.toLowerCase().trim();
+    const matched = rawCart.filter(item => {
+      const prodSpheres = item.product?.spheres && item.product.spheres.length > 0 
         ? item.product.spheres 
-        : [item.product.sphere || "Общее"];
-      return prodSpheres.some(s => 
-        s === selectedSphere || 
-        s.includes(selectedSphere) || 
-        selectedSphere.includes(s)
-      );
+        : [item.product?.sphere || "Общее"];
+      return prodSpheres.some((s: string) => {
+        const sphereStr = String(s).toLowerCase();
+        return (
+          sphereStr === sLow || 
+          sphereStr.includes(sLow) || 
+          sLow.includes(sphereStr)
+        );
+      });
     });
+    // Only apply filter if it actually matched items; otherwise fallback to full cart
+    if (matched.length > 0) {
+      filteredCart = matched;
+    }
   }
 
   // Helper to get supplier name
@@ -339,11 +354,14 @@ export async function downloadCartExcel(
     if (supp === "supplier2") return list[0] || "Поставщик 1";
     if (supp === "supplier3") return list[1] || "Поставщик 2";
     if (supp === "supplier4") return list[2] || "Поставщик 3";
-    return "Логистика";
+    return "Поставщик";
   };
 
-  // Group cart items by supplier using filtered cart
-  const uniqueCartSuppliers = Array.from(new Set(filteredCart.map(i => i.selectedSupplier || "supplier2")));
+  // Group cart items by supplier
+  let uniqueCartSuppliers = Array.from(new Set(filteredCart.map(i => i.selectedSupplier || "supplier2")));
+  if (uniqueCartSuppliers.length === 0) {
+    uniqueCartSuppliers = ["supplier2"];
+  }
 
   for (const supplierKey of uniqueCartSuppliers) {
     const supplierItems = filteredCart.filter(i => (i.selectedSupplier || "supplier2") === supplierKey);
@@ -351,8 +369,16 @@ export async function downloadCartExcel(
 
     // Limit worksheet title to 31 chars and filter invalid chars
     const rawTitle = `Инвойс - ${supplierName}`;
-    const sheetTitle = rawTitle.substring(0, 31).replace(/[\\/*?:\[\]]/g, '');
-    const summaryWs = workbook.addWorksheet(sheetTitle);
+    let sheetTitle = rawTitle.substring(0, 31).replace(/[\\/*?:\[\]]/g, '') || "Инвойс";
+    
+    // Ensure unique sheet name
+    let sheetName = sheetTitle;
+    let sheetCounter = 1;
+    while (workbook.getWorksheet(sheetName)) {
+      sheetName = `${sheetTitle.substring(0, 26)}_${sheetCounter++}`;
+    }
+
+    const summaryWs = workbook.addWorksheet(sheetName);
 
     summaryWs.columns = [
       { key: "index", width: 8 },
@@ -365,10 +391,12 @@ export async function downloadCartExcel(
     ];
 
     let rowCursor = 1;
+
+    // Header Title Banner
     summaryWs.mergeCells(`A${rowCursor}:G${rowCursor}`);
     const titleCell = summaryWs.getCell(`A${rowCursor}`);
     titleCell.value = "Буҷети сармоягузорӣ / Выборка товаров";
-    titleCell.font = { bold: true, size: 12 };
+    titleCell.font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
     titleCell.alignment = { horizontal: "center", vertical: "middle" };
     titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } };
     for (let c = 1; c <= 7; c++) {
@@ -420,46 +448,49 @@ export async function downloadCartExcel(
 
     const headerRow = summaryWs.addRow(["#", "ID товара", "Ном ва хусусиятҳо", "Воҳид", "Миқдор", "Нархи як воҳид*", "Ҳамагӣ"]);
     headerRow.eachCell((cell) => {
-      cell.font = { bold: true };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
       cell.alignment = { horizontal: "center", vertical: "middle" };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4BA0DC" } };
       cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     });
+    rowCursor++;
 
     let overallExcelTotal = 0;
 
     supplierItems.forEach((item, idx) => {
-      const sum = item.quantity * item.selectedPrice;
+      const pName = item.product?.name || "Товар";
+      const qtyNum = typeof item.quantity === "number" && !isNaN(item.quantity) ? item.quantity : Number(item.quantity) || 1;
+      const priceNum = typeof item.selectedPrice === "number" && !isNaN(item.selectedPrice) ? item.selectedPrice : Number(item.selectedPrice) || 0;
+      const sum = qtyNum * priceNum;
       overallExcelTotal += sum;
-      const codeVal = item.product.code || item.product.id?.substring(0, 8) || "";
+      const codeVal = item.product?.code || (item.product?.id ? String(item.product.id).substring(0, 8) : "");
 
       const r = summaryWs.addRow([
         idx + 1,
         codeVal,
-        item.product.name,
-        item.product.unit || "шт.",
-        item.quantity,
-        item.selectedPrice > 0 ? item.selectedPrice : "-",
-        item.selectedPrice > 0 ? sum : "-"
+        pName,
+        item.product?.unit || "шт.",
+        qtyNum,
+        priceNum > 0 ? priceNum : "-",
+        priceNum > 0 ? sum : "-"
       ]);
+      rowCursor++;
+
       r.eachCell((cell, colNumber) => {
         let horz: "left" | "center" | "right" = "right";
-        if (colNumber === 1) horz = "center";
-        if (colNumber === 2) horz = "center";
+        if (colNumber === 1 || colNumber === 2 || colNumber === 4 || colNumber === 5) horz = "center";
         if (colNumber === 3) horz = "left";
-        if (colNumber === 4) horz = "center";
-        if (colNumber === 5) horz = "center";
-        if (colNumber === 6) horz = "right";
-        if (colNumber === 7) horz = "right";
 
         cell.alignment = { vertical: "middle", horizontal: horz, wrapText: true };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       });
     });
 
-    if (logisticsCost > 0) {
-      const logRow = summaryWs.addRow(["", "", "", "Логистика", "", "", logisticsCost]);
-      overallExcelTotal += logisticsCost;
+    const logNum = typeof logisticsCost === "number" && !isNaN(logisticsCost) ? logisticsCost : Number(logisticsCost) || 0;
+    if (logNum > 0) {
+      const logRow = summaryWs.addRow(["", "", "", "Логистика", "", "", logNum]);
+      rowCursor++;
+      overallExcelTotal += logNum;
       logRow.eachCell((cell) => {
         cell.alignment = { vertical: "middle", horizontal: "right" };
         cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
@@ -469,6 +500,7 @@ export async function downloadCartExcel(
     }
 
     const totalRow = summaryWs.addRow(["", "", "", "", "", "Ҳамагӣ", overallExcelTotal]);
+    rowCursor++;
     totalRow.eachCell((cell) => {
       cell.alignment = { vertical: "middle", horizontal: "right" };
       cell.border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };

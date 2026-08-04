@@ -1386,21 +1386,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       return;
     }
 
-    const queryParts = [manualForm.name];
-    if (manualForm.sphere) queryParts.push(manualForm.sphere);
-    const initialQuery = queryParts.join(" ").trim().substring(0, 100);
+    const initialQuery = manualForm.name.trim().substring(0, 100);
 
     setImageSearchQuery(initialQuery);
     setIsImageSearchModalOpen(true);
     await executeImageSearch(initialQuery);
   };
 
-  const handleSelectImageResult = async (url: string) => {
+  const handleSelectImageResult = async (url: string, thumb?: string) => {
     try {
       const res = await fetch("/api/fetch-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, thumb }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -4730,7 +4728,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
         {/* Image Search Modal */}
         {isImageSearchModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col h-[80vh]">
               <div className="flex items-center justify-between p-4 border-b border-slate-100">
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -4785,20 +4783,31 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     {imageSearchResults.map((img, i) => (
                       <div
                         key={i}
-                        onClick={() => handleSelectImageResult(img.url)}
-                        className="cursor-pointer group relative aspect-square bg-white border border-slate-200 rounded-lg overflow-hidden hover:border-indigo-500 hover:shadow-md transition-all"
+                        onClick={() => handleSelectImageResult(img.url, img.thumb)}
+                        className="cursor-pointer group relative aspect-square bg-white border border-slate-200 rounded-lg overflow-hidden hover:border-indigo-500 hover:shadow-md transition-all flex flex-col justify-between"
                       >
-                        <img
-                          src={img.url}
-                          alt={img.title || "Search Result"}
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => {
-                            // If direct url breaks, hide broken thumbnail
-                            (e.currentTarget.parentElement as HTMLElement).style.display = "none";
-                          }}
-                        />
-                        <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center">
+                        <div className="w-full h-full relative overflow-hidden bg-slate-100">
+                          <img
+                            src={img.thumb || img.url}
+                            alt={img.title || "Search Result"}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => {
+                              const target = e.currentTarget as HTMLImageElement;
+                              if (target.src !== img.url && img.url) {
+                                target.src = img.url;
+                              } else {
+                                (target.parentElement?.parentElement as HTMLElement).style.display = "none";
+                              }
+                            }}
+                          />
+                        </div>
+                        {img.title && (
+                          <div className="absolute bottom-0 inset-x-0 p-1 bg-slate-900/70 text-white text-[10px] truncate px-1.5 z-10">
+                            {img.title}
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center z-20">
                           <span className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white text-xs font-semibold px-2 py-1 rounded shadow-sm transition-opacity">
                             Выбрать
                           </span>

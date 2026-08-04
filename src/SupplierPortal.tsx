@@ -630,19 +630,19 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       alert("Сначала введите название товара для поиска");
       return;
     }
-    const queryStr = [productForm.name, productForm.spheres[0] || ''].join(' ').trim();
+    const queryStr = productForm.name.trim().substring(0, 100);
     setImageSearchQuery(queryStr);
     setIsImageSearchModalOpen(true);
     await executeImageSearch(queryStr);
   };
 
-  const handleSelectSearchResult = async (url: string) => {
+  const handleSelectSearchResult = async (url: string, thumb?: string) => {
     setIsFetchingImage(true);
     try {
       const res = await fetch("/api/fetch-image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url, thumb }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1468,7 +1468,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
       {/* Online Image Search Modal */}
       {isImageSearchModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
               <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -1515,18 +1515,26 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {imageSearchResults.map((res, i) => (
+                  {imageSearchResults.map((res: any, i) => (
                     <div
                       key={i}
-                      onClick={() => handleSelectSearchResult(res.url)}
+                      onClick={() => handleSelectSearchResult(res.url, res.thumb || res.thumbnail)}
                       className="group border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-indigo-500 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
                     >
                       <div className="h-32 bg-slate-100 flex items-center justify-center overflow-hidden relative">
                         <img
-                          src={res.thumbnail || res.url}
+                          src={res.thumb || res.thumbnail || res.url}
                           alt={res.title}
                           className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
                           loading="lazy"
+                          onError={(e) => {
+                            const target = e.currentTarget as HTMLImageElement;
+                            if (target.src !== res.url && res.url) {
+                              target.src = res.url;
+                            } else {
+                              (target.parentElement?.parentElement as HTMLElement).style.display = "none";
+                            }
+                          }}
                         />
                       </div>
                       <div className="p-2 text-[10px] text-slate-600 line-clamp-2 leading-tight bg-white border-t border-slate-100">

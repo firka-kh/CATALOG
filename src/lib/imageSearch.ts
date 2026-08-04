@@ -1,8 +1,18 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
+function sanitizeSearchQuery(rawQuery: string): string {
+  // Strip category/sphere tags if present, trailing technical codes like (арт. 1234), etc.
+  let q = rawQuery.trim();
+  // Remove brackets like (арт. 123) or [код 45]
+  q = q.replace(/[\(\[\{].*?[\)\]\}]/g, '');
+  // Clean extra spaces
+  q = q.replace(/\s+/g, ' ').trim();
+  return q || rawQuery.trim();
+}
+
 export async function searchImages(query: string) {
-  const cleanQuery = query.trim();
+  const cleanQuery = sanitizeSearchQuery(query);
   if (!cleanQuery) return [];
 
   const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -17,11 +27,11 @@ export async function searchImages(query: string) {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Referer': 'https://www.bing.com/'
       },
-      timeout: 6000
+      timeout: 7000
     });
 
     const $ = cheerio.load(res.data);
-    const images: { url: string; thumb?: string; title?: string }[] = [];
+    const images: { url: string; thumb: string; title: string }[] = [];
 
     $('.iusc').each((i, el) => {
       try {
@@ -32,7 +42,7 @@ export async function searchImages(query: string) {
             images.push({
               url: json.murl,
               thumb: json.turl || json.murl,
-              title: json.t || cleanQuery
+              title: (json.t || cleanQuery).replace(/<[^>]+>/g, '')
             });
           }
         }
@@ -42,9 +52,12 @@ export async function searchImages(query: string) {
     if (images.length === 0) {
       const html = res.data;
       const murlMatches = [...html.matchAll(/"murl"\s*:\s*"([^"]+)"/g)];
-      for (const match of murlMatches) {
-        if (match[1]) {
-          images.push({ url: match[1], thumb: match[1], title: cleanQuery });
+      const turlMatches = [...html.matchAll(/"turl"\s*:\s*"([^"]+)"/g)];
+      for (let i = 0; i < murlMatches.length; i++) {
+        const murl = murlMatches[i]?.[1];
+        const turl = turlMatches[i]?.[1] || murl;
+        if (murl) {
+          images.push({ url: murl, thumb: turl, title: cleanQuery });
         }
       }
     }
@@ -69,13 +82,13 @@ export async function searchImages(query: string) {
         'User-Agent': userAgent,
         'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'
       },
-      timeout: 6000
+      timeout: 7000
     });
 
     const html = res.data;
     const matches = [...html.matchAll(/\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp))",\s*\d+,\s*\d+\]/gi)];
     const images = matches
-      .map(m => ({ url: m[1] }))
+      .map(m => ({ url: m[1], thumb: m[1], title: cleanQuery }))
       .filter(item => !item.url.includes('gstatic.com') && !item.url.includes('google.com'));
 
     if (images.length > 0) {

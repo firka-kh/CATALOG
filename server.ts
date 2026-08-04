@@ -246,47 +246,54 @@ app.post("/api/search-images", async (req, res) => {
 
 app.post("/api/fetch-image", async (req, res) => {
   try {
-    const { url } = req.body;
-    if (!url) {
+    const { url, thumb } = req.body;
+    if (!url && !thumb) {
       res.status(400).json({ error: "Missing url" });
       return;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const fetchSingleUrl = async (targetUrl: string, timeoutMs: number = 6000) => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const imageRes = await fetch(targetUrl, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            Referer: targetUrl.includes("bing.net") ? "https://www.bing.com/" : targetUrl,
+          },
+        });
+        clearTimeout(timeout);
+        if (!imageRes.ok) return null;
 
-    try {
-      const imageRes = await fetch(url, {
-        signal: controller.signal,
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-        },
-      });
-      clearTimeout(timeout);
+        const arrayBuffer = await imageRes.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        let mimeType = imageRes.headers.get("content-type") || "image/jpeg";
+        if (mimeType.includes(";")) {
+          mimeType = mimeType.split(";")[0].trim();
+        }
+        if (!mimeType.startsWith("image/")) {
+          mimeType = "image/jpeg";
+        }
+        const base64 = buffer.toString("base64");
+        return { mimeType, base64: `data:${mimeType};base64,${base64}` };
+      } catch (e) {
+        clearTimeout(timeout);
+        return null;
+      }
+    };
 
-      if (!imageRes.ok) {
-        res.status(imageRes.status).json({ error: "Failed to fetch image" });
-        return;
-      }
-      const arrayBuffer = await imageRes.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      let mimeType = imageRes.headers.get("content-type") || "image/jpeg";
-      if (mimeType.includes(";")) {
-        mimeType = mimeType.split(";")[0].trim();
-      }
-      if (!mimeType.startsWith("image/")) {
-        mimeType = "image/jpeg";
-      }
-      const base64 = buffer.toString("base64");
+    let result = url ? await fetchSingleUrl(url, 6000) : null;
+    if (!result && thumb && thumb !== url) {
+      result = await fetchSingleUrl(thumb, 6000);
+    }
 
-      res.json({ mimeType, base64: `data:${mimeType};base64,${base64}` });
-    } catch (err: any) {
-      clearTimeout(timeout);
-      res.status(500).json({
-        error: err.name === "AbortError" ? "Таймаут загрузки" : err.message,
-      });
+    if (result) {
+      res.json(result);
+    } else {
+      res.status(500).json({ error: "Не удалось загрузить изображение" });
     }
   } catch (e: any) {
     res.status(500).json({ error: e.message });

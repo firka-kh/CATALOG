@@ -68,72 +68,43 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     }));
   }, [globalDict?.suppliers]);
 
-  const activeFacilitatorKey = useMemo(() => {
-    if (portalFacilitator && (globalDict?.facilitatorCodes?.[portalFacilitator] || globalDict?.facilitatorRegions?.[portalFacilitator])) {
-      return portalFacilitator;
-    }
-    return authenticatedFacilitatorKey || portalFacilitator || "";
-  }, [portalFacilitator, authenticatedFacilitatorKey, globalDict]);
-
   const resolvedFacilitator = useMemo(() => {
-    const targetKey = activeFacilitatorKey;
-    if (!targetKey || !globalDict?.facilitatorCodes) {
+    let targetKey = portalFacilitator || authenticatedFacilitatorKey || "";
+    if (!targetKey) {
       return { key: "", code: "", name: "Фасилитатор", region: "" };
     }
-    // 1. Direct match
-    if (globalDict.facilitatorCodes[targetKey]) {
+
+    if (targetKey.startsWith("facilitator")) {
       const idx = parseInt(targetKey.replace("facilitator", ""), 10) - 2;
-      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-      const region = globalDict.facilitatorRegions?.[targetKey] || "";
+      const name = (idx >= 0 && globalDict?.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
+      const region = globalDict?.facilitatorRegions?.[targetKey] || "";
+      const code = String(globalDict?.facilitatorCodes?.[targetKey] || "");
       return {
         key: targetKey,
-        code: String(globalDict.facilitatorCodes[targetKey]),
+        code,
         name,
         region,
       };
     }
-    // 2. Fallback
-    let numStr = targetKey.replace("facilitator", "");
-    let num = parseInt(numStr, 10);
-    if (isNaN(num)) {
-      num = 2;
-    }
-    const checkKeys = [
-      `facilitator${num}`,
-      `facilitator${num + 1}`,
-      `facilitator${num + 2}`,
-      `facilitator${num - 1}`,
-      `facilitator${num - 2}`
-    ];
-    for (const tk of checkKeys) {
-      if (globalDict.facilitatorCodes[tk]) {
-        const idx = parseInt(tk.replace("facilitator", ""), 10) - 2;
-        const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-        const region = globalDict.facilitatorRegions?.[tk] || "";
-        return {
-          key: tk,
-          code: String(globalDict.facilitatorCodes[tk]),
-          name,
-          region,
-        };
+
+    if (globalDict?.facilitatorCodes) {
+      for (const [key, codeVal] of Object.entries(globalDict.facilitatorCodes)) {
+        if (key === targetKey || String(codeVal).trim().toLowerCase() === targetKey.trim().toLowerCase()) {
+          const idx = parseInt(key.replace("facilitator", ""), 10) - 2;
+          const name = (idx >= 0 && globalDict?.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
+          const region = globalDict?.facilitatorRegions?.[key] || "";
+          return {
+            key,
+            code: String(codeVal),
+            name,
+            region,
+          };
+        }
       }
     }
-    // 3. Fallback: If only one exists
-    const keys = Object.keys(globalDict.facilitatorCodes);
-    if (keys.length === 1) {
-      const onlyKey = keys[0];
-      const idx = parseInt(onlyKey.replace("facilitator", ""), 10) - 2;
-      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-      const region = globalDict.facilitatorRegions?.[onlyKey] || "";
-      return {
-        key: onlyKey,
-        code: String(globalDict.facilitatorCodes[onlyKey]),
-        name,
-        region,
-      };
-    }
-    return { key: "", code: "", name: "Фасилитатор", region: "" };
-  }, [activeFacilitatorKey, globalDict]);
+
+    return { key: targetKey, code: "", name: "Фасилитатор", region: "" };
+  }, [portalFacilitator, authenticatedFacilitatorKey, globalDict]);
 
   // Set facilitator's assigned region once loaded or authenticated
   useEffect(() => {
@@ -555,7 +526,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     }
   };
 
-  if ((portalFacilitator || activeFacilitatorKey) && !isFacilitatorAuthenticated) {
+  if ((portalFacilitator || resolvedFacilitator.key) && !isFacilitatorAuthenticated) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-slate-900 font-sans p-4">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-gray-700 max-w-sm w-full">

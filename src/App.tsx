@@ -457,55 +457,37 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     };
   });
 
-  // Robust facilitator lookup that automatically handles off-by-one errors and resolves single/nearby-id matches
+  // Robust facilitator lookup that directly resolves keys without wrong fallbacks
   const getResolvedFacilitator = () => {
-    // Prioritize portalFacilitator if present and valid in globalDict to avoid stale session key mismatches
-    let activeKey = "";
-    if (portalFacilitator && (globalDict.facilitatorCodes?.[portalFacilitator] || globalDict.facilitatorRegions?.[portalFacilitator])) {
-      activeKey = portalFacilitator;
-    } else {
-      activeKey = authenticatedFacilitatorKey || portalFacilitator || "";
-    }
-
-    if (!activeKey || !globalDict.facilitatorCodes) {
+    let activeKey = portalFacilitator || authenticatedFacilitatorKey || "";
+    if (!activeKey) {
       return { key: "", code: "", name: "Фасилитатор", region: "" };
     }
-    
-    // 1. Direct match (e.g. facilitator2)
-    if (globalDict.facilitatorCodes[activeKey]) {
+
+    // Direct key resolution if activeKey starts with "facilitator" (e.g. facilitator2, facilitator3)
+    if (activeKey.startsWith("facilitator")) {
       const idx = parseInt(activeKey.replace("facilitator", ""), 10) - 2;
-      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
+      const name = (idx >= 0 && globalDict.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
       const region = globalDict.facilitatorRegions?.[activeKey] || "";
+      const code = String(globalDict.facilitatorCodes?.[activeKey] || "");
       return {
         key: activeKey,
-        code: String(globalDict.facilitatorCodes[activeKey]),
+        code,
         name,
         region
       };
     }
 
-    // 2. Fallback check for nearby ID matches (e.g. facilitator1 vs facilitator2, or just "facilitator")
-    let numStr = activeKey.replace("facilitator", "");
-    if (numStr === "" || numStr === "1") {
-      numStr = "2"; // First facilitator is facilitator2
-    }
-    const num = parseInt(numStr, 10);
-    if (!isNaN(num)) {
-      const targets = [
-        `facilitator${num}`,
-        `facilitator${num + 1}`,
-        `facilitator${num + 2}`,
-        `facilitator${num - 1}`,
-        `facilitator${num - 2}`
-      ];
-      for (const tk of targets) {
-        if (globalDict.facilitatorCodes[tk]) {
-          const idx = parseInt(tk.replace("facilitator", ""), 10) - 2;
-          const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-          const region = globalDict.facilitatorRegions?.[tk] || "";
+    // If activeKey is a code or custom key, look up in facilitatorCodes
+    if (globalDict.facilitatorCodes) {
+      for (const [key, codeVal] of Object.entries(globalDict.facilitatorCodes)) {
+        if (key === activeKey || String(codeVal).trim().toLowerCase() === activeKey.trim().toLowerCase()) {
+          const idx = parseInt(key.replace("facilitator", ""), 10) - 2;
+          const name = (idx >= 0 && globalDict.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
+          const region = globalDict.facilitatorRegions?.[key] || "";
           return {
-            key: tk,
-            code: String(globalDict.facilitatorCodes[tk]),
+            key,
+            code: String(codeVal),
             name,
             region
           };
@@ -513,22 +495,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       }
     }
 
-    // 3. Fallback: If only one facilitator exists in dictionaries, map any facilitator request to them
-    const keys = Object.keys(globalDict.facilitatorCodes);
-    if (keys.length === 1) {
-      const onlyKey = keys[0];
-      const idx = parseInt(onlyKey.replace("facilitator", ""), 10) - 2;
-      const name = globalDict.facilitators?.[idx] || "Фасилитатор";
-      const region = globalDict.facilitatorRegions?.[onlyKey] || "";
-      return {
-        key: onlyKey,
-        code: String(globalDict.facilitatorCodes[onlyKey]),
-        name,
-        region
-      };
-    }
-
-    return { key: "", code: "", name: "Фасилитатор", region: "" };
+    return { key: activeKey, code: "", name: "Фасилитатор", region: "" };
   };
 
   const resolvedFacilitator = getResolvedFacilitator();

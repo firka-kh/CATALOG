@@ -54,8 +54,8 @@ export async function saveQuoteToHistory(data: {
   // Strip large imageBase64 strings (>30KB) to strictly avoid Firestore 1MB document limit
   const itemsSnapshot: QuoteItem[] = data.cart.map((item) => {
     const rawImg = item.product?.imageBase64 || "";
-    // Keep image only if it's small enough (e.g. <30,000 chars ~ 20KB) to keep document tiny (<50KB)
-    const cleanImg = rawImg.length > 0 && rawImg.length < 30000 ? rawImg : "";
+    // Preserve imageBase64 up to ~200KB to ensure print quality without hitting Firestore document limit
+    const cleanImg = rawImg.length > 0 && rawImg.length < 300000 ? rawImg : "";
 
     return {
       product: {

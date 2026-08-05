@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from './lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from './types';
-import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check, User, AlertTriangle, FileDown, ShoppingBag } from 'lucide-react';
+import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check, User, AlertTriangle, FileDown, ShoppingBag, Archive } from 'lucide-react';
 import { PrintCatalogView } from './PrintCatalogView';
 import { PrintCartView } from './PrintCartView';
+import { QuotesHistoryModal } from './components/QuotesHistoryModal';
 import { downloadCartExcel } from './lib/excelExport';
 import { saveQuoteToHistory } from './lib/quotesHistory';
 
@@ -32,8 +33,47 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   const [isSavingHistory, setIsSavingHistory] = useState(false);
   const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
   const [isCartPrinting, setIsCartPrinting] = useState(false);
+  const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
   const clientNameInputRef = useRef<HTMLInputElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
+
+  const handleLoadQuoteToActiveCart = (
+    items: any[],
+    newRegion?: string,
+    newSphere?: string,
+    newClientName?: string,
+    newFacilitatorName?: string,
+    newNote?: string
+  ) => {
+    const newCart: Record<string, { qty: number; supplier: string }> = {};
+    items.forEach((item: any) => {
+      if (item.product?.id) {
+        newCart[item.product.id] = {
+          qty: item.quantity || 1,
+          supplier: item.selectedSupplier || 'supplier2'
+        };
+      }
+    });
+    setCart(newCart);
+    if (newRegion) setRegion(newRegion);
+    if (newSphere) setSphere(newSphere);
+    if (newClientName) setClientName(newClientName);
+    if (newFacilitatorName) setFacilitatorName(newFacilitatorName);
+    if (newNote) setNote(newNote);
+    setIsSavedToHistory(true);
+    setIsQuotesHistoryOpen(false);
+  };
+
+  const handleTriggerPdfPrintFromHistory = (data: any) => {
+    setClientName(data.clientName || "");
+    if (data.facilitatorName) setFacilitatorName(data.facilitatorName);
+    setNote(data.note || "");
+    setIsCartPrinting(true);
+    setTimeout(() => {
+      window.print();
+      setIsCartPrinting(false);
+    }, 300);
+  };
 
   const [authenticatedFacilitatorKey, setAuthenticatedFacilitatorKey] = useState(() => {
     return sessionStorage.getItem("auth_facilitator_key") || "";
@@ -291,10 +331,15 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     }
   }, [resolvedFacilitator.name]);
 
-  // Reset saved state if cart or metadata changes
+  // Reset saved state if cart or metadata changes, and clear client data when cart becomes empty
   useEffect(() => {
     setIsSavedToHistory(false);
     setSaveRequiredError(false);
+    if (cartArray.length === 0) {
+      setClientName("");
+      setNote("");
+      setClientNameError(false);
+    }
   }, [clientName, facilitatorName, note, cartArray, region, sphere]);
 
   const validateClientName = (): boolean => {
@@ -628,15 +673,26 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                 Карточка клиента / Метаданные выборки
               </span>
             </div>
-            {isSavedToHistory ? (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                <Check className="w-3 h-3 text-emerald-400" /> В Архиве КП
-              </span>
-            ) : (
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется архив
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsQuotesHistoryOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/70 text-indigo-100 border border-indigo-400/40 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                title="Открыть Архив КП (История подборок)"
+              >
+                <Archive className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Архив КП</span>
+              </button>
+              {isSavedToHistory ? (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" /> В Архиве КП
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется архив
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -672,10 +728,10 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
               </label>
               <input
                 type="text"
-                placeholder="Имя фасилитатора"
+                readOnly
+                disabled
                 value={facilitatorName}
-                onChange={(e) => setFacilitatorName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+                className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-3 py-2 text-xs text-slate-300 font-medium cursor-not-allowed select-none focus:outline-none"
               />
             </div>
 
@@ -728,7 +784,13 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                 <button
                   type="button"
                   onClick={handlePrintCartInvoice}
-                  className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 border border-slate-700 shadow-sm active:scale-95"
+                  disabled={!isSavedToHistory}
+                  className={`flex-1 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 border shadow-sm ${
+                    isSavedToHistory
+                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700 opacity-100 cursor-pointer active:scale-95"
+                      : "bg-slate-800/40 text-slate-500 border-slate-800 opacity-50 cursor-not-allowed"
+                  }`}
+                  title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Печать (Лист выборки)</span>
@@ -736,7 +798,13 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                 <button
                   type="button"
                   onClick={handleCartExcelExport}
-                  className="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95"
+                  disabled={!isSavedToHistory}
+                  className={`flex-1 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-sm ${
+                    isSavedToHistory
+                      ? "bg-emerald-700 hover:bg-emerald-600 text-white opacity-100 cursor-pointer active:scale-95"
+                      : "bg-emerald-900/40 text-emerald-400/50 opacity-50 cursor-not-allowed"
+                  }`}
+                  title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
                 >
                   <FileDown className="w-3.5 h-3.5" />
                   <span>Скачать Excel</span>
@@ -989,6 +1057,16 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         </div>
       )}
 
+      <QuotesHistoryModal
+        isOpen={isQuotesHistoryOpen}
+        onClose={() => setIsQuotesHistoryOpen(false)}
+        onLoadCartToActive={handleLoadQuoteToActiveCart}
+        onTriggerPdfPrint={handleTriggerPdfPrintFromHistory}
+        suppliers={globalDict?.suppliers || []}
+        isAdmin={false}
+        currentFacilitatorName={facilitatorName || resolvedFacilitator.name}
+      />
+
       <PrintCatalogView
         printMode="all"
         suppliers={globalDict?.suppliers}
@@ -1016,6 +1094,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         }))}
         isPrinting={isCartPrinting}
         suppliers={globalDict?.suppliers}
+        allProducts={products}
         logisticsCost={cartArray.length > 0 ? (globalDict?.logisticsCosts?.[region] || 0) : 0}
         selectedRegion={region}
         selectedSphere={sphere}

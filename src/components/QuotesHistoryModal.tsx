@@ -24,6 +24,8 @@ interface QuotesHistoryModalProps {
   isOpen: boolean;
   onClose: () => void;
   suppliers: string[];
+  currentFacilitatorName?: string;
+  isAdmin?: boolean;
   onLoadCartToActive: (
     items: any[],
     region?: string,
@@ -48,12 +50,15 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
   isOpen,
   onClose,
   suppliers,
+  currentFacilitatorName,
+  isAdmin = false,
   onLoadCartToActive,
   onTriggerPdfPrint,
 }) => {
   const [quotes, setQuotes] = useState<QuoteRecord[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedFacilitatorFilter, setSelectedFacilitatorFilter] = useState<string>('all');
   const [expandedQuoteId, setExpandedQuoteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -147,7 +152,30 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     onClose();
   };
 
-  const filteredQuotes = quotes.filter(q => {
+  const facilitatorNames: string[] = quotes
+    .map((q) => q.facilitatorName)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
+  const availableFacilitators: string[] = Array.from(new Set<string>(facilitatorNames)).sort((a, b) =>
+    a.localeCompare(b, 'ru')
+  );
+
+  const filteredQuotes = quotes.filter((q) => {
+    // 1. Strict facilitator filter for non-admin users
+    if (!isAdmin && currentFacilitatorName && currentFacilitatorName.trim()) {
+      const targetFac = currentFacilitatorName.trim().toLowerCase();
+      const quoteFac = (q.facilitatorName || '').trim().toLowerCase();
+      if (quoteFac !== targetFac) {
+        return false;
+      }
+    } else if (isAdmin && selectedFacilitatorFilter !== 'all') {
+      const targetFac = selectedFacilitatorFilter.trim().toLowerCase();
+      const quoteFac = (q.facilitatorName || '').trim().toLowerCase();
+      if (quoteFac !== targetFac) {
+        return false;
+      }
+    }
+
+    // 2. Text search query match
     const qTerm = searchQuery.toLowerCase().trim();
     if (!qTerm) return true;
     const clientMatch = q.clientName.toLowerCase().includes(qTerm);
@@ -155,9 +183,10 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     const dateMatch = q.createdAt.toLowerCase().includes(qTerm);
     const regionMatch = q.selectedRegion.toLowerCase().includes(qTerm);
     const sphereMatch = (q.selectedSphere || '').toLowerCase().includes(qTerm);
-    const itemMatch = q.items.some(i => 
-      i.product.name.toLowerCase().includes(qTerm) || 
-      (i.product.code && i.product.code.toLowerCase().includes(qTerm))
+    const itemMatch = q.items.some(
+      (i) =>
+        i.product.name.toLowerCase().includes(qTerm) ||
+        (i.product.code && i.product.code.toLowerCase().includes(qTerm))
     );
     return clientMatch || facMatch || dateMatch || regionMatch || sphereMatch || itemMatch;
   });
@@ -182,14 +211,27 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
               <Archive className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2">
+              <h2 className="text-xl sm:text-2xl font-bold tracking-tight flex items-center gap-2 flex-wrap">
                 История подборок
                 <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
                   Архив КП
                 </span>
+                {!isAdmin && currentFacilitatorName && (
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30 flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-amber-300" />
+                    {currentFacilitatorName}
+                  </span>
+                )}
+                {isAdmin && (
+                  <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 flex items-center gap-1">
+                    Администратор (Все подборки)
+                  </span>
+                )}
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
-                Реестр сохраненных выборок с фиксированным снимком цен (Price Snapshot)
+                {!isAdmin && currentFacilitatorName
+                  ? `Личный архив сохраненных коммерческих предложений фасилитатора ${currentFacilitatorName}`
+                  : "Полный реестр всех сохраненных подборок в системе"}
               </p>
             </div>
           </div>
@@ -203,28 +245,53 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
 
         {/* Toolbar & Search */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between shrink-0">
-          <div className="relative w-full sm:w-96">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Поиск по имени клиента, дате, фасилитатору или товару..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
-              >
-                Очистить
-              </button>
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto flex-1">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Поиск по клиенту, дате, товару..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                >
+                  Очистить
+                </button>
+              )}
+            </div>
+
+            {isAdmin && availableFacilitators.length > 0 && (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <span className="text-xs text-slate-600 font-medium whitespace-nowrap">Фасилитатор:</span>
+                <select
+                  value={selectedFacilitatorFilter}
+                  onChange={(e) => setSelectedFacilitatorFilter(e.target.value)}
+                  className="w-full sm:w-auto px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                >
+                  <option value="all">Все фасилитаторы ({quotes.length})</option>
+                  {availableFacilitators.map((fac) => {
+                    const count = quotes.filter(
+                      (q) => (q.facilitatorName || '').trim().toLowerCase() === fac.trim().toLowerCase()
+                    ).length;
+                    return (
+                      <option key={fac} value={fac}>
+                        {fac} ({count})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
             )}
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end shrink-0">
             <span className="text-xs text-slate-500 font-medium">
-              Всего записей: <strong className="text-slate-900">{filteredQuotes.length}</strong>
+              Отображено: <strong className="text-slate-900">{filteredQuotes.length}</strong>
             </span>
             <button
               onClick={loadHistory}
@@ -251,7 +318,9 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
               <p className="text-xs text-slate-500 mt-1 max-w-md">
                 {searchQuery
                   ? "По вашему поисковому запросу ничего не найдено. Попробуйте изменить параметры поиска."
-                  : "В архиве пока нет сохраненных КП. Вы можете сохранить любую подборку непосредственно из корзины при выборе или выгрузке товаров."}
+                  : !isAdmin && currentFacilitatorName
+                  ? `У фасилитатора «${currentFacilitatorName}» пока нет сохраненных подборок в архиве.`
+                  : "В архиве пока нет сохраненных КП. Подборки сохраняются непосредственно из корзины."}
               </p>
             </div>
           ) : (

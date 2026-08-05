@@ -2892,17 +2892,15 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <span className="hidden xs:inline">{isTabletMode ? "Обычный режим" : "Режим Планшета"}</span>
                 <span className="xs:hidden">{isTabletMode ? "Обычный" : "Планшет"}</span>
               </button>
-              {!portalFacilitator && (
-                <button
-                  onClick={() => setIsQuotesHistoryOpen(true)}
-                  className="flex items-center gap-1.5 text-xs bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm"
-                  title="История подборок (Архив КП)"
-                >
-                  <Archive className="w-3.5 h-3.5 text-indigo-400" />
-                  <span className="hidden sm:inline">Архив КП</span>
-                  <span className="sm:hidden">Архив</span>
-                </button>
-              )}
+              <button
+                onClick={() => setIsQuotesHistoryOpen(true)}
+                className="flex items-center gap-1.5 text-xs bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm"
+                title="История подборок (Архив КП)"
+              >
+                <Archive className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="hidden sm:inline">Архив КП</span>
+                <span className="sm:hidden">Архив</span>
+              </button>
               {isReallyAdmin && (
                 <button
                   onClick={() => setIsAnalyticsModalOpen(true)}
@@ -5601,7 +5599,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           setCartPrintMetadata({ clientName, facilitatorName, note });
           handleCartPrint({ clientName, facilitatorName, note });
         }}
-        onOpenQuotesHistory={!portalFacilitator ? () => setIsQuotesHistoryOpen(true) : undefined}
+        onOpenQuotesHistory={() => setIsQuotesHistoryOpen(true)}
         suppliers={globalDict.suppliers || []}
         products={products}
         onAddToCart={handleAddToCart}
@@ -5628,6 +5626,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         onLoadCartToActive={handleLoadQuoteToActiveCart}
         onTriggerPdfPrint={handleTriggerPdfPrintFromHistory}
         suppliers={globalDict.suppliers || []}
+        isAdmin={isReallyAdmin}
+        currentFacilitatorName={getFacilitatorName()}
       />
 
       {!isCartPrinting && (
@@ -5976,6 +5976,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           cart={cart}
           isPrinting={isCartPrinting}
           suppliers={globalDict.suppliers}
+          allProducts={products}
           logisticsCost={
             cartPrintMetadata.logisticsCost !== undefined
               ? cartPrintMetadata.logisticsCost

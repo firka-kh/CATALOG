@@ -188,9 +188,24 @@ export function CartModal({
       setIsConfirmingClear(true);
     } else {
       onClearCart?.();
+      setClientName("");
+      setNote("");
+      setIsSavedToHistory(false);
+      setClientNameError(false);
+      setSaveRequiredError(false);
       setIsConfirmingClear(false);
     }
   };
+
+  useEffect(() => {
+    if (cart.length === 0) {
+      setClientName("");
+      setNote("");
+      setIsSavedToHistory(false);
+      setClientNameError(false);
+      setSaveRequiredError(false);
+    }
+  }, [cart.length]);
 
   useEffect(() => {
     if (isConfirmingClear) {
@@ -528,17 +543,29 @@ export function CartModal({
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto justify-end">
             <button
+              type="button"
               onClick={handleExcelExport}
-              disabled={displayedCart.length === 0}
-              className="flex items-center gap-1.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-md transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-none justify-center"
+              disabled={!isSavedToHistory || displayedCart.length === 0}
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md transition-all text-xs sm:text-sm font-medium flex-1 sm:flex-none justify-center ${
+                isSavedToHistory && displayedCart.length > 0
+                  ? "bg-green-600 hover:bg-green-700 text-white shadow-sm cursor-pointer opacity-100"
+                  : "bg-slate-700 text-slate-400 cursor-not-allowed opacity-50 border border-slate-600"
+              }`}
+              title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
             >
               <FileDown className="w-4 h-4 shrink-0" />
               <span>Excel</span>
             </button>
             <button
+              type="button"
               onClick={handlePrintAction}
-              disabled={displayedCart.length === 0}
-              className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-md transition-colors text-xs sm:text-sm font-medium flex-1 sm:flex-none justify-center"
+              disabled={!isSavedToHistory || displayedCart.length === 0}
+              className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-md transition-all text-xs sm:text-sm font-medium flex-1 sm:flex-none justify-center ${
+                isSavedToHistory && displayedCart.length > 0
+                  ? "bg-slate-800 hover:bg-slate-700 text-white shadow-sm cursor-pointer opacity-100"
+                  : "bg-slate-700 text-slate-400 cursor-not-allowed opacity-50 border border-slate-600"
+              }`}
+              title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
             >
               <Printer className="w-4 h-4 shrink-0" />
               <span>Печать</span>
@@ -649,10 +676,10 @@ export function CartModal({
               </label>
               <input
                 type="text"
-                placeholder="Имя фасилитатора"
+                readOnly
+                disabled
                 value={facilitatorName}
-                onChange={(e) => setFacilitatorName(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+                className="w-full bg-slate-800/60 border border-slate-700/60 rounded px-2.5 py-1.5 text-xs text-slate-300 font-medium cursor-not-allowed select-none focus:outline-none"
               />
             </div>
 

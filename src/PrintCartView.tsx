@@ -21,9 +21,19 @@ interface Props {
   facilitatorName?: string;
   note?: string;
   createdAt?: string;
+  allProducts?: Product[];
 }
 
-export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames, clientName, facilitatorName, note, createdAt }, ref) => {
+const getImageSrc = (img?: string, mime?: string) => {
+  if (!img) return "";
+  const trimmed = img.trim();
+  if (trimmed.startsWith("data:") || trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("blob:")) {
+    return trimmed;
+  }
+  return `data:${mime || "image/jpeg"};base64,${trimmed}`;
+};
+
+export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames, clientName, facilitatorName, note, createdAt, allProducts }, ref) => {
   if (!isPrinting) return null;
 
   // Filter cart items by selected sphere if provided
@@ -54,6 +64,20 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
 
   return (
     <div ref={ref} className="hidden print:block bg-white text-black text-sm">
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 10mm;
+          }
+          body {
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+        }
+      `}</style>
       {suppliersInCart.map((supplierKey, sIndex) => {
         const supplierItems = filteredCart.filter(item => (item.selectedSupplier || 'supplier2') === supplierKey);
         const supplierName = getSupplierName(supplierKey);
@@ -141,48 +165,70 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
             <table className="w-full text-left border-collapse mb-8">
               <thead>
                 <tr className="bg-gray-100 uppercase text-xs font-bold border-y-2 border-black">
-                  <th className="p-3 w-16">№</th>
-                  <th className="p-3 w-20">Фото</th>
-                  <th className="p-3">Наименование</th>
-                  <th className="p-3 w-24 text-right border-l border-gray-200">Цена</th>
-                  <th className="p-3 w-24 text-center border-l border-gray-200">Кол-во</th>
-                  <th className="p-3 w-28 text-right border-l border-gray-200">Сумма</th>
+                  <th className="p-2.5 w-10 text-center">№</th>
+                  <th className="p-2.5 w-16 text-center">Фото</th>
+                  <th className="p-2.5 w-1/4">Наименование</th>
+                  <th className="p-2.5 border-l border-gray-200">Технические характеристики</th>
+                  <th className="p-2.5 w-24 text-right border-l border-gray-200">Цена</th>
+                  <th className="p-2.5 w-20 text-center border-l border-gray-200">Кол-во</th>
+                  <th className="p-2.5 w-28 text-right border-l border-gray-200">Сумма</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-300">
-                {supplierItems.map((item, index) => (
-                  <tr key={`${item.product.id}-${item.selectedSupplier}`} className="break-inside-avoid">
-                    <td className="p-3 font-semibold">{index + 1}</td>
-                    <td className="p-3">
-                      {item.product.imageBase64 ? (
-                        <img src={item.product.imageBase64} alt="" className="w-16 h-16 object-cover border border-gray-200" />
-                      ) : (
-                        <div className="w-16 h-16 bg-gray-100 border border-gray-200 flex items-center justify-center text-xs text-gray-400">Нет фото</div>
-                      )}
-                    </td>
-                    <td className="p-3">
+                {supplierItems.map((item, index) => {
+                  let rawImg = item.product.imageBase64 || (item.product as any).imageUrl || (item.product as any).image || "";
+                  let mime = item.product.mimeType;
+
+                  if (!rawImg && allProducts && allProducts.length > 0) {
+                    const match = allProducts.find(p => p.id === item.product.id || (p.code && item.product.code && p.code === item.product.code));
+                    if (match && match.imageBase64) {
+                      rawImg = match.imageBase64;
+                      mime = match.mimeType || mime;
+                    }
+                  }
+
+                  const imgSrc = getImageSrc(rawImg, mime);
+
+                  return (
+                    <tr key={`${item.product.id}-${item.selectedSupplier}`} className="break-inside-avoid">
+                      <td className="p-2.5 text-center font-semibold text-xs text-gray-800">{index + 1}</td>
+                      <td className="p-2.5 text-center">
+                        {imgSrc ? (
+                          <img src={imgSrc} alt="" className="w-14 h-14 object-cover border border-gray-200 mx-auto rounded" />
+                        ) : (
+                          <div className="w-14 h-14 bg-gray-100 border border-gray-200 flex items-center justify-center text-[10px] text-gray-400 mx-auto rounded">Нет фото</div>
+                        )}
+                      </td>
+                    <td className="p-2.5">
                       <div className="flex flex-col items-start gap-1">
                         {item.product.code ? (
                           <span className={`font-mono text-xs font-semibold px-1.5 py-0.5 rounded border ${(!item.selectedPrice || item.selectedPrice === Infinity) ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-500 bg-gray-100 border-gray-200'}`}>#{item.product.code}</span>
                         ) : (
                           <span className={`font-mono text-[10px] font-semibold px-1.5 py-0.5 rounded border max-w-[100px] truncate ${(!item.selectedPrice || item.selectedPrice === Infinity) ? 'text-red-700 bg-red-50 border-red-200' : 'text-gray-400 bg-gray-50 border-gray-100'}`}>{item.product.id}</span>
                         )}
-                        <span className="font-bold text-base text-gray-900 leading-tight">
+                        <span className="font-bold text-sm text-gray-900 leading-tight">
                           {item.product.name}
                         </span>
                       </div>
                     </td>
-                    <td className="p-3 text-right font-mono border-l border-gray-100">
+                    <td className="p-2.5 border-l border-gray-100 text-xs text-gray-700 leading-snug">
+                      {item.product.description ? (
+                        <div className="whitespace-pre-line break-words max-w-xs">{item.product.description}</div>
+                      ) : (
+                        <span className="text-gray-400 italic">—</span>
+                      )}
+                    </td>
+                    <td className="p-2.5 text-right font-mono text-xs border-l border-gray-100">
                       {(!item.selectedPrice || item.selectedPrice === Infinity) ? (
                         <span className="text-red-600 font-bold">НЕТ ЦЕНЫ</span>
                       ) : (
                         `${Number(item.selectedPrice).toFixed(2)} с.`
                       )}
                     </td>
-                    <td className="p-3 text-center font-mono font-medium text-gray-900 border-x border-gray-100">
+                    <td className="p-2.5 text-center font-mono font-medium text-gray-900 text-xs border-x border-gray-100">
                        {item.quantity} {item.product.unit || 'шт.'}
                     </td>
-                    <td className="p-3 text-right font-mono font-bold border-l border-gray-100">
+                    <td className="p-2.5 text-right font-mono font-bold text-xs border-l border-gray-100">
                       {(!item.selectedPrice || item.selectedPrice === Infinity) ? (
                         <span className="text-red-600 font-bold">—</span>
                       ) : (
@@ -190,19 +236,20 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                       )}
                     </td>
                   </tr>
-                ))}
+                );
+              })}
                 {/* Logistics cost and Total row directly in tbody to prevent multi-page tfoot repetition and overlapping issues */}
                 {logisticsCost > 0 && (
-                  <tr className="font-semibold text-base bg-gray-50/50 break-inside-avoid border-t-2 border-black">
-                     <td colSpan={5} className="p-4 text-right">Логистика ({selectedRegion || "Все регионы"}):</td>
-                     <td className="p-4 text-right font-mono">
+                  <tr className="font-semibold text-sm bg-gray-50/50 break-inside-avoid border-t-2 border-black">
+                     <td colSpan={6} className="p-3 text-right">Логистика ({selectedRegion || "Все регионы"}):</td>
+                     <td className="p-3 text-right font-mono">
                          {logisticsCost.toFixed(2)} с.
                      </td>
                   </tr>
                 )}
-                <tr className="border-t-2 border-black font-bold text-base bg-gray-50/80 break-inside-avoid">
-                   <td colSpan={5} className="p-4 text-right uppercase">Итого к оплате:</td>
-                   <td className="p-4 text-right font-mono whitespace-nowrap">
+                <tr className="border-t-2 border-black font-bold text-sm bg-gray-50/80 break-inside-avoid">
+                   <td colSpan={6} className="p-3 text-right uppercase">Итого к оплате:</td>
+                   <td className="p-3 text-right font-mono whitespace-nowrap">
                        {total.toFixed(2)} с.
                    </td>
                 </tr>

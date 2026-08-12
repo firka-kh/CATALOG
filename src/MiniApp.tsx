@@ -64,14 +64,24 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     setIsQuotesHistoryOpen(false);
   };
 
+  const [historyPrintData, setHistoryPrintData] = useState<{
+    cart: any[];
+    clientName: string;
+    facilitatorName: string;
+    note?: string;
+    createdAt?: string;
+    selectedRegion?: string;
+    selectedSphere?: string;
+    logisticsCost?: number;
+  } | null>(null);
+
   const handleTriggerPdfPrintFromHistory = (data: any) => {
-    setClientName(data.clientName || "");
-    if (data.facilitatorName) setFacilitatorName(data.facilitatorName);
-    setNote(data.note || "");
+    setHistoryPrintData(data);
     setIsCartPrinting(true);
     setTimeout(() => {
       window.print();
       setIsCartPrinting(false);
+      setHistoryPrintData(null);
     }, 300);
   };
 
@@ -1086,21 +1096,30 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
       />
 
       <PrintCartView
-        cart={cartArray.map((i) => ({
-          product: i.prod!,
-          quantity: i.qty,
-          selectedSupplier: (i.selectedSupplier || "supplier2") as any,
-          selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region) || 0,
-        }))}
+        cart={
+          historyPrintData?.cart
+            ? historyPrintData.cart
+            : cartArray.map((i) => ({
+                product: i.prod!,
+                quantity: i.qty,
+                selectedSupplier: (i.selectedSupplier || "supplier2") as any,
+                selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region) || 0,
+              }))
+        }
         isPrinting={isCartPrinting}
         suppliers={globalDict?.suppliers}
         allProducts={products}
-        logisticsCost={cartArray.length > 0 ? (globalDict?.logisticsCosts?.[region] || 0) : 0}
-        selectedRegion={region}
-        selectedSphere={sphere}
-        clientName={clientName}
-        facilitatorName={facilitatorName}
-        note={note}
+        logisticsCost={
+          historyPrintData
+            ? (historyPrintData.logisticsCost ?? 0)
+            : (cartArray.length > 0 ? (globalDict?.logisticsCosts?.[region] || 0) : 0)
+        }
+        selectedRegion={historyPrintData?.selectedRegion ?? region}
+        selectedSphere={historyPrintData?.selectedSphere ?? sphere}
+        clientName={historyPrintData?.clientName ?? clientName}
+        facilitatorName={historyPrintData?.facilitatorName ?? facilitatorName}
+        note={historyPrintData?.note ?? note}
+        createdAt={historyPrintData?.createdAt}
       />
     </div>
   );

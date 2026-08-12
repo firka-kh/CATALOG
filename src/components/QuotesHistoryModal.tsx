@@ -18,7 +18,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import { QuoteRecord, fetchQuotesHistory, deleteQuoteFromHistory } from '../lib/quotesHistory';
-import { downloadCartExcel } from '../lib/excelExport';
+import { downloadCartExcel, downloadQuotesRegistryExcel } from '../lib/excelExport';
 
 interface QuotesHistoryModalProps {
   isOpen: boolean;
@@ -152,6 +152,20 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     onClose();
   };
 
+  const handleExportRegistryExcel = async () => {
+    if (filteredQuotes.length === 0) {
+      alert("Нет подборок для экспорта в Excel");
+      return;
+    }
+    try {
+      await downloadQuotesRegistryExcel(filteredQuotes, selectedFacilitatorFilter, suppliers);
+      showToast("Реестр КП с детализацией успешно экспортирован в Excel");
+    } catch (err) {
+      console.error("Excel registry export error:", err);
+      alert("Не удалось экспортировать реестр в Excel");
+    }
+  };
+
   const facilitatorNames: string[] = quotes
     .map((q) => q.facilitatorName)
     .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
@@ -160,14 +174,8 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
   );
 
   const filteredQuotes = quotes.filter((q) => {
-    // 1. Strict facilitator filter for non-admin users
-    if (!isAdmin && currentFacilitatorName && currentFacilitatorName.trim()) {
-      const targetFac = currentFacilitatorName.trim().toLowerCase();
-      const quoteFac = (q.facilitatorName || '').trim().toLowerCase();
-      if (quoteFac !== targetFac) {
-        return false;
-      }
-    } else if (isAdmin && selectedFacilitatorFilter !== 'all') {
+    // 1. Facilitator filter selection
+    if (selectedFacilitatorFilter !== 'all') {
       const targetFac = selectedFacilitatorFilter.trim().toLowerCase();
       const quoteFac = (q.facilitatorName || '').trim().toLowerCase();
       if (quoteFac !== targetFac) {
@@ -178,15 +186,15 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     // 2. Text search query match
     const qTerm = searchQuery.toLowerCase().trim();
     if (!qTerm) return true;
-    const clientMatch = q.clientName.toLowerCase().includes(qTerm);
-    const facMatch = q.facilitatorName.toLowerCase().includes(qTerm);
-    const dateMatch = q.createdAt.toLowerCase().includes(qTerm);
-    const regionMatch = q.selectedRegion.toLowerCase().includes(qTerm);
+    const clientMatch = (q.clientName || '').toLowerCase().includes(qTerm);
+    const facMatch = (q.facilitatorName || '').toLowerCase().includes(qTerm);
+    const dateMatch = (q.createdAt || '').toLowerCase().includes(qTerm);
+    const regionMatch = (q.selectedRegion || '').toLowerCase().includes(qTerm);
     const sphereMatch = (q.selectedSphere || '').toLowerCase().includes(qTerm);
     const itemMatch = q.items.some(
       (i) =>
-        i.product.name.toLowerCase().includes(qTerm) ||
-        (i.product.code && i.product.code.toLowerCase().includes(qTerm))
+        (i.product?.name || '').toLowerCase().includes(qTerm) ||
+        (i.product?.code && String(i.product.code).toLowerCase().includes(qTerm))
     );
     return clientMatch || facMatch || dateMatch || regionMatch || sphereMatch || itemMatch;
   });
@@ -265,7 +273,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
               )}
             </div>
 
-            {isAdmin && availableFacilitators.length > 0 && (
+            {availableFacilitators.length > 0 && (
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <span className="text-xs text-slate-600 font-medium whitespace-nowrap">Фасилитатор:</span>
                 <select
@@ -289,14 +297,24 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end shrink-0">
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end shrink-0 flex-wrap">
+            <button
+              onClick={handleExportRegistryExcel}
+              disabled={filteredQuotes.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-semibold transition-all shadow-sm shrink-0"
+              title="Выгрузить весь список подборок с деталями в Excel"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Реестр в Excel</span>
+            </button>
+
             <span className="text-xs text-slate-500 font-medium">
               Отображено: <strong className="text-slate-900">{filteredQuotes.length}</strong>
             </span>
             <button
               onClick={loadHistory}
               disabled={loading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-100 transition-all disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
               <span>Обновить</span>

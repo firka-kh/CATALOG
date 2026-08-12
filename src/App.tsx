@@ -637,6 +637,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     selectedRegion?: string;
     selectedSphere?: string;
     logisticsCost?: number;
+    cart?: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[];
   }>({});
   const [restoredCartMeta, setRestoredCartMeta] = useState<{
     clientName?: string;
@@ -1860,6 +1861,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       selectedRegion: data.selectedRegion,
       selectedSphere: data.selectedSphere,
       logisticsCost: data.logisticsCost,
+      cart: data.cart,
     });
     handleCartPrint();
   };
@@ -5973,7 +5975,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       {isCartPrinting && (
         <PrintCartView
           ref={pdfRef}
-          cart={cart}
+          cart={cartPrintMetadata.cart || cart}
           isPrinting={isCartPrinting}
           suppliers={globalDict.suppliers}
           allProducts={products}

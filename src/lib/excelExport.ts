@@ -513,3 +513,236 @@ export async function downloadCartExcel(
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   saveAs(blob, `Invoice_${new Date().toLocaleDateString("ru-RU").replace(/\./g, "_")}.xlsx`);
 }
+
+/**
+ * Exports the entire quotes registry (or filtered by facilitator) to an Excel document
+ * containing both a summary sheet and a detailed items breakdown.
+ */
+export async function downloadQuotesRegistryExcel(
+  quotes: any[],
+  filterFacilitatorName?: string,
+  suppliers?: string[]
+) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'AI Catalog Registry';
+  workbook.created = new Date();
+
+  const getSupplierName = (supp?: string) => {
+    if (!supp || supp === 'supplier1') return 'Логистика';
+    const list = suppliers || [];
+    if (supp === 'supplier2') return list[0] || 'Поставщик 1';
+    if (supp === 'supplier3') return list[1] || 'Поставщик 2';
+    if (supp === 'supplier4') return list[2] || 'Поставщик 3';
+    return supp;
+  };
+
+  // Sheet 1: Реестр КП
+  const registryWs = workbook.addWorksheet('Реестр КП');
+
+  registryWs.columns = [
+    { key: 'num', width: 6 },
+    { key: 'id', width: 22 },
+    { key: 'date', width: 20 },
+    { key: 'client', width: 30 },
+    { key: 'facilitator', width: 22 },
+    { key: 'region', width: 16 },
+    { key: 'sphere', width: 18 },
+    { key: 'itemCount', width: 14 },
+    { key: 'note', width: 25 },
+    { key: 'total', width: 18 }
+  ];
+
+  let rowCursor = 1;
+
+  // Title Row Banner
+  registryWs.mergeCells(`A${rowCursor}:J${rowCursor}`);
+  const titleCell = registryWs.getCell(`A${rowCursor}`);
+  titleCell.value = 'Реестр коммерческих предложений (Архив КП)';
+  titleCell.font = { bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
+  titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  for (let c = 1; c <= 10; c++) {
+    registryWs.getCell(rowCursor, c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  }
+  rowCursor++;
+
+  // Meta Info
+  const facFilterText = (!filterFacilitatorName || filterFacilitatorName === 'all')
+    ? 'Все фасилитаторы'
+    : filterFacilitatorName;
+  
+  const metaRow1 = registryWs.addRow(['Фильтр фасилитатора:', facFilterText, '', '', '', '', '', '', '', '']);
+  registryWs.mergeCells(`B${rowCursor}:J${rowCursor}`);
+  metaRow1.getCell(1).font = { bold: true, size: 10 };
+  metaRow1.getCell(2).font = { size: 10, bold: true, color: { argb: 'FF4F46E5' } };
+  for (let c = 1; c <= 10; c++) {
+    registryWs.getCell(rowCursor, c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  }
+  rowCursor++;
+
+  const metaRow2 = registryWs.addRow(['Дата выгрузки:', new Date().toLocaleString('ru-RU'), '', '', '', '', '', '', '', '']);
+  registryWs.mergeCells(`B${rowCursor}:J${rowCursor}`);
+  metaRow2.getCell(1).font = { bold: true, size: 10 };
+  metaRow2.getCell(2).font = { size: 10 };
+  for (let c = 1; c <= 10; c++) {
+    registryWs.getCell(rowCursor, c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  }
+  rowCursor++;
+
+  // Headers
+  const headers = [
+    '№',
+    'Номер КП',
+    'Дата и время',
+    'Заказчик (Клиент / Объект)',
+    'Фасилитатор',
+    'Регион',
+    'Сфера',
+    'Позиций',
+    'Заметка',
+    'Сумма (сомони)'
+  ];
+  const headerRow = registryWs.addRow(headers);
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4338CA' } };
+    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  });
+  rowCursor++;
+
+  let grandTotal = 0;
+
+  quotes.forEach((q, idx) => {
+    const totalAmt = q.totalAmount || (q.items ? q.items.reduce((sum: number, item: any) => sum + (item.selectedPrice || 0) * (item.quantity || 1), 0) : 0) + (q.logisticsCost || 0);
+    grandTotal += totalAmt;
+
+    const row = registryWs.addRow([
+      idx + 1,
+      q.id || '',
+      q.createdAt || '',
+      q.clientName || '—',
+      q.facilitatorName || '—',
+      q.selectedRegion || 'Все регионы',
+      q.selectedSphere || '—',
+      q.items ? q.items.length : 0,
+      q.note || '—',
+      totalAmt
+    ]);
+    rowCursor++;
+
+    row.eachCell((cell, colNum) => {
+      let horz: 'left' | 'center' | 'right' = 'left';
+      if (colNum === 1 || colNum === 2 || colNum === 3 || colNum === 6 || colNum === 8) horz = 'center';
+      if (colNum === 10) horz = 'right';
+
+      cell.alignment = { vertical: 'middle', horizontal: horz, wrapText: true };
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+  });
+
+  // Summary Row
+  const summaryRow = registryWs.addRow(['', '', '', '', '', '', '', 'ВСЕГО ПО РЕЕСТРУ:', quotes.length + ' КП', grandTotal]);
+  rowCursor++;
+  summaryRow.eachCell((cell) => {
+    cell.alignment = { vertical: 'middle', horizontal: 'right' };
+    cell.font = { bold: true, size: 11 };
+    cell.border = { top: { style: 'medium' }, left: { style: 'thin' }, bottom: { style: 'medium' }, right: { style: 'thin' } };
+  });
+
+  // Sheet 2: Детализация товаров
+  const itemsWs = workbook.addWorksheet('Детализация товаров');
+
+  itemsWs.columns = [
+    { key: 'quoteId', width: 22 },
+    { key: 'date', width: 18 },
+    { key: 'client', width: 25 },
+    { key: 'facilitator', width: 20 },
+    { key: 'idx', width: 6 },
+    { key: 'code', width: 14 },
+    { key: 'pName', width: 45 },
+    { key: 'unit', width: 12 },
+    { key: 'supplier', width: 18 },
+    { key: 'qty', width: 12 },
+    { key: 'price', width: 16 },
+    { key: 'sum', width: 18 }
+  ];
+
+  let itemRowCursor = 1;
+
+  // Title Banner
+  itemsWs.mergeCells(`A${itemRowCursor}:L${itemRowCursor}`);
+  const itemTitleCell = itemsWs.getCell(`A${itemRowCursor}`);
+  itemTitleCell.value = 'Детализация товаров всех подборок';
+  itemTitleCell.font = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+  itemTitleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  itemTitleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  for (let c = 1; c <= 12; c++) {
+    itemsWs.getCell(itemRowCursor, c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  }
+  itemRowCursor++;
+
+  const itemHeaders = [
+    'Номер КП',
+    'Дата',
+    'Заказчик',
+    'Фасилитатор',
+    '№',
+    'Код',
+    'Наименование товара',
+    'Ед. изм.',
+    'Поставщик',
+    'Количество',
+    'Цена за ед. (с.)',
+    'Сумма (с.)'
+  ];
+  const itemHeaderRow = itemsWs.addRow(itemHeaders);
+  itemHeaderRow.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D9488' } };
+    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+  });
+  itemRowCursor++;
+
+  quotes.forEach((q) => {
+    if (q.items && Array.isArray(q.items)) {
+      q.items.forEach((item: any, pIdx: number) => {
+        const priceNum = item.selectedPrice || 0;
+        const sumNum = priceNum * (item.quantity || 1);
+        const codeVal = item.product?.code || (item.product?.id ? String(item.product.id).substring(0, 8) : '');
+        const suppName = getSupplierName(item.selectedSupplier);
+
+        const r = itemsWs.addRow([
+          q.id || '',
+          q.createdAt || '',
+          q.clientName || '—',
+          q.facilitatorName || '—',
+          pIdx + 1,
+          codeVal,
+          item.product?.name || 'Товар',
+          item.product?.unit || 'шт.',
+          suppName,
+          item.quantity || 1,
+          priceNum,
+          sumNum
+        ]);
+        itemRowCursor++;
+
+        r.eachCell((cell, colNum) => {
+          let horz: 'left' | 'center' | 'right' = 'left';
+          if (colNum === 1 || colNum === 2 || colNum === 5 || colNum === 6 || colNum === 8 || colNum === 10) horz = 'center';
+          if (colNum === 11 || colNum === 12) horz = 'right';
+
+          cell.alignment = { vertical: 'middle', horizontal: horz, wrapText: true };
+          cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        });
+      });
+    }
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const filenameTag = filterFacilitatorName && filterFacilitatorName !== 'all' ? `_${filterFacilitatorName.replace(/\s+/g, '_')}` : '';
+  saveAs(blob, `Registry_Quotes${filenameTag}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '_')}.xlsx`);
+}

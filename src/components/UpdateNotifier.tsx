@@ -75,9 +75,26 @@ export const UpdateNotifier: React.FC = () => {
 
   if (!updateAvailable) return null;
 
-  const handleReload = () => {
-    // Force reload bypassing cache
-    window.location.reload();
+  const handleReload = async () => {
+    try {
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          await caches.delete(key);
+        }
+      }
+    } catch (e) {
+      console.error("Cache clear error:", e);
+    }
+    const currentUrl = new URL(window.location.href);
+    currentUrl.searchParams.set("_v", Date.now().toString());
+    window.location.href = currentUrl.toString();
   };
 
   return (

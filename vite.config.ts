@@ -10,8 +10,8 @@ export default defineConfig(() => {
       react(), 
       tailwindcss(),
       VitePWA({
-        registerType: 'prompt',
-        devOptions: { enabled: true },
+        registerType: 'autoUpdate',
+        devOptions: { enabled: false },
         manifest: {
           name: 'Региональный Каталог',
           short_name: 'Каталог',
@@ -48,8 +48,10 @@ export default defineConfig(() => {
           ]
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024 // 5 MB
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 // 10 MB
         }
       })
     ],

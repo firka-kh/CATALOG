@@ -156,12 +156,16 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     return { key: targetKey, code: "", name: "Фасилитатор", region: "" };
   }, [portalFacilitator, authenticatedFacilitatorKey, globalDict]);
 
-  // Set facilitator's assigned region once loaded or authenticated
+  // Set facilitator's assigned region once loaded or authenticated, or default to first region
   useEffect(() => {
     if (resolvedFacilitator.region) {
       setRegion(resolvedFacilitator.region);
+    } else if (!region && globalDict?.regions && globalDict.regions.length > 0) {
+      setRegion(globalDict.regions[0]);
+    } else if (!region) {
+      setRegion("Душанбе");
     }
-  }, [resolvedFacilitator.region]);
+  }, [resolvedFacilitator.region, globalDict?.regions]);
 
   const getProductPriceForSupplierAndRegion = (
     p: Product,
@@ -233,7 +237,6 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
           if (!portalFacilitator) {
             if (data?.region) setRegion(data.region);
           }
-          if (data?.sphere) setSphere(data.sphere);
         }
       }, (error) => {
         console.error("Error listening to user settings:", error);
@@ -245,8 +248,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     if (portalFacilitator) {
       unsubFacilitator = onSnapshot(doc(db, "facilitator_states", portalFacilitator), (snapshot) => {
         if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (data?.sphere !== undefined) setSphere(data.sphere);
+          // Facilitator state listener (region / state sync if needed)
         }
       }, (error) => {
         console.error("Error listening to facilitator state:", error);
@@ -497,7 +499,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   const updateCart = (id: string, delta: number, selectedSup?: string) => {
     setCart(prev => {
       const existing = prev[id];
-      const sup = selectedSup || existing?.supplier || getDefaultSupplier(products.find(p => p.id === id)!);
+      const sup = selectedSup || tempSelectedSuppliers[id] || existing?.supplier || getDefaultSupplier(products.find(p => p.id === id)!);
       const newQty = (existing?.qty || 0) + delta;
       if (newQty <= 0) {
         const copy = { ...prev };
@@ -523,8 +525,8 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
   const filteredProducts = products.filter(p => {
     if (sphere && sphere !== "Все сферы") {
-      const pSphere = p.sphere || "";
-      if (pSphere !== sphere) return false;
+      const pSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+      if (!pSpheres.includes(sphere)) return false;
     }
     if (getProductMinPrice(p) === null) {
       return false; // Hide products with no price in this region
@@ -641,7 +643,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
           </div>
         )}
 
-        {portalFacilitator && (
+        {(portalFacilitator || isFacilitatorAuthenticated || resolvedFacilitator.key) && (
           <div className="flex flex-col gap-2">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-3 py-2.5 rounded-xl text-xs flex justify-between items-center shadow-sm">
               <span>Вошли как: <strong className="font-bold">{resolvedFacilitator.name}</strong></span>
@@ -915,44 +917,25 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                 )}
                 
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-semibold text-sm line-clamp-2 leading-tight">{p.name || 'Без названия'}</h3>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Код: {p.code}</p>
+                  <h3 className="font-semibold text-sm line-clamp-2 leading-tight text-slate-900 dark:text-white">{p.name || 'Без названия'}</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-mono">Код: {p.code}</p>
                   
-                  {portalFacilitator ? (
-                    <div className="mt-2 space-y-1 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                      {supplierList.map((s) => {
-                        const price = getProductPriceForSupplierAndRegion(p, s.key, region);
-                        const isSelected = currentSupplier === s.key;
-                        return (
-                          <div key={s.key} className="flex items-center justify-between text-xs py-0.5">
-                            <span className="text-gray-500 dark:text-gray-400 font-medium truncate max-w-[120px]">
-                              {s.label}
-                            </span>
-                            <span className={`font-bold whitespace-nowrap ${price > 0 ? (isSelected ? 'text-blue-600 dark:text-blue-400 text-sm' : 'text-slate-700 dark:text-slate-300') : 'text-gray-300 dark:text-gray-600'}`}>
-                              {price > 0 ? `${price.toFixed(2)} с.` : '—'}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="font-bold text-sm text-blue-600 dark:text-blue-400">
-                        {activePrice > 0 ? `${activePrice.toFixed(2)} c.` : 'Цена не указана'}
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="font-extrabold text-base text-blue-600 dark:text-blue-400">
+                      {activePrice > 0 ? `${activePrice.toFixed(2)} с.` : 'Цена не указана'}
+                    </span>
+                    {activePrice > 0 && (
+                      <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-full truncate max-w-[140px]">
+                        Выбран: {supplierList.find(s => s.key === currentSupplier)?.label || 'Поставщик'}
                       </span>
-                      {activePrice > 0 && (
-                        <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-800 px-2 py-0.5 rounded-full truncate max-w-[130px]">
-                          {supplierList.find(s => s.key === currentSupplier)?.label || 'Поставщик'}
-                        </span>
-                      )}
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
                 
                 <div className="shrink-0 flex flex-col items-center gap-2">
                   {activePrice > 0 ? (
                     cart[p.id] ? (
-                       <div className="flex items-center gap-3 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-1">
+                       <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 rounded-full px-2 py-1">
                          <button onClick={() => updateCart(p.id, -1, currentSupplier)} className="w-7 h-7 flex items-center justify-center bg-white dark:bg-gray-600 rounded-full shadow-sm text-blue-600 dark:text-blue-400 active:scale-95 transition-transform">
                            <Minus className="w-4 h-4" />
                          </button>
@@ -964,20 +947,24 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                     ) : (
                       <button 
                         onClick={() => updateCart(p.id, 1, currentSupplier)}
-                        className="w-10 h-10 flex items-center justify-center bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/50 active:scale-95 transition-transform"
+                        className="w-10 h-10 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700 active:scale-95 transition-transform shadow-sm"
+                        title="Добавить в подборку"
                       >
                         <Plus className="w-5 h-5" />
                       </button>
                     )
                   ) : (
-                    <div className="text-xs text-red-500 text-center font-medium bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">Нет цены</div>
+                    <div className="text-[10px] text-red-500 text-center font-bold bg-red-50 dark:bg-red-900/20 px-2 py-1 rounded-lg">Нет цены</div>
                   )}
                 </div>
               </div>
 
-              {/* Supplier Offers Choice */}
-              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5 w-full">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Предложения поставщиков:</div>
+              {/* Supplier Offers Choice (All Suppliers displayed) */}
+              <div className="mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-700/50 space-y-1.5 w-full">
+                <div className="flex items-center justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                  <span>Цены от всех поставщиков:</span>
+                  <span className="text-gray-400 font-normal lowercase">(нажмите для выбора)</span>
+                </div>
                 <div className={`grid gap-1.5 ${supplierList.length > 3 ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3'}`}>
                   {supplierList.map((s) => {
                     const price = getProductPriceForSupplierAndRegion(p, s.key, region);
@@ -990,18 +977,18 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                         onClick={() => selectSupplierForProduct(p.id, s.key)}
                         className={`flex flex-col items-center justify-center p-2 rounded-xl border text-center transition-all duration-200 relative ${
                           isSelected
-                            ? 'bg-blue-50/80 dark:bg-blue-900/20 border-blue-500 text-blue-600 dark:text-blue-400 font-semibold shadow-sm'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-300 font-bold shadow-sm ring-1 ring-blue-400'
                             : hasPrice
-                            ? 'bg-gray-50/50 dark:bg-gray-800/30 border-gray-100 dark:border-gray-700 hover:bg-gray-50 text-gray-700 dark:text-gray-300'
-                            : 'bg-gray-50/30 dark:bg-gray-900/10 border-gray-100/50 dark:border-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50'
+                            ? 'bg-gray-50/80 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 hover:bg-gray-100 text-gray-700 dark:text-gray-200'
+                            : 'bg-gray-50/30 dark:bg-gray-900/10 border-gray-100 dark:border-gray-800 text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50'
                         }`}
                       >
                         <span className="text-[9px] font-medium truncate max-w-full uppercase tracking-tight">{s.label}</span>
-                        <span className="text-xs font-bold mt-0.5 whitespace-nowrap">
+                        <span className="text-xs font-extrabold mt-0.5 whitespace-nowrap">
                           {hasPrice ? `${price.toFixed(2)} с.` : '—'}
                         </span>
                         {isSelected && (
-                          <span className="absolute -top-1 -right-1 bg-blue-500 text-white rounded-full p-0.5 shadow-sm border border-white">
+                          <span className="absolute -top-1 -right-1 bg-blue-600 text-white rounded-full p-0.5 shadow-sm border border-white">
                             <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </span>
                         )}

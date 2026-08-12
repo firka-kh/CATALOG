@@ -76,6 +76,9 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
+          .print\:hidden {
+            display: none !important;
+          }
         }
       `}</style>
       {suppliersInCart.map((supplierKey, sIndex) => {

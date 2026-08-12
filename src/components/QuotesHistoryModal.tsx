@@ -202,7 +202,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-6 animate-in fade-in duration-200 print:hidden">
       {/* Toast banner */}
       {toastMessage && (
         <div className="fixed top-5 right-5 z-50 bg-emerald-700 text-white px-4 py-2.5 rounded-xl shadow-lg font-medium text-sm flex items-center gap-2 animate-in slide-in-from-top duration-200">

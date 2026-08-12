@@ -8,6 +8,7 @@ import { PrintCartView } from './PrintCartView';
 import { QuotesHistoryModal } from './components/QuotesHistoryModal';
 import { downloadCartExcel } from './lib/excelExport';
 import { saveQuoteToHistory } from './lib/quotesHistory';
+import { UpdateNotifier } from './components/UpdateNotifier';
 
 export default function MiniApp({ portalFacilitator: initialPortalFacilitator }: { portalFacilitator?: string }) {
   const params = new URLSearchParams(window.location.search);
@@ -614,6 +615,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
   return (
     <div className="min-h-screen p-4 bg-[var(--tg-theme-bg-color,#f3f4f6)] text-[var(--tg-theme-text-color,#111827)] font-sans pb-24">
+      <UpdateNotifier />
       <div className="sticky top-0 z-10 bg-[var(--tg-theme-bg-color,#f3f4f6)] pb-4 space-y-3">
         {clientNameError && (
           <div className="bg-rose-500/15 border border-rose-500/40 text-rose-800 dark:text-rose-200 p-3 rounded-xl text-xs flex items-center justify-between gap-2 shadow-md animate-pulse print:hidden">

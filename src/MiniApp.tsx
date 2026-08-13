@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from './lib/firebase';
 import { collection, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
 import { Product } from './types';
-import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check, User, AlertTriangle, FileDown, ShoppingBag, Archive } from 'lucide-react';
+import { Loader2, Plus, Minus, Search, MapPin, Briefcase, Printer, Lock, X, Check, User, AlertTriangle, FileDown, ShoppingBag, Archive, ChevronDown, ChevronUp, CheckCircle2 } from 'lucide-react';
 import { PrintCatalogView } from './PrintCatalogView';
 import { PrintCartView } from './PrintCartView';
 import { QuotesHistoryModal } from './components/QuotesHistoryModal';
@@ -33,6 +33,9 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   const [saveRequiredError, setSaveRequiredError] = useState(false);
   const [isSavingHistory, setIsSavingHistory] = useState(false);
   const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
+  const [isClientCardCollapsed, setIsClientCardCollapsed] = useState(false);
+  const [savedArchiveId, setSavedArchiveId] = useState<string | null>(null);
+  const [archiveSuccessBanner, setArchiveSuccessBanner] = useState<string | null>(null);
   const [isCartPrinting, setIsCartPrinting] = useState(false);
   const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
   const clientNameInputRef = useRef<HTMLInputElement>(null);
@@ -62,6 +65,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     if (newFacilitatorName) setFacilitatorName(newFacilitatorName);
     if (newNote) setNote(newNote);
     setIsSavedToHistory(true);
+    setIsClientCardCollapsed(true);
     setIsQuotesHistoryOpen(false);
   };
 
@@ -384,8 +388,13 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   };
 
   const handleSaveToHistory = async () => {
-    if (cartArray.length === 0) return;
     if (!validateClientName()) return;
+    if (cartArray.length === 0) {
+      setIsClientCardCollapsed(true);
+      setHistorySavedMsg("✓ Данные клиента сохранены. Добавьте товары в подборку!");
+      setTimeout(() => setHistorySavedMsg(null), 3500);
+      return;
+    }
     setIsSavingHistory(true);
     try {
       const formattedCart = cartArray
@@ -397,7 +406,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
           selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region) || 0,
         }));
 
-      await saveQuoteToHistory({
+      const quoteId = await saveQuoteToHistory({
         clientName: clientName.trim(),
         facilitatorName: facilitatorName.trim() || resolvedFacilitator.name || "Фасилитатор",
         note: note.trim(),
@@ -409,8 +418,12 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
       setIsSavedToHistory(true);
       setSaveRequiredError(false);
+      setSavedArchiveId(quoteId);
+      setArchiveSuccessBanner(`✓ Подборка и метаданные клиента ушли в Архив КП (${quoteId})!`);
       setHistorySavedMsg("✓ Сохранено в Архив КП!");
+      setIsClientCardCollapsed(true);
       setTimeout(() => setHistorySavedMsg(null), 3500);
+      setTimeout(() => setArchiveSuccessBanner(null), 7000);
     } catch (err: any) {
       console.error("Error saving quote in MiniApp:", err);
       alert(`Не удалось сохранить в архив: ${err?.message || "Ошибка соединения"}`);
@@ -678,154 +691,239 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
           </div>
         )}
 
-        {/* Customer Metadata Card in MiniApp */}
-        <div className="bg-slate-900 text-white p-3.5 rounded-2xl shadow-sm border border-slate-800 print:hidden space-y-3">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+        {/* Banner notifying data went into Archive KP */}
+        {archiveSuccessBanner && (
+          <div className="bg-emerald-600 text-white p-3 rounded-2xl text-xs flex items-center justify-between gap-2 shadow-lg animate-fade-in print:hidden border border-emerald-400">
             <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span className="font-bold text-xs text-white uppercase tracking-wider">
-                Карточка клиента / Метаданные выборки
-              </span>
+              <CheckCircle2 className="w-5 h-5 text-emerald-200 shrink-0" />
+              <div>
+                <strong className="block text-xs font-black uppercase tracking-wide">Успешно отправлено!</strong>
+                <span className="text-[11px] font-medium text-emerald-100">{archiveSuccessBanner}</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsQuotesHistoryOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/70 text-indigo-100 border border-indigo-400/40 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
-                title="Открыть Архив КП (История подборок)"
-              >
-                <Archive className="w-3.5 h-3.5 text-indigo-300" />
-                <span>Архив КП</span>
-              </button>
-              {isSavedToHistory ? (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
-                  <Check className="w-3 h-3 text-emerald-400" /> В Архиве КП
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется архив
-                </span>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Ф.И.О Бенефициара / Клиента <span className="text-rose-400">*</span>
-              </label>
-              <input
-                ref={clientNameInputRef}
-                type="text"
-                placeholder="Ф.И.О бенефициара / клиента..."
-                value={clientName}
-                onChange={(e) => {
-                  setClientName(e.target.value);
-                  if (e.target.value.trim()) setClientNameError(false);
-                }}
-                className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all ${
-                  clientNameError
-                    ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
-                    : "border-slate-700 focus:border-indigo-500"
-                }`}
-              />
-              {clientNameError && (
-                <span className="text-[10px] font-bold text-rose-400 mt-1 block">
-                  Заполните Ф.И.О Бенефициара / Клиента!
-                </span>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Кто создал (Фасилитатор)
-              </label>
-              <input
-                type="text"
-                readOnly
-                disabled
-                value={facilitatorName}
-                className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-3 py-2 text-xs text-slate-300 font-medium cursor-not-allowed select-none focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Заметка к КП
-              </label>
-              <input
-                type="text"
-                placeholder="Примечание к заказу..."
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
-              />
-            </div>
-          </div>
-
-          <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
             <button
-              ref={saveButtonRef}
-              type="button"
-              onClick={handleSaveToHistory}
-              disabled={isSavingHistory || cartArray.length === 0}
-              className={`w-full font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${
-                isSavedToHistory
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
-                  : saveRequiredError
-                  ? "bg-rose-600 hover:bg-rose-500 text-white ring-4 ring-rose-500/50 animate-bounce"
-                  : "bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white"
-              }`}
+              onClick={() => setArchiveSuccessBanner(null)}
+              className="text-emerald-100 hover:text-white p-1 rounded-lg hover:bg-emerald-700/50 transition-colors"
             >
-              {isSavingHistory ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : isSavedToHistory ? (
-                <Check className="w-4 h-4 text-white" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 text-amber-300" />
-              )}
-              <span>
-                {isSavingHistory
-                  ? "Сохранение..."
-                  : isSavedToHistory
-                  ? "✓ Сохранено в Архив КП (Экспорт разрешён)"
-                  : historySavedMsg || "Сохранить подборку в Архив КП (Обязательно)"}
-              </span>
+              <X className="w-4 h-4" />
             </button>
+          </div>
+        )}
 
-            {cartArray.length > 0 && (
-              <div className="flex items-center gap-2">
+        {/* Customer Metadata Card in MiniApp */}
+        <div className="bg-slate-900 text-white rounded-2xl shadow-md border border-slate-800 print:hidden transition-all duration-300 overflow-hidden">
+          {isClientCardCollapsed ? (
+            /* COLLAPSED VIEW (Сжато вверх) */
+            <div className="p-3 px-3.5 flex items-center justify-between gap-2 bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950">
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4 text-indigo-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-xs text-white truncate max-w-[150px] sm:max-w-none">
+                      {clientName || "Ф.И.О Не указано"}
+                    </span>
+                    {isSavedToHistory ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                        <Check className="w-3 h-3 text-emerald-400" /> В Архиве КП {savedArchiveId ? `(${savedArchiveId})` : ""}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется архив
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-slate-400 truncate mt-0.5 flex items-center gap-2">
+                    <span>Фасилитатор: <strong className="text-slate-200">{facilitatorName || resolvedFacilitator.name}</strong></span>
+                    {note && <span className="hidden sm:inline text-indigo-300">• Заметка: {note}</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={handlePrintCartInvoice}
-                  disabled={!isSavedToHistory}
-                  className={`flex-1 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 border shadow-sm ${
-                    isSavedToHistory
-                      ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700 opacity-100 cursor-pointer active:scale-95"
-                      : "bg-slate-800/40 text-slate-500 border-slate-800 opacity-50 cursor-not-allowed"
-                  }`}
-                  title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
+                  onClick={() => setIsQuotesHistoryOpen(true)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600/40 hover:bg-indigo-600/70 text-indigo-100 border border-indigo-400/40 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                  title="Открыть Архив КП (История подборок)"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Печать (Лист выборки)</span>
+                  <Archive className="w-3.5 h-3.5 text-indigo-300" />
+                  <span className="hidden sm:inline">Архив КП</span>
                 </button>
+
                 <button
                   type="button"
-                  onClick={handleCartExcelExport}
-                  disabled={!isSavedToHistory}
-                  className={`flex-1 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-sm ${
-                    isSavedToHistory
-                      ? "bg-emerald-700 hover:bg-emerald-600 text-white opacity-100 cursor-pointer active:scale-95"
-                      : "bg-emerald-900/40 text-emerald-400/50 opacity-50 cursor-not-allowed"
-                  }`}
-                  title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
+                  onClick={() => setIsClientCardCollapsed(false)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                  title="Развернуть карточку клиента"
                 >
-                  <FileDown className="w-3.5 h-3.5" />
-                  <span>Скачать Excel</span>
+                  <span>Развернуть</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            /* EXPANDED VIEW (Развернуто) */
+            <div className="p-3.5 space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <div className="flex items-center gap-2">
+                  <User className="w-4 h-4 text-indigo-400 shrink-0" />
+                  <span className="font-bold text-xs text-white uppercase tracking-wider">
+                    Карточка клиента / Метаданные выборки
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuotesHistoryOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-indigo-600/40 hover:bg-indigo-600/70 text-indigo-100 border border-indigo-400/40 rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                    title="Открыть Архив КП (История подборок)"
+                  >
+                    <Archive className="w-3.5 h-3.5 text-indigo-300" />
+                    <span>Архив КП</span>
+                  </button>
+                  {isSavedToHistory ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-400" /> В Архиве КП
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется архив
+                    </span>
+                  )}
+                  {clientName.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setIsClientCardCollapsed(true)}
+                      className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      title="Сжать карточку вверх"
+                    >
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Ф.И.О Бенефициара / Клиента <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    ref={clientNameInputRef}
+                    type="text"
+                    placeholder="Ф.И.О бенефициара / клиента..."
+                    value={clientName}
+                    onChange={(e) => {
+                      setClientName(e.target.value);
+                      if (e.target.value.trim()) setClientNameError(false);
+                    }}
+                    className={`w-full bg-slate-800 border rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all ${
+                      clientNameError
+                        ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
+                        : "border-slate-700 focus:border-indigo-500"
+                    }`}
+                  />
+                  {clientNameError && (
+                    <span className="text-[10px] font-bold text-rose-400 mt-1 block">
+                      Заполните Ф.И.О Бенефициара / Клиента!
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Кто создал (Фасилитатор)
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    disabled
+                    value={facilitatorName}
+                    className="w-full bg-slate-800/60 border border-slate-700/60 rounded-xl px-3 py-2 text-xs text-slate-300 font-medium cursor-not-allowed select-none focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Заметка к КП
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Примечание к заказу..."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-800 flex flex-col gap-2">
+                <button
+                  ref={saveButtonRef}
+                  type="button"
+                  onClick={handleSaveToHistory}
+                  disabled={isSavingHistory}
+                  className={`w-full font-bold py-2.5 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-md active:scale-95 ${
+                    isSavedToHistory
+                      ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
+                      : saveRequiredError
+                      ? "bg-rose-600 hover:bg-rose-500 text-white ring-4 ring-rose-500/50 animate-bounce"
+                      : "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:bg-slate-800 text-white"
+                  }`}
+                >
+                  {isSavingHistory ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : isSavedToHistory ? (
+                    <Check className="w-4 h-4 text-white" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-amber-300" />
+                  )}
+                  <span>
+                    {isSavingHistory
+                      ? "Сохранение в Архив КП..."
+                      : isSavedToHistory
+                      ? "✓ Подтверждено и сохранено в Архив КП (Нажмите для сжатия)"
+                      : historySavedMsg || "ОК — Сохранить подборку в Архив КП и сжать вверх"}
+                  </span>
+                </button>
+
+                {cartArray.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrintCartInvoice}
+                      disabled={!isSavedToHistory}
+                      className={`flex-1 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 border shadow-sm ${
+                        isSavedToHistory
+                          ? "bg-slate-800 hover:bg-slate-700 text-white border-slate-700 opacity-100 cursor-pointer active:scale-95"
+                          : "bg-slate-800/40 text-slate-500 border-slate-800 opacity-50 cursor-not-allowed"
+                      }`}
+                      title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>Печать (Лист выборки)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCartExcelExport}
+                      disabled={!isSavedToHistory}
+                      className={`flex-1 font-bold py-2 px-3 rounded-xl transition-all text-xs flex items-center justify-center gap-1.5 shadow-sm ${
+                        isSavedToHistory
+                          ? "bg-emerald-700 hover:bg-emerald-600 text-white opacity-100 cursor-pointer active:scale-95"
+                          : "bg-emerald-900/40 text-emerald-400/50 opacity-50 cursor-not-allowed"
+                      }`}
+                      title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
+                    >
+                      <FileDown className="w-3.5 h-3.5" />
+                      <span>Скачать Excel</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {showPrintAlert && (

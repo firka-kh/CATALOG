@@ -27,6 +27,15 @@ import SupplierPortal from './SupplierPortal.tsx';
 import MiniApp from './MiniApp.tsx';
 import './index.css';
 
+// Unregister legacy Service Workers to prevent Telegram Webview from serving stale cached app versions
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  }).catch(() => {});
+}
+
 const params = new URLSearchParams(window.location.search);
 const portalSupplier = params.get('portal');
 const isMiniApp = window.location.pathname.startsWith('/mini-app') || params.get('miniapp') === '1';

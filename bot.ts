@@ -330,10 +330,18 @@ function isCancelMessage(text: string): boolean {
   );
 }
 
+// Helper to get Main WebApp URL with cache buster
+function getMainCatalogUrl() {
+  const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app";
+  const sep = miniAppUrl.includes("?") ? "&" : "?";
+  return `${miniAppUrl}${sep}_v=${Date.now()}`;
+}
+
 // Helper to get Facilitator WebApp URL
 function getFacilitatorUrl(facilitatorId: string) {
   const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app";
-  return `${miniAppUrl}?portal=${facilitatorId}`;
+  const sep = miniAppUrl.includes("?") ? "&" : "?";
+  return `${miniAppUrl}${sep}portal=${facilitatorId}&_v=${Date.now()}`;
 }
 
 // Helper to check user role (kept in-memory for active session security)
@@ -381,9 +389,7 @@ async function getMainKeyboard(chatId: number) {
           {
             text: "🛍 Открыть Каталог",
             web_app: {
-              url:
-                process.env.MINI_APP_URL ||
-                "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+              url: getMainCatalogUrl(),
             },
           },
         ],
@@ -399,9 +405,7 @@ async function getMainKeyboard(chatId: number) {
         {
           text: "🛍 Открыть Каталог",
           web_app: {
-            url:
-              process.env.MINI_APP_URL ||
-              "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+            url: getMainCatalogUrl(),
           },
         },
       ],
@@ -1570,9 +1574,7 @@ if (bot) {
                 {
                   text: "🛍 Открыть Каталог",
                   web_app: {
-                    url:
-                      process.env.MINI_APP_URL ||
-                      "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app",
+                    url: getMainCatalogUrl(),
                   },
                 },
               ],

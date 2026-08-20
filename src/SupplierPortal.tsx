@@ -2,9 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, writeBatch, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { Product, GlobalDictionary } from './types';
-import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package, Sparkles } from 'lucide-react';
+import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package } from 'lucide-react';
 import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
-import { sanitizeSearchQuery } from './lib/imageSearch';
 import { UpdateNotifier } from './components/UpdateNotifier';
 
 const UNITS = [
@@ -117,10 +116,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   // Online Image Search State
   const [isImageSearchModalOpen, setIsImageSearchModalOpen] = useState(false);
   const [imageSearchQuery, setImageSearchQuery] = useState('');
-  const [imageSearchResults, setImageSearchResults] = useState<Array<{ title: string; url: string; thumbnail: string; thumb?: string }>>([]);
+  const [imageSearchResults, setImageSearchResults] = useState<Array<{ title: string; url: string; thumbnail: string }>>([]);
   const [isSearchingImages, setIsSearchingImages] = useState(false);
   const [isFetchingImage, setIsFetchingImage] = useState(false);
-  const [isRefiningQuery, setIsRefiningQuery] = useState(false);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -608,11 +606,10 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
     setIsSearchingImages(true);
     setImageSearchResults([]);
     try {
-      const clean = sanitizeSearchQuery(queryToSearch);
       const res = await fetch("/api/search-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: clean || queryToSearch.trim() }),
+        body: JSON.stringify({ query: queryToSearch.trim() }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -634,36 +631,10 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       alert("Сначала введите название товара для поиска");
       return;
     }
-    const cleanQuery = sanitizeSearchQuery(productForm.name);
-    setImageSearchQuery(cleanQuery);
+    const queryStr = productForm.name.trim().substring(0, 100);
+    setImageSearchQuery(queryStr);
     setIsImageSearchModalOpen(true);
-    await executeImageSearch(cleanQuery);
-  };
-
-  const handleRefineImageQuery = async () => {
-    if (!productForm.name) return;
-    setIsRefiningQuery(true);
-    try {
-      const res = await fetch("/api/refine-image-query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rawName: productForm.name,
-          description: productForm.description || "",
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.query) {
-          setImageSearchQuery(data.query);
-          await executeImageSearch(data.query);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to refine query:", e);
-    } finally {
-      setIsRefiningQuery(false);
-    }
+    await executeImageSearch(queryStr);
   };
 
   const handleSelectSearchResult = async (url: string, thumb?: string) => {
@@ -686,8 +657,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
           setIsImageSearchModalOpen(false);
         }
       } else {
-        const errData = await res.json().catch(() => ({}));
-        alert(`Не удалось загрузить выбранное изображение: ${errData.error || "Ошибка сервера"}`);
+        alert("Не удалось загрузить выбранное изображение.");
       }
     } catch (err: any) {
       alert("Ошибка при загрузке фото: " + err.message);
@@ -1501,99 +1471,50 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
       {/* Online Image Search Modal */}
       {isImageSearchModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh] relative">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                  <Search className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-bold text-slate-800 text-base truncate">Поиск изображений в сети</h3>
-                  <p className="text-xs text-slate-500 truncate">{productForm.name || "Товар"}</p>
-                </div>
-              </div>
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <Search className="w-5 h-5 text-indigo-600" />
+                <span>Поиск изображений в сети</span>
+              </h3>
               <button
                 onClick={() => setIsImageSearchModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-4 border-b border-slate-100 bg-white flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="text"
-                  value={imageSearchQuery}
-                  onChange={(e) => setImageSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') executeImageSearch(imageSearchQuery);
-                  }}
-                  className="w-full border border-slate-300 rounded-xl pl-9 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Запрос для поиска (например: Bosch GBH 2-26)..."
-                />
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                {imageSearchQuery && (
-                  <button
-                    onClick={() => setImageSearchQuery("")}
-                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  onClick={() => executeImageSearch(imageSearchQuery)}
-                  disabled={isSearchingImages || !imageSearchQuery.trim()}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm hover:bg-indigo-700 disabled:opacity-50 transition-colors flex items-center gap-2 shrink-0"
-                >
-                  {isSearchingImages ? <Loader2 className="w-4 h-4 animate-spin" /> : "Искать"}
-                </button>
-
-                <button
-                  onClick={handleRefineImageQuery}
-                  disabled={isRefiningQuery || isSearchingImages}
-                  title="Очистить запрос с помощью ИИ"
-                  className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 font-medium text-xs rounded-xl transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50"
-                >
-                  {isRefiningQuery ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
-                  ) : (
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                  )}
-                  <span className="hidden sm:inline">Очистить ИИ</span>
-                </button>
-              </div>
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex gap-2">
+              <input
+                type="text"
+                value={imageSearchQuery}
+                onChange={(e) => setImageSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') executeImageSearch(imageSearchQuery);
+                }}
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Запрос для поиска..."
+              />
+              <button
+                onClick={() => executeImageSearch(imageSearchQuery)}
+                disabled={isSearchingImages}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors flex items-center gap-2"
+              >
+                {isSearchingImages ? <Loader2 className="w-4 h-4 animate-spin" /> : "Искать"}
+              </button>
             </div>
 
-            <div className="p-4 overflow-y-auto flex-1 min-h-[300px] bg-slate-50/70">
-              {isSearchingImages ? (
+            <div className="p-4 overflow-y-auto flex-1 min-h-[300px]">
+              {isSearchingImages || isFetchingImage ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
                   <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-                  <span className="text-sm font-medium">Поиск изображений в сети...</span>
+                  <span className="text-sm font-medium">Загрузка изображений...</span>
                 </div>
               ) : imageSearchResults.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-500">
-                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                    <Search className="w-6 h-6" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold text-slate-700">Изображения не найдены</p>
-                    <p className="text-xs text-slate-400 mt-1 max-w-sm">
-                      Попробуйте сократить запрос до ключевых слов (наименование + модель).
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleRefineImageQuery}
-                    disabled={isRefiningQuery}
-                    className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5 mt-2"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                    Оптимизировать запрос (ИИ)
-                  </button>
+                <div className="text-center py-16 text-slate-400 text-sm">
+                  Результаты не найдены. Попробуйте изменить поисковый запрос.
                 </div>
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -1601,14 +1522,13 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                     <div
                       key={i}
                       onClick={() => handleSelectSearchResult(res.url, res.thumb || res.thumbnail)}
-                      className="group border border-slate-200 rounded-xl overflow-hidden bg-white hover:border-indigo-500 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
+                      className="group border border-slate-200 rounded-lg overflow-hidden bg-white hover:border-indigo-500 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
                     >
-                      <div className="h-32 bg-slate-100 flex items-center justify-center overflow-hidden relative p-1">
+                      <div className="h-32 bg-slate-100 flex items-center justify-center overflow-hidden relative">
                         <img
                           src={res.thumb || res.thumbnail || res.url}
                           alt={res.title}
-                          referrerPolicy="no-referrer"
-                          className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-200"
+                          className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-200"
                           loading="lazy"
                           onError={(e) => {
                             const target = e.currentTarget as HTMLImageElement;
@@ -1628,14 +1548,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 </div>
               )}
             </div>
-
-            {/* Fetching overlay */}
-            {isFetchingImage && (
-              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-white gap-3">
-                <Loader2 className="w-9 h-9 animate-spin text-indigo-400" />
-                <p className="font-semibold text-sm">Загрузка и сохранение фото...</p>
-              </div>
-            )}
           </div>
         </div>
       )}

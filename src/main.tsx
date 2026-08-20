@@ -27,18 +27,28 @@ import SupplierPortal from './SupplierPortal.tsx';
 import MiniApp from './MiniApp.tsx';
 import './index.css';
 
-// Unregister legacy Service Workers to prevent Telegram Webview from serving stale cached app versions
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      registration.unregister();
-    }
-  }).catch(() => {});
+// Clean up legacy Service Workers and CacheStorage to prevent Telegram Webview from serving stale cached app versions
+if (typeof window !== 'undefined') {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => {
+      for (const registration of registrations) {
+        registration.unregister();
+      }
+    }).catch(() => {});
+  }
+  if ('caches' in window) {
+    caches.keys().then((names) => {
+      for (const name of names) {
+        caches.delete(name);
+      }
+    }).catch(() => {});
+  }
 }
 
 const params = new URLSearchParams(window.location.search);
 const portalSupplier = params.get('portal');
-const isMiniApp = window.location.pathname.startsWith('/mini-app') || params.get('miniapp') === '1';
+const isTelegramWebApp = typeof window !== 'undefined' && (!!(window as any).Telegram?.WebApp?.initData || !!(window as any).Telegram?.WebApp?.platform);
+const isMiniApp = window.location.pathname.startsWith('/mini-app') || params.get('miniapp') === '1' || (isTelegramWebApp && !portalSupplier?.startsWith('supplier'));
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

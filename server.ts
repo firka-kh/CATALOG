@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { bot } from "./bot.ts";
-import { searchImages } from "./src/lib/imageSearch.ts";
+import { searchImages, sanitizeSearchQuery } from "./src/lib/imageSearch.ts";
 
 dotenv.config();
 
@@ -246,7 +246,69 @@ app.post("/api/search-images", async (req, res) => {
     res.json({ results });
   } catch (error: any) {
     console.error("Error searching images:", error);
-    res.status(500).json({ error: "Error searching images: " + error.message });
+    res.status(500).json({ error: "Error searching images: " + (error?.message || String(error)) });
+  }
+});
+
+app.post("/api/refine-image-query", async (req, res) => {
+  try {
+    const { rawName, description } = req.body;
+    if (!rawName) {
+      res.status(400).json({ error: "No rawName provided" });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      // Fallback without API key
+      const fallback = sanitizeSearchQuery(rawName);
+      res.json({ query: fallback });
+      return;
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          text: `Given this product title/description, extract the most accurate 2-4 search keywords for an Image Search (e.g. Type + Brand + Model Number, in Russian or English).
+Remove all tender specifications, lots, numbers, ГОСТ, units, or noise words.
+
+Raw Name: ${rawName}
+Description: ${description || "N/A"}
+
+Respond with JSON: { "query": "..." }`,
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            query: {
+              type: Type.STRING,
+              description: "Optimized 2-4 word image search query",
+            },
+          },
+          required: ["query"],
+        },
+      },
+    });
+
+    const data = JSON.parse(response.text || "{}");
+    const query = data.query || sanitizeSearchQuery(rawName);
+    res.json({ query });
+  } catch (err: any) {
+    console.warn("Error refining image query with AI:", err?.message || err);
+    res.json({ query: sanitizeSearchQuery(req.body.rawName || "") });
   }
 });
 
@@ -258,17 +320,18 @@ app.post("/api/fetch-image", async (req, res) => {
       return;
     }
 
-    const fetchSingleUrl = async (targetUrl: string, timeoutMs: number = 6000) => {
+    const fetchSingleUrl = async (targetUrl: string, timeoutMs: number = 7000) => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
+        const isBingCdn = targetUrl.includes("bing.net") || targetUrl.includes("bing.com");
         const imageRes = await fetch(targetUrl, {
           signal: controller.signal,
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
             Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            Referer: targetUrl.includes("bing.net") ? "https://www.bing.com/" : targetUrl,
+            Referer: isBingCdn ? "https://www.bing.com/" : targetUrl,
           },
         });
         clearTimeout(timeout);
@@ -291,15 +354,15 @@ app.post("/api/fetch-image", async (req, res) => {
       }
     };
 
-    let result = url ? await fetchSingleUrl(url, 6000) : null;
+    let result = url ? await fetchSingleUrl(url, 7000) : null;
     if (!result && thumb && thumb !== url) {
-      result = await fetchSingleUrl(thumb, 6000);
+      result = await fetchSingleUrl(thumb, 7000);
     }
 
     if (result) {
       res.json(result);
     } else {
-      res.status(500).json({ error: "Не удалось загрузить изображение" });
+      res.status(500).json({ error: "Не удалось загрузить изображение с внешнего сервера" });
     }
   } catch (e: any) {
     res.status(500).json({ error: e.message });

@@ -29,7 +29,10 @@ import {
   Lock,
   Archive,
   TrendingUp,
+  Sparkles,
+  RefreshCw,
 } from "lucide-react";
+import { sanitizeSearchQuery } from "./lib/imageSearch";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
 import { UpdateNotifier } from "./components/UpdateNotifier";
@@ -626,6 +629,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [imageSearchResults, setImageSearchResults] = useState<any[]>([]);
   const [imageSearchQuery, setImageSearchQuery] = useState("");
   const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [isFetchingImage, setIsFetchingImage] = useState(false);
+  const [isRefiningQuery, setIsRefiningQuery] = useState(false);
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
   const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
@@ -1348,10 +1353,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setImageSearchResults([]);
 
     try {
+      const clean = sanitizeSearchQuery(queryToSearch);
       const res = await fetch("/api/search-images", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: queryToSearch.trim() }),
+        body: JSON.stringify({ query: clean || queryToSearch.trim() }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1363,26 +1369,55 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     } catch (e: any) {
       console.error(e);
       alert(`Сетевая ошибка при поиске: ${e.message}`);
+    } finally {
+      setIsSearchingImages(false);
     }
-    setIsSearchingImages(false);
   };
 
-  const handleSearchImagesClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleSearchImagesClick = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     if (!manualForm.name) {
-      alert("Сначала введите название для поиска");
+      alert("Сначала введите название товара для поиска фото");
       return;
     }
 
-    const initialQuery = manualForm.name.trim().substring(0, 100);
-
-    setImageSearchQuery(initialQuery);
+    const cleanQuery = sanitizeSearchQuery(manualForm.name);
+    setImageSearchQuery(cleanQuery);
     setIsImageSearchModalOpen(true);
-    await executeImageSearch(initialQuery);
+    await executeImageSearch(cleanQuery);
+  };
+
+  const handleRefineImageQuery = async () => {
+    if (!manualForm.name) return;
+    setIsRefiningQuery(true);
+    try {
+      const res = await fetch("/api/refine-image-query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rawName: manualForm.name,
+          description: manualForm.description || "",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.query) {
+          setImageSearchQuery(data.query);
+          await executeImageSearch(data.query);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to refine query:", e);
+    } finally {
+      setIsRefiningQuery(false);
+    }
   };
 
   const handleSelectImageResult = async (url: string, thumb?: string) => {
+    setIsFetchingImage(true);
     try {
       const res = await fetch("/api/fetch-image", {
         method: "POST",
@@ -1409,11 +1444,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           setIsImageSearchModalOpen(false);
         }
       } else {
-        alert("Не удалось загрузить это изображение.");
+        const errData = await res.json().catch(() => ({}));
+        alert(`Не удалось загрузить это изображение: ${errData.error || "Ошибка сервера"}`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert("Ошибка при загрузке изображения.");
+      alert(`Ошибка при загрузке изображения: ${e.message}`);
+    } finally {
+      setIsFetchingImage(false);
     }
   };
 
@@ -4736,70 +4774,110 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
         {/* Image Search Modal */}
         {isImageSearchModalOpen && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col h-[80vh]">
-              <div className="flex items-center justify-between p-4 border-b border-slate-100">
-                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                  <Search className="w-5 h-5 text-indigo-500" />
-                  Выберите фото для: {manualForm.name}
-                </h2>
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col h-[85vh] relative">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                    <Search className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-base font-bold text-slate-800 truncate">
+                      Поиск фото товара
+                    </h2>
+                    <p className="text-xs text-slate-500 truncate">
+                      {manualForm.name || "Товар"}
+                    </p>
+                  </div>
+                </div>
                 <button
                   onClick={() => setIsImageSearchModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Search query input inside modal */}
-              <div className="p-3 bg-white border-b border-slate-200 flex gap-2">
-                <input
-                  type="text"
-                  value={imageSearchQuery}
-                  onChange={(e) => setImageSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      executeImageSearch(imageSearchQuery);
-                    }
-                  }}
-                  placeholder="Введите запрос для поиска фото..."
-                  className="flex-1 px-3 py-1.5 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-                <button
-                  onClick={() => executeImageSearch(imageSearchQuery)}
-                  disabled={isSearchingImages || !imageSearchQuery.trim()}
-                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-medium text-sm rounded-lg transition-colors flex items-center gap-1.5 shrink-0"
-                >
-                  {isSearchingImages ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4" />
+              {/* Search bar + AI refinement */}
+              <div className="p-4 bg-white border-b border-slate-200 flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    value={imageSearchQuery}
+                    onChange={(e) => setImageSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        executeImageSearch(imageSearchQuery);
+                      }
+                    }}
+                    placeholder="Поисковый запрос (например: Дрель Makita HP1630)..."
+                    className="w-full pl-9 pr-8 py-2 text-sm border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-sm"
+                  />
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  {imageSearchQuery && (
+                    <button
+                      onClick={() => setImageSearchQuery("")}
+                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   )}
-                  Найти
-                </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => executeImageSearch(imageSearchQuery)}
+                    disabled={isSearchingImages || !imageSearchQuery.trim()}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold text-sm rounded-xl transition-all shadow-sm flex items-center gap-1.5 shrink-0"
+                  >
+                    {isSearchingImages ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    <span>Искать</span>
+                  </button>
+
+                  <button
+                    onClick={handleRefineImageQuery}
+                    disabled={isRefiningQuery || isSearchingImages}
+                    title="Использовать ИИ для точного выделения бренда и модели"
+                    className="px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 font-medium text-xs rounded-xl transition-all flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                  >
+                    {isRefiningQuery ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-600" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    )}
+                    <span className="hidden sm:inline">Очистить ИИ</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="p-4 overflow-y-auto flex-1 bg-slate-50">
+              {/* Body */}
+              <div className="p-4 overflow-y-auto flex-1 bg-slate-50/70">
                 {isSearchingImages ? (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500">
-                    <Loader2 className="w-8 h-8 animate-spin text-indigo-400 mb-2" />
-                    <p>Поиск изображений в сети...</p>
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 py-16">
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mb-3" />
+                    <p className="font-medium text-sm text-slate-700">Поиск фото в сети...</p>
+                    <p className="text-xs text-slate-400 mt-1">Опрашиваем поисковые базы без задержек</p>
                   </div>
                 ) : imageSearchResults.length > 0 ? (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {imageSearchResults.map((img, i) => (
                       <div
                         key={i}
                         onClick={() => handleSelectImageResult(img.url, img.thumb)}
-                        className="cursor-pointer group relative aspect-square bg-white border border-slate-200 rounded-lg overflow-hidden hover:border-indigo-500 hover:shadow-md transition-all flex flex-col justify-between"
+                        className="cursor-pointer group relative aspect-square bg-white border border-slate-200/90 rounded-xl overflow-hidden hover:border-indigo-500 hover:shadow-lg transition-all flex flex-col justify-between"
                       >
-                        <div className="w-full h-full relative overflow-hidden bg-slate-100">
+                        <div className="w-full h-full relative overflow-hidden bg-slate-100 flex items-center justify-center p-1.5">
                           <img
                             src={img.thumb || img.url}
                             alt={img.title || "Search Result"}
                             referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            className="max-w-full max-h-full object-contain group-hover:scale-105 transition-transform duration-200"
                             onError={(e) => {
                               const target = e.currentTarget as HTMLImageElement;
                               if (target.src !== img.url && img.url) {
@@ -4811,12 +4889,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           />
                         </div>
                         {img.title && (
-                          <div className="absolute bottom-0 inset-x-0 p-1 bg-slate-900/70 text-white text-[10px] truncate px-1.5 z-10">
+                          <div className="absolute bottom-0 inset-x-0 p-1.5 bg-slate-900/75 text-white text-[10px] leading-tight line-clamp-2 px-2 z-10 backdrop-blur-[2px]">
                             {img.title}
                           </div>
                         )}
-                        <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center z-20">
-                          <span className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white text-xs font-semibold px-2 py-1 rounded shadow-sm transition-opacity">
+                        <div className="absolute inset-0 bg-indigo-600/0 group-hover:bg-indigo-600/15 transition-colors flex items-center justify-center z-20">
+                          <span className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg shadow-md transition-opacity">
                             Выбрать
                           </span>
                         </div>
@@ -4824,12 +4902,47 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">
-                    <p>Изображения не найдены</p>
-                    <p className="text-xs text-slate-400">Попробуйте изменить поисковый запрос выше</p>
+                  <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3 py-12">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                      <Search className="w-6 h-6" />
+                    </div>
+                    <div className="text-center">
+                      <p className="font-semibold text-slate-700">Изображения не найдены</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-sm">
+                        Попробуйте сократить запрос до ключевых слов (наименование + модель) или воспользуйтесь оптимизацией ИИ.
+                      </p>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={handleRefineImageQuery}
+                        disabled={isRefiningQuery}
+                        className="px-3.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium text-xs rounded-lg transition-colors flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                        Оптимизировать запрос (ИИ)
+                      </button>
+                      <button
+                        onClick={() => {
+                          const simple = sanitizeSearchQuery(manualForm.name);
+                          setImageSearchQuery(simple);
+                          executeImageSearch(simple);
+                        }}
+                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-xs rounded-lg transition-colors"
+                      >
+                        Сбросить до базового
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
+
+              {/* Fetching overlay */}
+              {isFetchingImage && (
+                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-30 flex flex-col items-center justify-center text-white gap-3">
+                  <Loader2 className="w-9 h-9 animate-spin text-indigo-400" />
+                  <p className="font-semibold text-sm">Загрузка и оптимизация фото...</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -5124,34 +5237,91 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   )}
                 </div>
 
-                <div className="flex gap-4">
-                  <div className="flex flex-col gap-1.5 flex-1">
+                <div className="flex flex-col gap-2">
+                  <div className="flex justify-between items-center">
                     <label className="text-sm font-semibold text-slate-700">
-                      Фото
+                      Фото товара
                     </label>
-                    <label className="w-full h-24 border-2 border-dashed border-slate-300 rounded-md flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-colors">
-                      {manualForm.imageBase64 ? (
+                    <button
+                      type="button"
+                      onClick={handleSearchImagesClick}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-md transition-colors"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      Найти фото в сети
+                    </button>
+                  </div>
+
+                  {manualForm.imageBase64 ? (
+                    <div className="flex items-center gap-3 p-2 bg-slate-50 border border-slate-200 rounded-lg">
+                      <div className="w-20 h-20 bg-white border border-slate-200 rounded-md overflow-hidden flex items-center justify-center p-1 shrink-0">
                         <img
                           src={manualForm.imageBase64}
                           alt="Preview"
-                          className="h-full object-contain p-1"
+                          className="w-full h-full object-contain"
                         />
-                      ) : (
-                        <div className="flex flex-col items-center gap-1 text-slate-400">
-                          <Camera className="w-6 h-6" />
-                          <span className="text-xs">
-                            Загрузить фото (из файла или Ctrl+V)
-                          </span>
+                      </div>
+                      <div className="flex flex-col gap-1.5 flex-1">
+                        <span className="text-xs font-medium text-slate-700">Фото прикреплено</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleSearchImagesClick}
+                            className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-medium transition-colors flex items-center gap-1"
+                          >
+                            <Search className="w-3 h-3 text-indigo-500" />
+                            Найти другое
+                          </button>
+                          <label className="px-2 py-1 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer">
+                            <Camera className="w-3 h-3 text-slate-500" />
+                            Файл
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleManualImageUpload}
+                              className="hidden"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setManualForm((prev) => ({
+                                ...prev,
+                                imageBase64: "",
+                                mimeType: "",
+                              }))
+                            }
+                            className="px-2 py-1 bg-white border border-red-200 hover:bg-red-50 text-red-600 rounded text-xs font-medium transition-colors flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Удалить
+                          </button>
                         </div>
-                      )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleManualImageUpload}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="w-full border-2 border-dashed border-slate-300 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-center gap-3 hover:border-indigo-400 hover:bg-slate-50/50 transition-colors">
+                      <label className="cursor-pointer flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-medium text-slate-700 shadow-sm transition-all">
+                        <Camera className="w-4 h-4 text-slate-500" />
+                        Загрузить файл (или Ctrl+V)
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleManualImageUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      <span className="text-xs text-slate-400">или</span>
+                      <button
+                        type="button"
+                        onClick={handleSearchImagesClick}
+                        className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
+                      >
+                        <Search className="w-3.5 h-3.5 text-indigo-600" />
+                        Найти фото в сети
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-4 flex gap-3 justify-end pt-4 border-t border-slate-100">

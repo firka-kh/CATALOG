@@ -118,6 +118,11 @@ try {
     bot.on("webhook_error", (error: any) => {
       console.error("Telegram Bot webhook error:", error?.message || error);
     });
+
+    // Sync menu button URL with Telegram
+    setTimeout(() => {
+      syncTelegramMenuButton();
+    }, 2000);
   }
 
   // Graceful shutdown to prevent polling conflicts
@@ -335,6 +340,23 @@ function getMainCatalogUrl() {
   const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app/mini-app";
   const sep = miniAppUrl.includes("?") ? "&" : "?";
   return `${miniAppUrl}${sep}_v=${Date.now()}`;
+}
+
+async function syncTelegramMenuButton() {
+  if (!bot) return;
+  try {
+    const url = getMainCatalogUrl();
+    await bot.setChatMenuButton({
+      menu_button: JSON.stringify({
+        type: "web_app",
+        text: "🛍 Каталог",
+        web_app: { url },
+      }) as any,
+    });
+    console.log("Telegram Chat Menu Button updated:", url);
+  } catch (err: any) {
+    console.warn("Could not sync Telegram chat menu button:", err?.message || err);
+  }
 }
 
 // Helper to get Facilitator WebApp URL

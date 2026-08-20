@@ -158,13 +158,26 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
       return;
     }
     try {
-      await downloadQuotesRegistryExcel(filteredQuotes, selectedFacilitatorFilter, suppliers);
+      const facilitatorFilterParam = isAdmin
+        ? selectedFacilitatorFilter
+        : (currentFacilitatorName || 'Фасилитатор');
+      await downloadQuotesRegistryExcel(filteredQuotes, facilitatorFilterParam, suppliers);
       showToast("Реестр КП с детализацией успешно экспортирован в Excel");
     } catch (err) {
       console.error("Excel registry export error:", err);
       alert("Не удалось экспортировать реестр в Excel");
     }
   };
+
+  // Base quotes accessible to current user:
+  // If not admin, the facilitator is strictly restricted to ONLY their own quotes
+  const userQuotes = quotes.filter((q) => {
+    if (isAdmin) return true;
+    if (!currentFacilitatorName) return true;
+    const currentFac = currentFacilitatorName.trim().toLowerCase();
+    const quoteFac = (q.facilitatorName || '').trim().toLowerCase();
+    return quoteFac === currentFac;
+  });
 
   const facilitatorNames: string[] = quotes
     .map((q) => q.facilitatorName)
@@ -173,9 +186,9 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     a.localeCompare(b, 'ru')
   );
 
-  const filteredQuotes = quotes.filter((q) => {
-    // 1. Facilitator filter selection
-    if (selectedFacilitatorFilter !== 'all') {
+  const filteredQuotes = userQuotes.filter((q) => {
+    // 1. Facilitator filter selection (Admin only)
+    if (isAdmin && selectedFacilitatorFilter !== 'all') {
       const targetFac = selectedFacilitatorFilter.trim().toLowerCase();
       const quoteFac = (q.facilitatorName || '').trim().toLowerCase();
       if (quoteFac !== targetFac) {
@@ -273,7 +286,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
               )}
             </div>
 
-            {availableFacilitators.length > 0 && (
+            {isAdmin && availableFacilitators.length > 0 ? (
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <span className="text-xs text-slate-600 font-medium whitespace-nowrap">Фасилитатор:</span>
                 <select
@@ -294,7 +307,12 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                   })}
                 </select>
               </div>
-            )}
+            ) : !isAdmin && currentFacilitatorName ? (
+              <div className="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-200/80 rounded-xl text-xs font-semibold text-indigo-900 shadow-xs">
+                <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                <span>Личные КП ({userQuotes.length})</span>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2.5 w-full sm:w-auto justify-between sm:justify-end shrink-0 flex-wrap">

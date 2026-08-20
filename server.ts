@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import axios from "axios";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
@@ -279,7 +280,7 @@ app.post("/api/fetch-image", async (req, res) => {
 
         if (response.status === 200 && response.data) {
           const buffer = Buffer.from(response.data);
-          let mimeType = response.headers["content-type"] || "image/jpeg";
+          let mimeType = String(response.headers["content-type"] || "image/jpeg");
           if (mimeType.includes(";")) {
             mimeType = mimeType.split(";")[0].trim();
           }

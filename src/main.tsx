@@ -47,8 +47,18 @@ if (typeof window !== 'undefined') {
 
 const params = new URLSearchParams(window.location.search);
 const portalSupplier = params.get('portal');
-const isTelegramWebApp = typeof window !== 'undefined' && (!!(window as any).Telegram?.WebApp?.initData || !!(window as any).Telegram?.WebApp?.platform);
-const isMiniApp = window.location.pathname.startsWith('/mini-app') || params.get('miniapp') === '1' || (isTelegramWebApp && !portalSupplier?.startsWith('supplier'));
+const pathname = window.location.pathname;
+
+// Check if specifically requested mini-app via path, query param, or Telegram WebApp hash
+const isMiniAppPath = pathname.startsWith('/mini-app') || params.get('miniapp') === '1';
+const isTelegramWebAppWithData = typeof window !== 'undefined' && Boolean(
+  ((window as any).Telegram?.WebApp?.initData && (window as any).Telegram.WebApp.initData.length > 0) ||
+  window.location.hash.includes('tgWebAppData') ||
+  window.location.search.includes('tgWebApp')
+);
+
+// Only route to MiniApp if explicitly requested via /mini-app, miniapp=1, or within Telegram mini-app context
+const isMiniApp = isMiniAppPath || (isTelegramWebAppWithData && isMiniAppPath);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

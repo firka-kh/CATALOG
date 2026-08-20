@@ -259,41 +259,45 @@ app.post("/api/fetch-image", async (req, res) => {
     }
 
     const fetchSingleUrl = async (targetUrl: string, timeoutMs: number = 6000) => {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const imageRes = await fetch(targetUrl, {
-          signal: controller.signal,
+        let referer = "https://www.google.com/";
+        if (targetUrl.includes("bing.net") || targetUrl.includes("bing.com")) referer = "https://www.bing.com/";
+        if (targetUrl.includes("yandex.")) referer = "https://yandex.ru/";
+        if (targetUrl.includes("ozone.ru") || targetUrl.includes("ozon.ru")) referer = "https://www.ozon.ru/";
+
+        const response = await axios.get(targetUrl, {
+          responseType: "arraybuffer",
+          timeout: timeoutMs,
+          maxRedirects: 5,
           headers: {
             "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-            Referer: targetUrl.includes("bing.net") ? "https://www.bing.com/" : targetUrl,
+            Referer: referer,
           },
         });
-        clearTimeout(timeout);
-        if (!imageRes.ok) return null;
 
-        const arrayBuffer = await imageRes.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        let mimeType = imageRes.headers.get("content-type") || "image/jpeg";
-        if (mimeType.includes(";")) {
-          mimeType = mimeType.split(";")[0].trim();
+        if (response.status === 200 && response.data) {
+          const buffer = Buffer.from(response.data);
+          let mimeType = response.headers["content-type"] || "image/jpeg";
+          if (mimeType.includes(";")) {
+            mimeType = mimeType.split(";")[0].trim();
+          }
+          if (!mimeType.startsWith("image/")) {
+            mimeType = "image/jpeg";
+          }
+          const base64 = buffer.toString("base64");
+          return { mimeType, base64: `data:${mimeType};base64,${base64}` };
         }
-        if (!mimeType.startsWith("image/")) {
-          mimeType = "image/jpeg";
-        }
-        const base64 = buffer.toString("base64");
-        return { mimeType, base64: `data:${mimeType};base64,${base64}` };
-      } catch (e) {
-        clearTimeout(timeout);
-        return null;
+      } catch (e: any) {
+        // Fall through
       }
+      return null;
     };
 
-    let result = url ? await fetchSingleUrl(url, 6000) : null;
-    if (!result && thumb && thumb !== url) {
-      result = await fetchSingleUrl(thumb, 6000);
+    let result = url ? await fetchSingleUrl(url, 3000) : null;
+    if (!result && thumb) {
+      result = await fetchSingleUrl(thumb, 4000);
     }
 
     if (result) {

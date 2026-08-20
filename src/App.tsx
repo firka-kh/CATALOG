@@ -626,6 +626,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [imageSearchResults, setImageSearchResults] = useState<any[]>([]);
   const [imageSearchQuery, setImageSearchQuery] = useState("");
   const [isSearchingImages, setIsSearchingImages] = useState(false);
+  const [isFetchingImage, setIsFetchingImage] = useState(false);
+  const [selectedImageLoadingUrl, setSelectedImageLoadingUrl] = useState<string | null>(null);
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
   const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
@@ -1383,37 +1385,88 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   };
 
   const handleSelectImageResult = async (url: string, thumb?: string) => {
+    setIsFetchingImage(true);
+    setSelectedImageLoadingUrl(url);
     try {
-      const res = await fetch("/api/fetch-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, thumb }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.base64) {
-          try {
-            const compressed = await compressImageBase64(data.base64);
-            setManualForm((prev) => ({
-              ...prev,
-              imageBase64: compressed.base64,
-              mimeType: compressed.mimeType,
-            }));
-          } catch (e) {
-            setManualForm((prev) => ({
-              ...prev,
-              imageBase64: data.base64,
-              mimeType: data.mimeType,
-            }));
+      // 1. Try server proxy download
+      let base64Data: string | null = null;
+      let mimeTypeData: string = "image/jpeg";
+
+      try {
+        const res = await fetch("/api/fetch-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, thumb }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.base64) {
+            base64Data = data.base64;
+            mimeTypeData = data.mimeType || "image/jpeg";
           }
-          setIsImageSearchModalOpen(false);
         }
-      } else {
-        alert("Не удалось загрузить это изображение.");
+      } catch (proxyErr) {
+        console.warn("Proxy fetch error:", proxyErr);
       }
-    } catch (e) {
+
+      // 2. Client-side canvas fallback if server couldn't fetch directly
+      if (!base64Data) {
+        const clientExtract = (srcUrl: string): Promise<{ base64: string; mimeType: string } | null> => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+              try {
+                const canvas = document.createElement("canvas");
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                const ctx = canvas.getContext("2d");
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0);
+                  const b64 = canvas.toDataURL("image/jpeg", 0.9);
+                  resolve({ base64: b64, mimeType: "image/jpeg" });
+                  return;
+                }
+              } catch {}
+              resolve(null);
+            };
+            img.onerror = () => resolve(null);
+            img.src = srcUrl;
+          });
+        };
+
+        const extracted = (await clientExtract(url)) || (thumb ? await clientExtract(thumb) : null);
+        if (extracted) {
+          base64Data = extracted.base64;
+          mimeTypeData = extracted.mimeType;
+        }
+      }
+
+      if (base64Data) {
+        try {
+          const compressed = await compressImageBase64(base64Data);
+          setManualForm((prev) => ({
+            ...prev,
+            imageBase64: compressed.base64,
+            mimeType: compressed.mimeType,
+          }));
+        } catch {
+          setManualForm((prev) => ({
+            ...prev,
+            imageBase64: base64Data!,
+            mimeType: mimeTypeData,
+          }));
+        }
+        setIsImageSearchModalOpen(false);
+      } else {
+        alert("Не удалось загрузить выбранное фото. Пожалуйста, выберите другое изображение из списка или вставьте ссылку на фото.");
+      }
+    } catch (e: any) {
       console.error(e);
-      alert("Ошибка при загрузке изображения.");
+      alert(`Ошибка при загрузке фото: ${e?.message || "Неизвестная ошибка"}`);
+    } finally {
+      setIsFetchingImage(false);
+      setSelectedImageLoadingUrl(null);
     }
   };
 
@@ -4788,40 +4841,67 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   </div>
                 ) : imageSearchResults.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    {imageSearchResults.map((img, i) => (
-                      <div
-                        key={i}
-                        onClick={() => handleSelectImageResult(img.url, img.thumb)}
-                        className="cursor-pointer group relative aspect-square bg-white border border-slate-200 rounded-lg overflow-hidden hover:border-indigo-500 hover:shadow-md transition-all flex flex-col justify-between"
-                      >
-                        <div className="w-full h-full relative overflow-hidden bg-slate-100">
-                          <img
-                            src={img.thumb || img.url}
-                            alt={img.title || "Search Result"}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            onError={(e) => {
-                              const target = e.currentTarget as HTMLImageElement;
-                              if (target.src !== img.url && img.url) {
-                                target.src = img.url;
-                              } else {
-                                (target.parentElement?.parentElement as HTMLElement).style.display = "none";
-                              }
-                            }}
-                          />
-                        </div>
-                        {img.title && (
-                          <div className="absolute bottom-0 inset-x-0 p-1 bg-slate-900/70 text-white text-[10px] truncate px-1.5 z-10">
-                            {img.title}
+                    {imageSearchResults.map((img, i) => {
+                      const isThisLoading = isFetchingImage && selectedImageLoadingUrl === img.url;
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => {
+                            if (!isFetchingImage) {
+                              handleSelectImageResult(img.url, img.thumb);
+                            }
+                          }}
+                          className={`cursor-pointer group relative aspect-square bg-white border rounded-lg overflow-hidden transition-all flex flex-col justify-between ${
+                            isThisLoading
+                              ? "border-indigo-600 ring-2 ring-indigo-500/50 scale-[0.98]"
+                              : "border-slate-200 hover:border-indigo-500 hover:shadow-md"
+                          }`}
+                        >
+                          <div className="w-full h-full relative overflow-hidden bg-slate-100 flex items-center justify-center">
+                            <img
+                              src={img.thumb || img.url}
+                              alt={img.title || "Search Result"}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              onError={(e) => {
+                                const target = e.currentTarget as HTMLImageElement;
+                                if (target.src !== img.url && img.url) {
+                                  target.src = img.url;
+                                } else {
+                                  (target.parentElement?.parentElement as HTMLElement).style.display = "none";
+                                }
+                              }}
+                            />
+                            {img.domain && (
+                              <span className="absolute top-1 left-1 px-1.5 py-0.5 bg-slate-900/60 backdrop-blur-xs text-white text-[9px] font-mono rounded pointer-events-none z-10">
+                                {img.domain}
+                              </span>
+                            )}
                           </div>
-                        )}
-                        <div className="absolute inset-0 bg-indigo-500/0 group-hover:bg-indigo-500/20 transition-colors flex items-center justify-center z-20">
-                          <span className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white text-xs font-semibold px-2 py-1 rounded shadow-sm transition-opacity">
-                            Выбрать
-                          </span>
+                          {img.title && (
+                            <div className="absolute bottom-0 inset-x-0 p-1 bg-slate-900/75 text-white text-[10px] truncate px-1.5 z-10">
+                              {img.title}
+                            </div>
+                          )}
+                          <div className={`absolute inset-0 transition-colors flex items-center justify-center z-20 ${
+                            isThisLoading
+                              ? "bg-indigo-900/40"
+                              : "bg-indigo-500/0 group-hover:bg-indigo-500/20"
+                          }`}>
+                            {isThisLoading ? (
+                              <div className="flex items-center gap-1.5 bg-indigo-600 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg shadow-md">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>Загрузка...</span>
+                              </div>
+                            ) : (
+                              <span className="opacity-0 group-hover:opacity-100 bg-indigo-600 text-white text-xs font-semibold px-2 py-1 rounded shadow-sm transition-opacity">
+                                Выбрать
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2">

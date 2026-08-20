@@ -640,24 +640,76 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const handleSelectSearchResult = async (url: string, thumb?: string) => {
     setIsFetchingImage(true);
     try {
-      const res = await fetch("/api/fetch-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, thumb }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.base64) {
-          const compressed = await compressImageBase64(data.base64);
-          setProductForm(prev => ({
+      let base64Data: string | null = null;
+      let mimeTypeData: string = "image/jpeg";
+
+      try {
+        const res = await fetch("/api/fetch-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, thumb }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.base64) {
+            base64Data = data.base64;
+            mimeTypeData = data.mimeType || "image/jpeg";
+          }
+        }
+      } catch (proxyErr) {
+        console.warn("Proxy fetch error in SupplierPortal:", proxyErr);
+      }
+
+      if (!base64Data) {
+        const clientExtract = (srcUrl: string): Promise<{ base64: string; mimeType: string } | null> => {
+          return new Promise((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+              try {
+                const canvas = document.createElement("canvas");
+                canvas.width = img.naturalWidth || img.width;
+                canvas.height = img.naturalHeight || img.height;
+                const ctx = canvas.getContext("2d");
+                if (ctx) {
+                  ctx.drawImage(img, 0, 0);
+                  const b64 = canvas.toDataURL("image/jpeg", 0.9);
+                  resolve({ base64: b64, mimeType: "image/jpeg" });
+                  return;
+                }
+              } catch {}
+              resolve(null);
+            };
+            img.onerror = () => resolve(null);
+            img.src = srcUrl;
+          });
+        };
+
+        const extracted = (await clientExtract(url)) || (thumb ? await clientExtract(thumb) : null);
+        if (extracted) {
+          base64Data = extracted.base64;
+          mimeTypeData = extracted.mimeType;
+        }
+      }
+
+      if (base64Data) {
+        try {
+          const compressed = await compressImageBase64(base64Data);
+          setProductForm((prev) => ({
             ...prev,
             imageBase64: compressed.base64,
             mimeType: compressed.mimeType,
           }));
-          setIsImageSearchModalOpen(false);
+        } catch {
+          setProductForm((prev) => ({
+            ...prev,
+            imageBase64: base64Data!,
+            mimeType: mimeTypeData,
+          }));
         }
+        setIsImageSearchModalOpen(false);
       } else {
-        alert("Не удалось загрузить выбранное изображение.");
+        alert("Не удалось загрузить выбранное изображение. Попробуйте выбрать другое из списка.");
       }
     } catch (err: any) {
       alert("Ошибка при загрузке фото: " + err.message);

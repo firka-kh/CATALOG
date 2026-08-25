@@ -90,6 +90,21 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
         }, 0);
         const total = cartLinesTotal + (supplierItems.length > 0 ? logisticsCost : 0);
 
+        const itemSpheres = Array.from(
+          new Set(
+            supplierItems.flatMap(item => {
+              const list = item.product.spheres && item.product.spheres.length > 0
+                ? item.product.spheres
+                : (item.product.sphere ? [item.product.sphere] : []);
+              return list;
+            }).filter(Boolean)
+          )
+        );
+
+        const supplierSphere = (selectedSphere && !selectedSphere.toLowerCase().includes("все") && selectedSphere.trim() !== "")
+          ? selectedSphere
+          : (itemSpheres.length > 0 ? itemSpheres.join(", ") : "");
+
         return (
           <div 
             key={supplierKey} 
@@ -101,7 +116,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
           >
             <div className="flex items-center justify-between mb-6 border-b-2 border-black pb-4">
               <div>
-                <h1 className="text-2xl font-bold uppercase tracking-wider">Лист выборки товаров</h1>
+                <h1 className="text-2xl font-bold uppercase tracking-wider">Ваучер</h1>
                 <p className="text-gray-600 mt-1">Официальный коммерческий пакет</p>
               </div>
               <div className="text-right">
@@ -134,6 +149,14 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                     <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 block"></span>
                     <span>{supplierName}</span>
                   </div>
+                  {supplierSphere && (
+                    <div className="text-xs text-gray-800 font-semibold pl-3 mt-1 flex items-center gap-1.5">
+                      <span className="text-gray-500 font-normal">Сфера:</span>
+                      <span className="font-bold text-indigo-900 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/70 text-xs">
+                        {supplierSphere}
+                      </span>
+                    </div>
+                  )}
                   {supplierLegalNames?.[supplierKey] && (
                     <div className="text-xs text-gray-700 font-medium pl-3 mt-1">
                       <span className="text-gray-500">Юридическое название:</span> {supplierLegalNames[supplierKey]}
@@ -148,7 +171,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
               </div>
 
               <div className="p-4 border border-gray-300 rounded-lg bg-gray-50/70">
-                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Параметры формирования листа:</div>
+                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Параметры формирования ваучера:</div>
                 <div className="text-sm space-y-1.5 mt-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-500">Регион:</span>
@@ -266,7 +289,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
                 </div>
                 <div className="text-center">
                     <div className="w-48 border-b border-black mb-2"></div>
-                    <div className="text-xs font-semibold uppercase text-gray-500">Подпись менеджера</div>
+                    <div className="text-xs font-semibold uppercase text-gray-500">Подпись поставщика</div>
                 </div>
             </div>
           </div>

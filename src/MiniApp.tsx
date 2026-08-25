@@ -903,7 +903,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                       title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
                     >
                       <Printer className="w-3.5 h-3.5" />
-                      <span>Печать (Лист выборки)</span>
+                      <span>Печать (Ваучер)</span>
                     </button>
                     <button
                       type="button"

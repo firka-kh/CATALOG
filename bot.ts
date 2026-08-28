@@ -366,12 +366,26 @@ function getFacilitatorUrl(facilitatorId: string) {
   return `${miniAppUrl}${sep}portal=${facilitatorId}&_v=${Date.now()}`;
 }
 
-// Helper to check user role (kept in-memory for active session security)
+// Helper to check user role and restore from Firestore if needed
 async function ensureUserRoleLoaded(chatId: number) {
-  // Privileged roles (admin, supplier, facilitator) are kept in memory only during active usage.
-  // We intentionally DO NOT restore roles from persistent Firestore database on startup,
-  // so that users must always enter their password/passcode upon a new login session.
-  return;
+  if (adminUsers.has(chatId) || supplierUsers.has(chatId) || facilitatorUsers.has(chatId)) {
+    return;
+  }
+  try {
+    const userDoc = await getDoc(doc(db, "telegram_users", chatId.toString()));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      if (data.role === "admin") {
+        adminUsers.add(chatId);
+      } else if (data.role === "supplier" && data.supplierId) {
+        supplierUsers.set(chatId, data.supplierId);
+      } else if (data.role === "facilitator" && data.facilitatorId) {
+        facilitatorUsers.set(chatId, data.facilitatorId);
+      }
+    }
+  } catch (e) {
+    console.error("Error loading user role from db:", e);
+  }
 }
 
 // Helper to get Main Menu Keyboard depending on user role
@@ -915,8 +929,7 @@ if (bot) {
     // Attempt authentication if in WAITING_PASSWORD state OR if message looks like a code / /admin command
     const isExplicitAuthAttempt =
       userState.state === "WAITING_PASSWORD" ||
-      text.startsWith("/admin") ||
-      text.startsWith("/start ");
+      text.startsWith("/admin");
 
     const authResult = await tryAuthenticateCode(text);
 
@@ -1001,7 +1014,36 @@ if (bot) {
         );
         return;
       }
-    } else if (isExplicitAuthAttempt) {
+    }
+
+    // Handle /start command unconditionally to always reset state and show welcome message
+    if (text === "/start" || text.startsWith("/start")) {
+      userStates.delete(chatId);
+      const replyMarkup = await getMainKeyboard(chatId);
+      let greeting = "Привет! Я бот-каталог. Нажмите кнопку «🛍 Открыть Каталог» ниже, чтобы открыть каталог и собрать заказ по минимальным ценам. Или просто отправьте мне коды товаров.";
+      
+      if (facilitatorUsers.has(chatId)) {
+        const facilitatorId = facilitatorUsers.get(chatId) || "";
+        const globalDict = await getGlobalDict();
+        let facilitatorName = "Фасилитатор";
+        if (globalDict.facilitators) {
+          const idx = parseInt(facilitatorId.replace("facilitator", ""), 10) - 2;
+          facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
+        }
+        greeting = `Привет, ${facilitatorName}! Вы авторизованы как Фасилитатор.\nНажмите кнопку ниже, чтобы открыть каталог в режиме Фасилитатора и сформировать Лист выборки товаров.`;
+      } else if (adminUsers.has(chatId)) {
+        greeting = `Привет! Вы авторизованы как Администратор.\nНажмите кнопку ниже, чтобы открыть каталог или управлять товарами.`;
+      } else if (supplierUsers.has(chatId)) {
+        greeting = `Привет! Вы авторизованы как Поставщик.\nНажмите кнопку ниже, чтобы открыть каталог.`;
+      }
+
+      bot?.sendMessage(chatId, greeting, {
+        reply_markup: replyMarkup,
+      });
+      return;
+    }
+
+    if (isExplicitAuthAttempt) {
       // Keep state as WAITING_PASSWORD so user can try entering code again easily
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
@@ -1417,28 +1459,6 @@ if (bot) {
     }
 
     // --- NORMAL USER LOGIC BELOW THIS LINE ---
-    if (text === "/start") {
-      getMainKeyboard(chatId).then(async (replyMarkup) => {
-        let greeting = "Привет! Я бот-каталог. Жмите СТАРТ чтобы открыть каталог и собрать заказ по минимальным ценам. Или просто отправьте мне коды товаров.";
-        
-        if (facilitatorUsers.has(chatId)) {
-          const facilitatorId = facilitatorUsers.get(chatId) || "";
-          const globalDict = await getGlobalDict();
-          let facilitatorName = "Фасилитатор";
-          if (globalDict.facilitators) {
-            const idx = parseInt(facilitatorId.replace("facilitator", ""), 10) - 2;
-            facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
-          }
-          greeting = `Привет, ${facilitatorName}! Вы авторизованы как Фасилитатор.\nЖмите кнопку ниже, чтобы открыть каталог в режиме Фасилитатора и сформировать Лист выборки товаров.`;
-        }
-
-        bot?.sendMessage(chatId, greeting, {
-          reply_markup: replyMarkup,
-        });
-      });
-      return;
-    }
-
     if (text === "🛠 Панель администратора" || text === "🛠 Личный кабинет фасилитатора") {
       if (adminUsers.has(chatId)) {
         userStates.set(chatId, { state: "ADMIN_MENU" });

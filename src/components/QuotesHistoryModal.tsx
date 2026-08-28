@@ -201,17 +201,20 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     // 2. Text search query match
     const qTerm = searchQuery.toLowerCase().trim();
     if (!qTerm) return true;
+    const idMatch = (q.id || '').toLowerCase().includes(qTerm);
     const clientMatch = (q.clientName || '').toLowerCase().includes(qTerm);
     const facMatch = (q.facilitatorName || '').toLowerCase().includes(qTerm);
+    const noteMatch = (q.note || '').toLowerCase().includes(qTerm);
     const dateMatch = (q.createdAt || '').toLowerCase().includes(qTerm);
     const regionMatch = (q.selectedRegion || '').toLowerCase().includes(qTerm);
     const sphereMatch = (q.selectedSphere || '').toLowerCase().includes(qTerm);
     const itemMatch = q.items.some(
       (i) =>
         (i.product?.name || '').toLowerCase().includes(qTerm) ||
-        (i.product?.code && String(i.product.code).toLowerCase().includes(qTerm))
+        (i.product?.code && String(i.product.code).toLowerCase().includes(qTerm)) ||
+        (i.product?.id && String(i.product.id).toLowerCase().includes(qTerm))
     );
-    return clientMatch || facMatch || dateMatch || regionMatch || sphereMatch || itemMatch;
+    return idMatch || clientMatch || facMatch || noteMatch || dateMatch || regionMatch || sphereMatch || itemMatch;
   });
 
   if (!isOpen) return null;
@@ -273,7 +276,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
               <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Поиск по клиенту, дате, товару..."
+                placeholder="Поиск по номеру КП (QP-...), клиенту, дате..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"

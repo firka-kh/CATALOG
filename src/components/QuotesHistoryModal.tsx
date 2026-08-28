@@ -43,6 +43,7 @@ interface QuotesHistoryModalProps {
     facilitatorName: string;
     note?: string;
     createdAt?: string;
+    quoteId?: string;
   }) => void;
 }
 
@@ -134,6 +135,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
       facilitatorName: quote.facilitatorName,
       note: quote.note,
       createdAt: quote.createdAt,
+      quoteId: quote.id,
     });
     showToast("Отправка на печать / PDF...");
   };

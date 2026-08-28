@@ -48,7 +48,7 @@ interface Props {
     delta: number,
   ) => void;
   onPrint: () => void;
-  onPrintWithMeta?: (clientName: string, facilitatorName: string, note: string) => void;
+  onPrintWithMeta?: (clientName: string, facilitatorName: string, note: string, quoteId?: string) => void;
   onOpenQuotesHistory?: () => void;
   suppliers: string[];
   products: Product[];
@@ -124,6 +124,7 @@ export function CartModal({
   const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
   const [clientNameError, setClientNameError] = useState(false);
   const [isSavedToHistory, setIsSavedToHistory] = useState(false);
+  const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
   const [saveRequiredError, setSaveRequiredError] = useState(false);
   const clientNameInputRef = useRef<HTMLInputElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
@@ -475,7 +476,7 @@ export function CartModal({
     if (!validateClientName()) return;
     setIsSavingHistory(true);
     try {
-      await saveQuoteToHistory({
+      const qId = await saveQuoteToHistory({
         clientName: clientName.trim(),
         facilitatorName: facilitatorName.trim() || "Фасилитатор",
         note: note.trim(),
@@ -485,6 +486,7 @@ export function CartModal({
         cart: displayedCart,
       });
       setIsSavedToHistory(true);
+      setSavedQuoteId(qId);
       setSaveRequiredError(false);
       setHistorySavedMsg("✓ Успешно сохранено в Архив КП!");
       setTimeout(() => setHistorySavedMsg(null), 3500);
@@ -513,7 +515,7 @@ export function CartModal({
   const handlePrintAction = () => {
     if (!validateCanExportOrPrint()) return;
     if (onPrintWithMeta) {
-      onPrintWithMeta(clientName.trim(), facilitatorName.trim(), note.trim());
+      onPrintWithMeta(clientName.trim(), facilitatorName.trim(), note.trim(), savedQuoteId || undefined);
     } else {
       onPrint();
     }

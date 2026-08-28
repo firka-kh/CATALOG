@@ -75,6 +75,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     facilitatorName: string;
     note?: string;
     createdAt?: string;
+    quoteId?: string;
     selectedRegion?: string;
     selectedSphere?: string;
     logisticsCost?: number;
@@ -82,11 +83,32 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
   const handleTriggerPdfPrintFromHistory = (data: any) => {
     setHistoryPrintData(data);
+    const now = new Date();
+    const datePart = now.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const qCode = data?.quoteId || data?.id ? `_${data.quoteId || data.id}` : "";
+    const originalTitle = document.title;
+    document.title = `${datePart}${qCode}`;
+
     setIsCartPrinting(true);
-    setTimeout(() => {
-      window.print();
+    const afterPrint = () => {
       setIsCartPrinting(false);
       setHistoryPrintData(null);
+      document.title = originalTitle;
+      window.removeEventListener("afterprint", afterPrint);
+    };
+    window.addEventListener("afterprint", afterPrint);
+
+    setTimeout(() => {
+      window.print();
+      setTimeout(() => {
+        setIsCartPrinting(false);
+        setHistoryPrintData(null);
+        document.title = originalTitle;
+      }, 2500);
     }, 300);
   };
 
@@ -97,6 +119,30 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   useEffect(() => {
     setVisibleCount(30);
   }, [search, sphere, region]);
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      const now = new Date();
+      const datePart = now.toLocaleDateString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+      const qCode = historyPrintData?.quoteId ? `_${historyPrintData.quoteId}` : (savedArchiveId ? `_${savedArchiveId}` : "");
+      document.title = `${datePart}${qCode}`;
+    };
+
+    const handleAfterPrint = () => {
+      document.title = "Региональный Каталог";
+    };
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, [historyPrintData, savedArchiveId]);
   const [showPrintAlert, setShowPrintAlert] = useState(false);
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
@@ -442,15 +488,29 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
   const handlePrintCartInvoice = () => {
     if (!validateCanExportOrPrint()) return;
+    const now = new Date();
+    const datePart = now.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const qCode = savedArchiveId ? `_${savedArchiveId}` : "";
+    const originalTitle = document.title;
+    document.title = `${datePart}${qCode}`;
+
     setIsCartPrinting(true);
     const afterPrint = () => {
       setIsCartPrinting(false);
+      document.title = originalTitle;
       window.removeEventListener("afterprint", afterPrint);
     };
     window.addEventListener("afterprint", afterPrint);
     setTimeout(() => {
       window.print();
-      setTimeout(() => setIsCartPrinting(false), 2000);
+      setTimeout(() => {
+        setIsCartPrinting(false);
+        document.title = originalTitle;
+      }, 2500);
     }, 400);
   };
 
@@ -1207,6 +1267,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         facilitatorName={historyPrintData?.facilitatorName ?? facilitatorName}
         note={historyPrintData?.note ?? note}
         createdAt={historyPrintData?.createdAt}
+        quoteId={historyPrintData?.quoteId || savedArchiveId || undefined}
       />
     </div>
   );

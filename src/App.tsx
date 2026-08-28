@@ -636,6 +636,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     facilitatorName?: string;
     note?: string;
     createdAt?: string;
+    quoteId?: string;
     selectedRegion?: string;
     selectedSphere?: string;
     logisticsCost?: number;
@@ -685,6 +686,30 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      const now = new Date();
+      const datePart = now.toLocaleDateString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      });
+      const qCode = cartPrintMetadata.quoteId ? `_${cartPrintMetadata.quoteId}` : "";
+      document.title = `${datePart}${qCode}`;
+    };
+
+    const handleAfterPrint = () => {
+      document.title = "Региональный Каталог";
+    };
+
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, [cartPrintMetadata]);
 
   const [cart, setCart] = useState<
     {
@@ -1009,13 +1034,25 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     if (pendingPrintMode && products.length > 0) {
       const mode = pendingPrintMode;
       setPendingPrintMode(null);
+      const originalTitle = document.title;
       if (mode === "cart") {
+        const now = new Date();
+        const datePart = now.toLocaleDateString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+        const qCode = cartPrintMetadata.quoteId ? `_${cartPrintMetadata.quoteId}` : "";
+        document.title = `${datePart}${qCode}`;
         setIsCartPrinting(true);
       }
       setTimeout(() => {
         window.print();
         if (mode === "cart") {
-          setTimeout(() => setIsCartPrinting(false), 2000);
+          setTimeout(() => {
+            setIsCartPrinting(false);
+            document.title = originalTitle;
+          }, 2500);
         }
       }, 500);
     }
@@ -1847,24 +1884,39 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setCart([]);
   };
 
-  const handleCartPrint = (meta?: { clientName?: string; facilitatorName?: string; note?: string; createdAt?: string }) => {
+  const handleCartPrint = (meta?: { clientName?: string; facilitatorName?: string; note?: string; createdAt?: string; quoteId?: string }) => {
     if (meta) {
       setCartPrintMetadata(meta);
     }
+    const now = new Date();
+    const datePart = now.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const qCode = meta?.quoteId ? `_${meta.quoteId}` : "";
+    const originalTitle = document.title;
+    document.title = `${datePart}${qCode}`;
+
     if (window !== window.parent) {
       setPrintWarningType("cart");
       setShowPrintWarning(true);
+      document.title = originalTitle;
     } else {
       setIsCartPrinting(true);
       const afterPrint = () => {
         setIsCartPrinting(false);
+        document.title = originalTitle;
         window.removeEventListener("afterprint", afterPrint);
       };
       window.addEventListener("afterprint", afterPrint);
       setTimeout(() => {
         window.print();
         // Fallback in case afterprint doesn't fire
-        setTimeout(() => setIsCartPrinting(false), 2000);
+        setTimeout(() => {
+          setIsCartPrinting(false);
+          document.title = originalTitle;
+        }, 2500);
       }, 300);
     }
   };
@@ -1898,6 +1950,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     facilitatorName: string;
     note?: string;
     createdAt?: string;
+    quoteId?: string;
     selectedRegion?: string;
     selectedSphere?: string;
     logisticsCost?: number;
@@ -1910,19 +1963,32 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       facilitatorName: data.facilitatorName,
       note: data.note,
       createdAt: data.createdAt,
+      quoteId: data.quoteId,
       selectedRegion: data.selectedRegion,
       selectedSphere: data.selectedSphere,
       logisticsCost: data.logisticsCost,
       cart: data.cart,
     });
+    const now = new Date();
+    const datePart = now.toLocaleDateString("ru-RU", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const qCode = data.quoteId ? `_${data.quoteId}` : "";
+    const originalTitle = document.title;
+    document.title = `${datePart}${qCode}`;
+
     if (window !== window.parent) {
       setPrintWarningType("cart");
       setShowPrintWarning(true);
+      document.title = originalTitle;
     } else {
       setIsCartPrinting(true);
       const afterPrint = () => {
         setIsCartPrinting(false);
         setCartPrintMetadata({});
+        document.title = originalTitle;
         window.removeEventListener("afterprint", afterPrint);
       };
       window.addEventListener("afterprint", afterPrint);
@@ -1931,7 +1997,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         setTimeout(() => {
           setIsCartPrinting(false);
           setCartPrintMetadata({});
-        }, 2000);
+          document.title = originalTitle;
+        }, 2500);
       }, 300);
     }
   };
@@ -5641,13 +5708,25 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <button
                   onClick={() => {
                     setShowPrintWarning(false);
+                    const originalTitle = document.title;
                     if (printWarningType === "cart") {
+                      const now = new Date();
+                      const datePart = now.toLocaleDateString("ru-RU", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      });
+                      const qCode = cartPrintMetadata.quoteId ? `_${cartPrintMetadata.quoteId}` : "";
+                      document.title = `${datePart}${qCode}`;
                       setIsCartPrinting(true);
                     }
                     setTimeout(() => {
                       window.print();
                       if (printWarningType === "cart") {
-                        setTimeout(() => setIsCartPrinting(false), 2000);
+                        setTimeout(() => {
+                          setIsCartPrinting(false);
+                          document.title = originalTitle;
+                        }, 2500);
                       }
                     }, 150);
                   }}
@@ -5694,9 +5773,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         cart={cart}
         updateQuantity={handleUpdateCartQuantity}
         onPrint={handleCartPrint}
-        onPrintWithMeta={(clientName, facilitatorName, note) => {
-          setCartPrintMetadata({ clientName, facilitatorName, note });
-          handleCartPrint({ clientName, facilitatorName, note });
+        onPrintWithMeta={(clientName, facilitatorName, note, quoteId) => {
+          setCartPrintMetadata({ clientName, facilitatorName, note, quoteId });
+          handleCartPrint({ clientName, facilitatorName, note, quoteId });
         }}
         onOpenQuotesHistory={() => setIsQuotesHistoryOpen(true)}
         suppliers={globalDict.suppliers || []}
@@ -6089,6 +6168,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           facilitatorName={cartPrintMetadata.facilitatorName}
           note={cartPrintMetadata.note}
           createdAt={cartPrintMetadata.createdAt}
+          quoteId={cartPrintMetadata.quoteId}
         />
       )}
 

@@ -21,6 +21,7 @@ interface Props {
   facilitatorName?: string;
   note?: string;
   createdAt?: string;
+  quoteId?: string;
   allProducts?: Product[];
 }
 
@@ -33,7 +34,7 @@ const getImageSrc = (img?: string, mime?: string) => {
   return `data:${mime || "image/jpeg"};base64,${trimmed}`;
 };
 
-export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames, clientName, facilitatorName, note, createdAt, allProducts }, ref) => {
+export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames, clientName, facilitatorName, note, createdAt, quoteId, allProducts }, ref) => {
   if (!isPrinting) return null;
 
   // Filter cart items by selected sphere if provided
@@ -118,9 +119,12 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
               <div>
                 <h1 className="text-2xl font-bold uppercase tracking-wider">Купон</h1>
                 <p className="text-gray-600 mt-1">Официальный коммерческий пакет</p>
+                {quoteId && (
+                  <p className="text-xs font-mono font-semibold text-slate-700 mt-0.5">Код: {quoteId}</p>
+                )}
               </div>
               <div className="text-right">
-                <p className="font-semibold">Дата формирования: {createdAt || new Date().toLocaleDateString('ru-RU')}</p>
+                <p className="font-semibold">Дата формирования: {createdAt || new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
                 <p className="text-gray-500">Документ сгенерирован автоматически</p>
               </div>
             </div>

@@ -1903,9 +1903,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     logisticsCost?: number;
     cart: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[];
   }) => {
-    setCart(data.cart);
-    if (data.selectedRegion !== undefined) setSelectedRegion(data.selectedRegion === "Все регионы" ? "" : data.selectedRegion);
-    if (data.selectedSphere !== undefined) setSelectedSphere(data.selectedSphere === "Все сферы" ? "" : data.selectedSphere);
+    // DO NOT touch active user cart or global filter states!
+    // Simply supply the quote metadata and cart items for print rendering
     setCartPrintMetadata({
       clientName: data.clientName,
       facilitatorName: data.facilitatorName,
@@ -1916,7 +1915,25 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       logisticsCost: data.logisticsCost,
       cart: data.cart,
     });
-    handleCartPrint();
+    if (window !== window.parent) {
+      setPrintWarningType("cart");
+      setShowPrintWarning(true);
+    } else {
+      setIsCartPrinting(true);
+      const afterPrint = () => {
+        setIsCartPrinting(false);
+        setCartPrintMetadata({});
+        window.removeEventListener("afterprint", afterPrint);
+      };
+      window.addEventListener("afterprint", afterPrint);
+      setTimeout(() => {
+        window.print();
+        setTimeout(() => {
+          setIsCartPrinting(false);
+          setCartPrintMetadata({});
+        }, 2000);
+      }, 300);
+    }
   };
 
   const pdfRef = useRef<HTMLDivElement>(null);

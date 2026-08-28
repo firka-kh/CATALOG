@@ -116,7 +116,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
           >
             <div className="flex items-center justify-between mb-6 border-b-2 border-black pb-4">
               <div>
-                <h1 className="text-2xl font-bold uppercase tracking-wider">Ваучер</h1>
+                <h1 className="text-2xl font-bold uppercase tracking-wider">Купон</h1>
                 <p className="text-gray-600 mt-1">Официальный коммерческий пакет</p>
               </div>
               <div className="text-right">
@@ -171,7 +171,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
               </div>
 
               <div className="p-4 border border-gray-300 rounded-lg bg-gray-50/70">
-                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Параметры формирования ваучера:</div>
+                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Параметры формирования купона:</div>
                 <div className="text-sm space-y-1.5 mt-1">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-semibold text-gray-500">Регион:</span>
@@ -282,14 +282,18 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
               </tbody>
             </table>
 
-            <div className="mt-12 flex justify-between px-12 pt-8 border-t border-gray-300 break-inside-avoid">
+            <div className="mt-12 grid grid-cols-3 gap-6 px-6 pt-8 border-t border-gray-300 break-inside-avoid">
                 <div className="text-center">
-                    <div className="w-48 border-b border-black mb-2"></div>
+                    <div className="w-full max-w-[200px] mx-auto border-b border-black mb-2"></div>
                     <div className="text-xs font-semibold uppercase text-gray-500">Подпись клиента</div>
                 </div>
                 <div className="text-center">
-                    <div className="w-48 border-b border-black mb-2"></div>
+                    <div className="w-full max-w-[200px] mx-auto border-b border-black mb-2"></div>
                     <div className="text-xs font-semibold uppercase text-gray-500">Подпись поставщика</div>
+                </div>
+                <div className="text-center">
+                    <div className="w-full max-w-[200px] mx-auto border-b border-black mb-2"></div>
+                    <div className="text-xs font-semibold uppercase text-gray-500">Подпись ГРП-МТМЗН РТ</div>
                 </div>
             </div>
           </div>

@@ -6,6 +6,7 @@ import {
   deleteDoc,
   query,
   orderBy,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { Product } from "../types";
@@ -145,6 +146,36 @@ export async function deleteQuoteFromHistory(quoteId: string): Promise<void> {
     await deleteDoc(docRef);
   } catch (error) {
     console.error("Error deleting quote from history:", error);
+    throw error;
+  }
+}
+
+export async function deleteAllQuotesFromHistory(): Promise<number> {
+  try {
+    const snap = await getDocs(collection(db, "quotes_history"));
+    if (snap.empty) return 0;
+
+    let batch = writeBatch(db);
+    let count = 0;
+    let total = 0;
+
+    for (const docSnap of snap.docs) {
+      batch.delete(docSnap.ref);
+      count++;
+      total++;
+      if (count >= 400) {
+        await batch.commit();
+        batch = writeBatch(db);
+        count = 0;
+      }
+    }
+
+    if (count > 0) {
+      await batch.commit();
+    }
+    return total;
+  } catch (error) {
+    console.error("Error deleting all quotes from history:", error);
     throw error;
   }
 }

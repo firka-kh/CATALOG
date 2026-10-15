@@ -907,7 +907,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Заметка к КП
+                    Заметка к КП <span className="text-slate-400 font-normal normal-case tracking-normal italic">*Не обязательно*</span>
                   </label>
                   <input
                     type="text"
@@ -1222,6 +1222,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         suppliers={globalDict?.suppliers || []}
         isAdmin={false}
         currentFacilitatorName={facilitatorName || resolvedFacilitator.name}
+        adminPassword={globalDict?.adminPassword || "020779"}
       />
 
       <PrintCatalogView

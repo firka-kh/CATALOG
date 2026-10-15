@@ -505,17 +505,24 @@ if (bot) {
     { text: string; time: number }
   >();
 
-  // Add listener for photos to handle WAITING_PHOTO states
+  // Add listener for photos to handle WAITING_PHOTO states and direct photo uploads
   bot.on("photo", async (msg) => {
     const chatId = msg.chat.id;
     await ensureUserRoleLoaded(chatId);
     const userState = userStates.get(chatId) || { state: "IDLE" };
 
-    if (
-      (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) ||
-      (userState.state !== "WAITING_PHOTO_PRODUCT" &&
-        userState.state !== "WAITING_PHOTO_SPEC")
-    ) {
+    if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) {
+      bot?.sendMessage(
+        chatId,
+        "🔒 Для распознавания и добавления товаров через ИИ необходимо авторизоваться.\n\nПожалуйста, отправьте ваш секретный код доступа (код поставщика или администратора).",
+        {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        }
+      );
+      userStates.set(chatId, { state: "WAITING_PASSWORD" });
       return;
     }
 
@@ -525,6 +532,54 @@ if (bot) {
       const fileLink = await bot?.getFileLink(photo.file_id);
 
       if (!fileLink) throw new Error("Could not get file link");
+
+      // Case 1: Supplier sends photo directly without being in a sub-state (e.g. from main menu / IDLE)
+      if (
+        userState.state !== "WAITING_PHOTO_PRODUCT" &&
+        userState.state !== "WAITING_PHOTO_SPEC"
+      ) {
+        bot?.sendMessage(chatId, "⏳ Получено фото! Обрабатываю изображение...");
+        const response = await axios.get(fileLink, {
+          responseType: "arraybuffer",
+        });
+        const imageBuffer = Buffer.from(response.data, "binary");
+        const base64Image =
+          "data:image/jpeg;base64," + imageBuffer.toString("base64");
+
+        const supplierId = supplierUsers.get(chatId) || "";
+        userStates.set(chatId, {
+          state: "WAITING_REGION",
+          tempProductData: {
+            supplierId,
+            regions: [],
+            spheres: [],
+            imageBase64: base64Image,
+            productPhotoUrl: fileLink,
+            photos: [fileLink], // Pre-populate photo for quick AI recognition
+          },
+        });
+
+        bot?.sendMessage(
+          chatId,
+          "📸 Фото товара сохранено!\n\nТеперь выберите один или несколько регионов действия цены, либо нажмите «Пропустить регион»:",
+          {
+            reply_markup: {
+              keyboard: [[{ text: "❌ Отмена" }]],
+              resize_keyboard: true,
+            },
+          }
+        );
+
+        getRegionsList().then((regionsProps) => {
+          const text = `*Выбор регионов для товара*\n\nВыбранные регионы: *не выбраны*\n\nВыберите регионы из списка ниже с помощью кнопок-чекбоксов, затем нажмите «📥 Подтвердить выбор».\n\n_Или выберите "Пропустить регион" чтобы внести товар глобально._`;
+          const replyMarkup = buildRegionsKeyboard(regionsProps, []);
+          bot?.sendMessage(chatId, text, {
+            parse_mode: "Markdown",
+            reply_markup: replyMarkup,
+          });
+        });
+        return;
+      }
 
       if (userState.state === "WAITING_PHOTO_PRODUCT") {
         bot?.sendMessage(chatId, "⏳ Обрабатываю фото товара...");
@@ -586,6 +641,18 @@ if (bot) {
         chatId,
         "⚠️ Ошибка при загрузке фото. Попробуйте еще раз.",
       );
+    }
+  });
+
+  // Also support images sent as documents (uncompressed files)
+  bot.on("document", async (msg) => {
+    const mime = msg.document?.mime_type || "";
+    if (mime.startsWith("image/")) {
+      const fakePhotoMsg = {
+        ...msg,
+        photo: [{ file_id: msg.document!.file_id }],
+      };
+      (bot as any)?.emit("photo", fakePhotoMsg);
     }
   });
 
@@ -774,9 +841,6 @@ if (bot) {
 
         userState.tempProductData.sphere = selected[0] || "Общее";
         userState.tempProductData.spheres = selected;
-        userState.tempProductData.photos = [];
-        userState.state = "WAITING_PHOTO_PRODUCT";
-        userStates.set(chatId, userState);
 
         // Update inline keyboard message to show final state
         bot?.editMessageText(`✅ Выбраны сферы: *${selected.join(", ")}*`, {
@@ -785,19 +849,39 @@ if (bot) {
           parse_mode: "Markdown",
         }).catch(() => {});
 
-        bot?.sendMessage(
-          chatId,
-          `Сферы успешно сохранены.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
-          {
-            reply_markup: {
-              keyboard: [
-                [{ text: "Пропустить фото товара" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
+        if (userState.tempProductData.productPhotoUrl) {
+          userState.state = "WAITING_PHOTO_SPEC";
+          userStates.set(chatId, userState);
+          bot?.sendMessage(
+            chatId,
+            `✅ Сферы сохранены! Фото товара уже загружено.\n\nЕсли на этом фото есть характеристики (спецификация), нажмите «✨ Распознать по этому фото». Либо отправьте фото спецификации/этикетки отдельно.`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
+                  [{ text: "❌ Отмена", callback_data: "cancel" }],
+                ],
+              },
+            }
+          );
+        } else {
+          userState.tempProductData.photos = [];
+          userState.state = "WAITING_PHOTO_PRODUCT";
+          userStates.set(chatId, userState);
+          bot?.sendMessage(
+            chatId,
+            `Сферы успешно сохранены.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+            {
+              reply_markup: {
+                keyboard: [
+                  [{ text: "Пропустить фото товара" }],
+                  [{ text: "❌ Отмена" }],
+                ],
+                resize_keyboard: true,
+              },
             },
-          },
-        );
+          );
+        }
       } else {
         bot?.answerCallbackQuery(query.id);
       }
@@ -807,9 +891,6 @@ if (bot) {
       if (userState && userState.state === "WAITING_SPHERE") {
         userState.tempProductData.sphere = "Общее";
         userState.tempProductData.spheres = ["Общее"];
-        userState.tempProductData.photos = [];
-        userState.state = "WAITING_PHOTO_PRODUCT";
-        userStates.set(chatId, userState);
 
         bot?.editMessageText(`✅ Выбрана сфера: *Общее*`, {
           chat_id: chatId,
@@ -817,19 +898,39 @@ if (bot) {
           parse_mode: "Markdown",
         }).catch(() => {});
 
-        bot?.sendMessage(
-          chatId,
-          `Выбрана общая сфера.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
-          {
-            reply_markup: {
-              keyboard: [
-                [{ text: "Пропустить фото товара" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
+        if (userState.tempProductData.productPhotoUrl) {
+          userState.state = "WAITING_PHOTO_SPEC";
+          userStates.set(chatId, userState);
+          bot?.sendMessage(
+            chatId,
+            `✅ Выбрана общая сфера. Фото товара уже загружено.\n\nЕсли на этом фото есть характеристики (спецификация), нажмите «✨ Распознать по этому фото». Либо отправьте фото спецификации отдельно.`,
+            {
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
+                  [{ text: "❌ Отмена", callback_data: "cancel" }],
+                ],
+              },
+            }
+          );
+        } else {
+          userState.tempProductData.photos = [];
+          userState.state = "WAITING_PHOTO_PRODUCT";
+          userStates.set(chatId, userState);
+          bot?.sendMessage(
+            chatId,
+            `Выбрана общая сфера.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+            {
+              reply_markup: {
+                keyboard: [
+                  [{ text: "Пропустить фото товара" }],
+                  [{ text: "❌ Отмена" }],
+                ],
+                resize_keyboard: true,
+              },
             },
-          },
-        );
+          );
+        }
       }
     } else {
       bot?.answerCallbackQuery(query.id);
@@ -1136,22 +1237,40 @@ if (bot) {
       const spheresList = sphereText.split(",").map(s => s.trim()).filter(Boolean);
       userState.tempProductData.sphere = spheresList[0] || "Общее";
       userState.tempProductData.spheres = spheresList;
-      userState.tempProductData.photos = [];
-      userState.state = "WAITING_PHOTO_PRODUCT";
-      userStates.set(chatId, userState);
-      bot?.sendMessage(
-        chatId,
-        `Сфера "${sphereText}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
-        {
-          reply_markup: {
-            keyboard: [
-              [{ text: "Пропустить фото товара" }],
-              [{ text: "❌ Отмена" }],
-            ],
-            resize_keyboard: true,
+
+      if (userState.tempProductData.productPhotoUrl) {
+        userState.state = "WAITING_PHOTO_SPEC";
+        userStates.set(chatId, userState);
+        bot?.sendMessage(
+          chatId,
+          `✅ Сфера "${sphereText}" сохранена! Фото товара уже загружено.\n\nЕсли на этом фото есть характеристики (спецификация), нажмите «✨ Распознать по этому фото». Либо отправьте фото спецификации/этикетки отдельно.`,
+          {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
+                [{ text: "❌ Отмена", callback_data: "cancel" }],
+              ],
+            },
+          }
+        );
+      } else {
+        userState.tempProductData.photos = [];
+        userState.state = "WAITING_PHOTO_PRODUCT";
+        userStates.set(chatId, userState);
+        bot?.sendMessage(
+          chatId,
+          `Сфера "${sphereText}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
+          {
+            reply_markup: {
+              keyboard: [
+                [{ text: "Пропустить фото товара" }],
+                [{ text: "❌ Отмена" }],
+              ],
+              resize_keyboard: true,
+            },
           },
-        },
-      );
+        );
+      }
       return;
     }
 

@@ -2616,6 +2616,32 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const hasGkPrice = displayProducts.some((p) => p.price !== undefined && p.price > 0);
 
+  const hasSupplier2Price = displayProducts.some((p) => {
+    const activeReg = selectedRegion || p.region || "Душанбе";
+    const pr = getProductPriceForSupplierAndRegion(p, "supplier2", activeReg);
+    return pr !== undefined && pr > 0;
+  });
+
+  const hasSupplier3Price = displayProducts.some((p) => {
+    const activeReg = selectedRegion || p.region || "Душанбе";
+    const pr = getProductPriceForSupplierAndRegion(p, "supplier3", activeReg);
+    return pr !== undefined && pr > 0;
+  });
+
+  const hasSupplier4Price = displayProducts.some((p) => {
+    const activeReg = selectedRegion || p.region || "Душанбе";
+    const pr = getProductPriceForSupplierAndRegion(p, "supplier4", activeReg);
+    return pr !== undefined && pr > 0;
+  });
+
+  const totalTableColumnsCount =
+    7 +
+    (isReallyAdmin && hasGkPrice ? 1 : 0) +
+    (hasSupplier2Price ? 1 : 0) +
+    (hasSupplier3Price ? 1 : 0) +
+    (hasSupplier4Price ? 1 : 0) +
+    (showBestPrice ? 1 : 0);
+
   const isUploadBlocked = aiSelectedSpheres.length === 0;
 
   if (portalFacilitator && !isInitialLoadDone) {
@@ -3384,7 +3410,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                             </div>
 
                             {/* Supplier 1 (supplier2) */}
-                            {(() => {
+                            {hasSupplier2Price && (() => {
                               const isMin = s2Price > 0 && minPrice === s2Price;
                               return (
                                 <div className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
@@ -3413,7 +3439,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                             })()}
 
                             {/* Supplier 2 (supplier3) */}
-                            {(() => {
+                            {hasSupplier3Price && (() => {
                               const isMin = s3Price > 0 && minPrice === s3Price;
                               return (
                                 <div className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
@@ -3442,7 +3468,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                             })()}
 
                             {/* Supplier 3 (supplier4) */}
-                            {(() => {
+                            {hasSupplier4Price && (() => {
                               const isMin = s4Price > 0 && minPrice === s4Price;
                               return (
                                 <div className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
@@ -3469,6 +3495,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                                 </div>
                               );
                             })()}
+
+                            {!hasSupplier2Price && !hasSupplier3Price && !hasSupplier4Price && (
+                              <div className="p-2 text-center text-xs text-slate-400 italic">
+                                Цены уточняются
+                              </div>
+                            )}
 
                             {/* Admin Actions */}
                             {isReallyAdmin && (
@@ -3568,23 +3600,25 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           </select>
                         </div>
                       </th>
-                      {(isAdminMode || !!portalFacilitator) && (
-                        <>
-                          {isReallyAdmin && hasGkPrice && (
-                            <th className="px-4 py-3 align-middle w-32 text-left text-slate-700 font-bold bg-slate-50 border-r border-slate-200">
-                              ГК
-                            </th>
-                          )}
-                          <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
-                            {getSupplierLabel("supplier2")}
-                          </th>
-                          <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
-                            {getSupplierLabel("supplier3")}
-                          </th>
-                          <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
-                            {getSupplierLabel("supplier4")}
-                          </th>
-                        </>
+                      {isReallyAdmin && hasGkPrice && (
+                        <th className="px-4 py-3 align-middle w-32 text-left text-slate-700 font-bold bg-slate-50 border-r border-slate-200">
+                          ГК
+                        </th>
+                      )}
+                      {hasSupplier2Price && (
+                        <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
+                          {getSupplierLabel("supplier2")}
+                        </th>
+                      )}
+                      {hasSupplier3Price && (
+                        <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
+                          {getSupplierLabel("supplier3")}
+                        </th>
+                      )}
+                      {hasSupplier4Price && (
+                        <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
+                          {getSupplierLabel("supplier4")}
+                        </th>
                       )}
                       {showBestPrice && (
                         <th className="px-4 py-3 align-middle w-40 text-left text-emerald-700 font-bold bg-emerald-50/40">
@@ -3601,7 +3635,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     {displayProducts.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7 + (isReallyAdmin ? (hasGkPrice ? 4 : 3) : portalFacilitator ? 3 : 0) + (showBestPrice ? 1 : 0)}
+                          colSpan={totalTableColumnsCount}
                           className="px-6 py-12 text-center text-slate-500 bg-slate-50/50"
                         >
                           {isParsing ? (
@@ -3795,151 +3829,153 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               {(p.spheres && p.spheres.length > 0) ? p.spheres.join(", ") : (p.sphere || "—")}
                             </div>
                           </td>
-                          {(isAdminMode || !!portalFacilitator) && (
-                            <>
-                              {isReallyAdmin && hasGkPrice && (
-                                <td className="px-4 py-4 bg-slate-50 border-r border-slate-100 font-mono font-semibold text-xs text-slate-800">
-                                  {p.price !== undefined && p.price > 0 ? (
-                                    <div className="flex items-center justify-start">
-                                      {p.price.toFixed(2)} с.
-                                    </div>
-                                  ) : (
-                                    <span className="text-slate-300 italic text-[11px]">
-                                      Нет цены
-                                    </span>
-                                  )}
-                                </td>
+                          {isReallyAdmin && hasGkPrice && (
+                            <td className="px-4 py-4 bg-slate-50 border-r border-slate-100 font-mono font-semibold text-xs text-slate-800">
+                              {p.price !== undefined && p.price > 0 ? (
+                                <div className="flex items-center justify-start">
+                                  {p.price.toFixed(2)} с.
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 italic text-[11px]">
+                                  Нет цены
+                                </span>
                               )}
-                              <td
-                                className="px-4 py-4 bg-indigo-50/10"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {s2Price !== undefined && s2Price > 0 ? (
-                                  <div className="flex items-center gap-1.5 justify-start">
-                                    <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                      {s2Price.toFixed(2)} с.
-                                      {isS2Auto && (
-                                        <span
-                                          className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
-                                          title={`Автоматическая наценка ${s2Markup >= 0 ? "+" : ""}${s2Markup}%`}
-                                        >
-                                          %
-                                        </span>
-                                      )}
-                                      {isS2Override && (
-                                        <span
-                                          className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
-                                          title="Индивидуальная цена региона"
-                                        >
-                                          ручн.
-                                        </span>
-                                      )}
-                                    </span>
-                                    {!showBestPrice && s2Price !== undefined && s2Price > 0 && (
-                                      <button
-                                        onClick={() =>
-                                          handleAddToCart(p, "supplier2", s2Price)
-                                        }
-                                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                        title={`В выборку (${getSupplierLabel("supplier2")})`}
+                            </td>
+                          )}
+                          {hasSupplier2Price && (
+                            <td
+                              className="px-4 py-4 bg-indigo-50/10"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {s2Price !== undefined && s2Price > 0 ? (
+                                <div className="flex items-center gap-1.5 justify-start">
+                                  <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
+                                    {s2Price.toFixed(2)} с.
+                                    {isS2Auto && (
+                                      <span
+                                        className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
+                                        title={`Автоматическая наценка ${s2Markup >= 0 ? "+" : ""}${s2Markup}%`}
                                       >
-                                        <ShoppingCart className="w-3.5 h-3.5" />
-                                      </button>
+                                        %
+                                      </span>
                                     )}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 italic text-[11px]">
-                                    Нет цены
-                                  </span>
-                                )}
-                              </td>
-                              <td
-                                className="px-4 py-4 bg-indigo-50/10"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {s3Price !== undefined && s3Price > 0 ? (
-                                  <div className="flex items-center gap-1.5 justify-start">
-                                    <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                      {s3Price.toFixed(2)} с.
-                                      {isS3Auto && (
-                                        <span
-                                          className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
-                                          title={`Автоматическая наценка ${s3Markup >= 0 ? "+" : ""}${s3Markup}%`}
-                                        >
-                                          %
-                                        </span>
-                                      )}
-                                      {isS3Override && (
-                                        <span
-                                          className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
-                                          title="Индивидуальная цена региона"
-                                        >
-                                          ручн.
-                                        </span>
-                                      )}
-                                    </span>
-                                    {!showBestPrice && s3Price !== undefined && s3Price > 0 && (
-                                      <button
-                                        onClick={() =>
-                                          handleAddToCart(p, "supplier3", s3Price)
-                                        }
-                                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                        title={`В выборку (${getSupplierLabel("supplier3")})`}
+                                    {isS2Override && (
+                                      <span
+                                        className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
+                                        title="Индивидуальная цена региона"
                                       >
-                                        <ShoppingCart className="w-3.5 h-3.5" />
-                                      </button>
+                                        ручн.
+                                      </span>
                                     )}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 italic text-[11px]">
-                                    Нет цены
                                   </span>
-                                )}
-                              </td>
-                              <td
-                                className="px-4 py-4 bg-indigo-50/10"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {s4Price !== undefined && s4Price > 0 ? (
-                                  <div className="flex items-center gap-1.5 justify-start">
-                                    <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                      {s4Price.toFixed(2)} с.
-                                      {isS4Auto && (
-                                        <span
-                                          className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
-                                          title={`Автоматическая наценка ${s4Markup >= 0 ? "+" : ""}${s4Markup}%`}
-                                        >
-                                          %
-                                        </span>
-                                      )}
-                                      {isS4Override && (
-                                        <span
-                                          className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
-                                          title="Индивидуальная цена региона"
-                                        >
-                                          ручн.
-                                        </span>
-                                      )}
-                                    </span>
-                                    {!showBestPrice && s4Price !== undefined && s4Price > 0 && (
-                                      <button
-                                        onClick={() =>
-                                          handleAddToCart(p, "supplier4", s4Price)
-                                        }
-                                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                        title={`В выборку (${getSupplierLabel("supplier4")})`}
+                                  {!showBestPrice && s2Price !== undefined && s2Price > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        handleAddToCart(p, "supplier2", s2Price)
+                                      }
+                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                      title={`В выборку (${getSupplierLabel("supplier2")})`}
+                                    >
+                                      <ShoppingCart className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 italic text-[11px]">
+                                  Нет цены
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          {hasSupplier3Price && (
+                            <td
+                              className="px-4 py-4 bg-indigo-50/10"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {s3Price !== undefined && s3Price > 0 ? (
+                                <div className="flex items-center gap-1.5 justify-start">
+                                  <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
+                                    {s3Price.toFixed(2)} с.
+                                    {isS3Auto && (
+                                      <span
+                                        className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
+                                        title={`Автоматическая наценка ${s3Markup >= 0 ? "+" : ""}${s3Markup}%`}
                                       >
-                                        <ShoppingCart className="w-3.5 h-3.5" />
-                                      </button>
+                                        %
+                                      </span>
                                     )}
-                                  </div>
-                                ) : (
-                                  <span className="text-slate-300 italic text-[11px]">
-                                    Нет цены
+                                    {isS3Override && (
+                                      <span
+                                        className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
+                                        title="Индивидуальная цена региона"
+                                      >
+                                        ручн.
+                                      </span>
+                                    )}
                                   </span>
-                                )}
-                              </td>
-                            </>
+                                  {!showBestPrice && s3Price !== undefined && s3Price > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        handleAddToCart(p, "supplier3", s3Price)
+                                      }
+                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                      title={`В выборку (${getSupplierLabel("supplier3")})`}
+                                    >
+                                      <ShoppingCart className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 italic text-[11px]">
+                                  Нет цены
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          {hasSupplier4Price && (
+                            <td
+                              className="px-4 py-4 bg-indigo-50/10"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {s4Price !== undefined && s4Price > 0 ? (
+                                <div className="flex items-center gap-1.5 justify-start">
+                                  <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
+                                    {s4Price.toFixed(2)} с.
+                                    {isS4Auto && (
+                                      <span
+                                        className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
+                                        title={`Автоматическая наценка ${s4Markup >= 0 ? "+" : ""}${s4Markup}%`}
+                                      >
+                                        %
+                                      </span>
+                                    )}
+                                    {isS4Override && (
+                                      <span
+                                        className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
+                                        title="Индивидуальная цена региона"
+                                      >
+                                        ручн.
+                                      </span>
+                                    )}
+                                  </span>
+                                  {!showBestPrice && s4Price !== undefined && s4Price > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        handleAddToCart(p, "supplier4", s4Price)
+                                      }
+                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                      title={`В выборку (${getSupplierLabel("supplier4")})`}
+                                    >
+                                      <ShoppingCart className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-300 italic text-[11px]">
+                                  Нет цены
+                                </span>
+                              )}
+                            </td>
                           )}
                           {showBestPrice && (
                             <td
@@ -5806,6 +5842,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         suppliers={globalDict.suppliers || []}
         isAdmin={isReallyAdmin}
         currentFacilitatorName={getFacilitatorName()}
+        adminPassword={globalDict.adminPassword || "020779"}
       />
 
       {!isCartPrinting && (

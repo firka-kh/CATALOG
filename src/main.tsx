@@ -62,10 +62,10 @@ const isMiniApp = isMiniAppPath || (isTelegramWebAppWithData && isMiniAppPath);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isMiniApp ? (
-      <MiniApp portalFacilitator={portalSupplier && portalSupplier.startsWith('facilitator') ? portalSupplier : undefined} />
-    ) : portalSupplier && portalSupplier.startsWith('supplier') ? (
+    {portalSupplier && portalSupplier.startsWith('supplier') ? (
       <SupplierPortal supplierId={portalSupplier as any} />
+    ) : isMiniApp ? (
+      <MiniApp portalFacilitator={portalSupplier && portalSupplier.startsWith('facilitator') ? portalSupplier : undefined} />
     ) : portalSupplier && portalSupplier.startsWith('facilitator') ? (
       <App portalFacilitator={portalSupplier} />
     ) : (

@@ -366,6 +366,14 @@ function getFacilitatorUrl(facilitatorId: string) {
   return `${miniAppUrl}${sep}portal=${facilitatorId}&_v=${Date.now()}`;
 }
 
+// Helper to get Supplier WebApp URL
+function getSupplierPortalUrl(supplierId: string) {
+  const miniAppUrl = process.env.MINI_APP_URL || "https://ais-pre-6dg2jc6u5llox5aqwgbixu-461007728319.asia-east1.run.app";
+  const baseUrl = miniAppUrl.replace(/\/mini-app\/?$/, "");
+  const sep = baseUrl.includes("?") ? "&" : "?";
+  return `${baseUrl}${sep}portal=${supplierId}&_v=${Date.now()}`;
+}
+
 // Helper to check user role and restore from Firestore if needed
 async function ensureUserRoleLoaded(chatId: number) {
   if (adminUsers.has(chatId) || supplierUsers.has(chatId) || facilitatorUsers.has(chatId)) {
@@ -410,9 +418,30 @@ async function getMainKeyboard(chatId: number) {
   }
 
   if (supplierUsers.has(chatId)) {
+    const supplierId = supplierUsers.get(chatId) || "supplier2";
+    let supplierName = "Поставщик";
+    try {
+      const globalDict = await getGlobalDict();
+      const supIdx = supplierId.replace("supplier", "");
+      if (supIdx === "2" && globalDict.suppliers?.[0]) supplierName = globalDict.suppliers[0];
+      else if (supIdx === "3" && globalDict.suppliers?.[1]) supplierName = globalDict.suppliers[1];
+      else if (supIdx === "4" && globalDict.suppliers?.[2]) supplierName = globalDict.suppliers[2];
+      else supplierName = `Поставщик ${supIdx}`;
+    } catch (e) {
+      console.warn("Could not load dict for supplier label:", e);
+    }
+
     return {
       keyboard: [
-        [{ text: "🛠 Панель администратора" }, { text: "🚪 Выйти" }],
+        [
+          {
+            text: `🛍 Открыть Портал (${supplierName})`,
+            web_app: {
+              url: getSupplierPortalUrl(supplierId),
+            },
+          },
+        ],
+        [{ text: "➕ Добавить товар" }, { text: "🚪 Выйти" }],
       ],
       resize_keyboard: true,
     };
@@ -1500,7 +1529,9 @@ if (bot) {
         };
 
         const isSupplier = supplierUsers.has(chatId);
-        const supplierIdToUse = isSupplier ? (product.supplierId || "") : "supplier1";
+        const supplierIdToUse = isSupplier
+          ? (product.supplierId || supplierUsers.get(chatId) || "supplier2")
+          : "supplier1";
 
         // Populate regional prices
         if (product.regionPrices && Object.keys(product.regionPrices).length > 0) {
@@ -1531,48 +1562,54 @@ if (bot) {
           }
         }
 
-        const finalProduct = {
+        const sphereToUse = product.sphere || (product.spheres?.[0] || "Общее");
+        const spheresToUse = product.spheres && product.spheres.length > 0
+          ? product.spheres
+          : [sphereToUse];
+
+        const finalProduct: any = {
           id: productId,
           code: nextCode,
-          name: product.name,
-          description: product.description,
-          unit: product.unit,
-          sphere: product.sphere,
-          spheres: product.spheres || (product.sphere ? [product.sphere] : []),
-          regions: regionsToSet,
-          category: "Без категории",
-          imageBase64: product.imageBase64 || "",
-          price: isSupplier ? 0 : mainPrice, // Global catalog price
+          name: (product.name || "Товар без названия").trim().slice(0, 250),
+          description: (product.description || "").trim().slice(0, 3990),
+          unit: product.unit || "шт.",
+          sphere: sphereToUse,
+          spheres: spheresToUse,
+          regions: regionsToSet || [],
+          category: product.category || "Без категории",
+          price: isSupplier ? 0 : mainPrice,
+          priceSupplier1: supplierIdToUse === "supplier1" ? mainPrice : 0,
+          priceSupplier2: supplierIdToUse === "supplier2" ? mainPrice : 0,
+          priceSupplier3: supplierIdToUse === "supplier3" ? mainPrice : 0,
+          priceSupplier4: supplierIdToUse === "supplier4" ? mainPrice : 0,
           prices: finalPrices,
+          imageBase64: product.imageBase64 || "",
+          mimeType: (product.imageBase64 && product.imageBase64.startsWith("data:image"))
+            ? (product.imageBase64.split(";")[0].split(":")[1] || "image/jpeg")
+            : "",
           createdAt: Date.now(),
         };
 
-        if (
-          product.imageBase64 &&
-          product.imageBase64.startsWith("data:image")
-        ) {
-          const mime = product.imageBase64.split(";")[0].split(":")[1];
-          (finalProduct as any).mimeType = mime;
-        }
-
         await setDoc(doc(db, "products", productId), finalProduct);
         userStates.set(chatId, { state: "ADMIN_MENU" });
+        const menuKeyboard = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          `✅ Товар успешно добавлен!\nID товара: ${nextCode}`,
+          `✅ Товар успешно добавлен в каталог!\n\n*Код/ID товара:* #${nextCode}\n*Название:* ${finalProduct.name}\n*Цена:* ${mainPrice > 0 ? `${mainPrice} с.` : "Не указана"}`,
           {
-            reply_markup: {
-              keyboard: [
-                [{ text: "➕ Добавить товар" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
+            parse_mode: "Markdown",
+            reply_markup: menuKeyboard,
           },
         );
-      } catch (e) {
-        bot?.sendMessage(chatId, "⚠️ Ошибка при сохранении в базу данных.");
-        console.error(e);
+      } catch (e: any) {
+        console.error("Error saving product from bot:", e);
+        bot?.sendMessage(
+          chatId,
+          `⚠️ Ошибка при сохранении в базу данных: ${e?.message || e}`,
+          {
+            reply_markup: await getMainKeyboard(chatId),
+          }
+        );
       }
       return;
     }

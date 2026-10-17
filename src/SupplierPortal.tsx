@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { collection, query, onSnapshot, doc, updateDoc, writeBatch, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { Product, GlobalDictionary } from './types';
-import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package } from 'lucide-react';
+import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package, Clock } from 'lucide-react';
 import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
 import { UpdateNotifier } from './components/UpdateNotifier';
+import { generateNextProductCode } from './lib/generateNextCode';
 
 const UNITS = [
     { value: 'шт.', label: 'шт. (Штука)' },
@@ -96,15 +97,16 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [isCustomSphere, setIsCustomSphere] = useState(false);
+  const [isCustomUnit, setIsCustomUnit] = useState(false);
+  const [showOnlyNew, setShowOnlyNew] = useState(false);
   const [productForm, setProductForm] = useState({
     name: '',
     code: '',
     spheres: [] as string[],
-    category: '',
     description: '',
     unit: 'шт.',
     basePrice: '',
-    supplierPrice: '',
+    regionalPrices: {} as Record<string, string>,
     imageBase64: '',
     mimeType: '',
   });
@@ -190,6 +192,20 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
   const currentSupplierLabel = getSupplierLabel(supplierId);
 
+  const uniqueSpheres = useMemo(() => {
+    const s = new Set<string>();
+    globalDict.spheres.forEach((sph) => s.add(sph));
+    products.forEach((p) => {
+      if (p.spheres) p.spheres.forEach((sph) => s.add(sph));
+      else if (p.sphere) s.add(p.sphere);
+    });
+    return Array.from(s).filter(Boolean);
+  }, [products, globalDict.spheres]);
+
+  const newProductsCount = products.filter(
+    (p) => p.createdAt && Date.now() - p.createdAt < 24 * 60 * 60 * 1000,
+  ).length;
+
   const filterProducts = useCallback(() => {
     return products.filter(p => {
       if (searchName && !p.name.toLowerCase().includes(searchName.toLowerCase()) && !(p.category && p.category.toLowerCase().includes(searchName.toLowerCase()))) return false;
@@ -197,9 +213,14 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         const pSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
         if (!pSpheres.includes(selectedSphere)) return false;
       }
+      if (showOnlyNew) {
+        if (!p.createdAt || Date.now() - p.createdAt >= 24 * 60 * 60 * 1000) {
+          return false;
+        }
+      }
       return true;
     });
-  }, [products, searchName, selectedSphere]);
+  }, [products, searchName, selectedSphere, showOnlyNew]);
 
   const displayedProducts = filterProducts();
 
@@ -509,15 +530,21 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const handleOpenAddProduct = () => {
     setEditingProductId(null);
     setIsCustomSphere(false);
+    setIsCustomUnit(false);
+
+    const initialRegPrices: Record<string, string> = {};
+    globalDict.regions.forEach(r => {
+      initialRegPrices[r] = '';
+    });
+
     setProductForm({
       name: '',
       code: '',
-      spheres: globalDict.spheres.length > 0 ? [globalDict.spheres[0]] : [],
-      category: '',
+      spheres: selectedSphere ? [selectedSphere] : (globalDict.spheres.length > 0 ? [globalDict.spheres[0]] : []),
       description: '',
       unit: 'шт.',
       basePrice: '',
-      supplierPrice: '',
+      regionalPrices: initialRegPrices,
       imageBase64: '',
       mimeType: '',
     });
@@ -528,18 +555,26 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const handleOpenEditProduct = (p: Product) => {
     setEditingProductId(p.id);
     setIsCustomSphere(false);
+    const standardUnits = ['шт.', 'кг', 'г', 'т', 'метр', 'мм', 'см', 'литр', 'мл', 'упак.', 'короб.', 'компл.'];
+    const curUnit = p.unit || 'шт.';
+    setIsCustomUnit(!standardUnits.includes(curUnit));
+
+    const initialRegPrices: Record<string, string> = {};
+    globalDict.regions.forEach(r => {
+      const val = p.prices?.[supplierId]?.[r];
+      initialRegPrices[r] = val !== undefined && val !== null ? String(val) : '';
+    });
+
     const currentSpheres = (p.spheres && p.spheres.length > 0) ? p.spheres : (p.sphere ? [p.sphere] : []);
-    const supplierCurrentPrice = getCurrentOverride(p);
 
     setProductForm({
       name: p.name || '',
       code: p.code || '',
       spheres: currentSpheres,
-      category: p.category || '',
       description: p.description || '',
-      unit: p.unit || 'шт.',
+      unit: curUnit,
       basePrice: p.price ? String(p.price) : (p.priceSupplier1 ? String(p.priceSupplier1) : ''),
-      supplierPrice: supplierCurrentPrice !== '' ? String(supplierCurrentPrice) : '',
+      regionalPrices: initialRegPrices,
       imageBase64: p.imageBase64 || '',
       mimeType: p.mimeType || '',
     });
@@ -725,67 +760,107 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       alert("Пожалуйста, введите название товара.");
       return;
     }
-    if (productForm.spheres.length === 0) {
+    if (!productForm.spheres || productForm.spheres.length === 0) {
       alert("Пожалуйста, выберите хотя бы одну сферу.");
       return;
     }
 
     setIsSaving(true);
     try {
-      const targetId = editingProductId || (`prod_sup_${Date.now()}`);
-      const existingProduct = products.find(p => p.id === targetId);
-
       const basePriceNum = parseFloat(productForm.basePrice) || 0;
-      const supplierPriceNum = parseFloat(productForm.supplierPrice) || 0;
 
-      // Construct prices map
-      const pricesMap = existingProduct?.prices || {
-        supplier1: {},
-        supplier2: {},
-        supplier3: {},
-        supplier4: {},
+      let nextCode = "";
+      if (!editingProductId) {
+        try {
+          nextCode = await generateNextProductCode(db);
+        } catch (e) {
+          console.error("Error generating code", e);
+          nextCode = "0000";
+        }
+      } else {
+        const existing = products.find((p) => p.id === editingProductId);
+        if (existing && existing.code) {
+          nextCode = existing.code;
+        }
+      }
+
+      const targetId = editingProductId || nextCode || `prod_sup_${Date.now()}`;
+      const existingProduct = products.find((p) => p.id === targetId);
+
+      // Build prices map
+      const pricesMap: Record<string, Record<string, number>> = {
+        supplier1: { ...(existingProduct?.prices?.supplier1 || {}) },
+        supplier2: { ...(existingProduct?.prices?.supplier2 || {}) },
+        supplier3: { ...(existingProduct?.prices?.supplier3 || {}) },
+        supplier4: { ...(existingProduct?.prices?.supplier4 || {}) },
       };
 
       if (!pricesMap[supplierId]) {
         pricesMap[supplierId] = {};
       }
 
-      if (supplierId === 'supplier1') {
-        // supplier1 handles priceSupplier1
-      } else {
-        if (selectedRegion) {
-          if (productForm.supplierPrice.trim() === '') {
-            delete pricesMap[supplierId][selectedRegion];
-          } else {
-            pricesMap[supplierId][selectedRegion] = supplierPriceNum;
+      // Update prices for this supplier across regions
+      globalDict.regions.forEach((reg) => {
+        const inputVal = productForm.regionalPrices[reg];
+        if (inputVal !== undefined && inputVal.trim() !== "") {
+          pricesMap[supplierId][reg] = parseFloat(inputVal) || 0;
+        } else if (inputVal !== undefined && inputVal.trim() === "") {
+          delete pricesMap[supplierId][reg];
+        }
+      });
+
+      const fallbackReg = selectedRegion || globalDict.regions[0] || "Душанбе";
+
+      const getFallbackPrice = (sup: "supplier1" | "supplier2" | "supplier3" | "supplier4") => {
+        if (pricesMap[sup] && pricesMap[sup][fallbackReg] !== undefined) {
+          return pricesMap[sup][fallbackReg];
+        }
+        if (sup === supplierId) {
+          const regVal = productForm.regionalPrices[fallbackReg];
+          if (regVal !== undefined && regVal.trim() !== "") {
+            return parseFloat(regVal) || 0;
           }
         }
-      }
+        const existingField = existingProduct ? (existingProduct as any)[`price${sup.charAt(0).toUpperCase() + sup.slice(1)}`] : 0;
+        if (typeof existingField === "number" && existingField > 0) {
+          return existingField;
+        }
+        if (sup === "supplier1") {
+          return globalDict.logisticsCosts?.[fallbackReg] || 0;
+        }
+        const markup = globalDict.pricingRules?.[sup]?.[fallbackReg] ?? 0;
+        const calc = basePriceNum * (1 + markup / 100);
+        return Math.round(calc * 100) / 100;
+      };
 
       const productPayload: Product = {
         id: targetId,
+        code: nextCode || existingProduct?.code || targetId,
         name: productForm.name.trim(),
-        code: productForm.code.trim() || undefined,
-        category: productForm.category.trim() || undefined,
-        description: productForm.description.trim() || undefined,
-        sphere: productForm.spheres[0] || '',
+        description: productForm.description.trim() || "",
+        category: existingProduct?.category || "Без категории",
+        sphere: productForm.spheres[0] || "",
         spheres: productForm.spheres,
-        unit: productForm.unit || 'шт.',
+        unit: productForm.unit || "шт.",
         price: basePriceNum,
-        priceSupplier1: supplierId === 'supplier1' && supplierPriceNum > 0 ? supplierPriceNum : (existingProduct?.priceSupplier1 || basePriceNum),
+        priceSupplier1: getFallbackPrice("supplier1"),
+        priceSupplier2: getFallbackPrice("supplier2"),
+        priceSupplier3: getFallbackPrice("supplier3"),
+        priceSupplier4: getFallbackPrice("supplier4"),
         prices: pricesMap,
-        imageBase64: productForm.imageBase64 || undefined,
-        mimeType: productForm.mimeType || undefined,
+        imageBase64: productForm.imageBase64 || "",
+        mimeType: productForm.mimeType || "",
         createdAt: existingProduct?.createdAt || Date.now(),
       };
 
       await setDoc(doc(db, "products", targetId), productPayload);
 
       setIsProductModalOpen(false);
+      setEditingProductId(null);
       alert(editingProductId ? "Товар успешно обновлен!" : "Товар успешно добавлен!");
     } catch (err: any) {
       console.error(err);
-      alert("Ошибка при сохранении товара: " + err.message);
+      alert("Ошибка при сохранении: " + err.message);
     } finally {
       setIsSaving(false);
     }
@@ -900,16 +975,15 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             )}
           </div>
 
-          {/* Add Product Button (hidden by request; set to true to show again) */}
-          {false && (
-            <button
-              onClick={handleOpenAddProduct}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-bold rounded-lg shadow-sm transition-all text-sm shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Добавить товар</span>
-            </button>
-          )}
+          {/* Add Product Button */}
+          <button
+            onClick={handleOpenAddProduct}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-semibold rounded-lg shadow-sm transition-all text-sm shrink-0"
+            title="Добавить товар вручную в каталог"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Добавить вручную</span>
+          </button>
 
           <input
             type="text"
@@ -925,8 +999,30 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 shrink-0"
           >
             <option value="">Все сферы</option>
-            {globalDict.spheres.map(s => <option key={s} value={s}>{s}</option>)}
+            {uniqueSpheres.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
+
+          {/* New Products filter button with indicator */}
+          <button
+            onClick={() => setShowOnlyNew(!showOnlyNew)}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg border text-sm font-medium transition-all shadow-sm shrink-0 ${
+              showOnlyNew
+                ? "bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100"
+                : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+            }`}
+            title="Показать новые товары (загруженные менее 24 часов назад)"
+          >
+            <Clock className={`w-4 h-4 ${showOnlyNew ? "text-rose-500" : "text-slate-400"}`} />
+            <span>Новые товары</span>
+            {newProductsCount > 0 && (
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${showOnlyNew ? "bg-rose-200 text-rose-800" : "bg-rose-100 text-rose-700"}`}>
+                {newProductsCount}
+              </span>
+            )}
+            {showOnlyNew && (
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+            )}
+          </button>
 
           {supplierId !== 'supplier1' && (
             <select
@@ -958,67 +1054,83 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       {/* Main Table Area */}
       <div className="flex-1 overflow-auto bg-slate-50 p-3 sm:p-6">
         <div className="max-w-7xl mx-auto">
-          {(!selectedRegion && supplierId !== 'supplier1') ? null : (
-             <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2 sm:gap-3 mb-4">
-                <input 
-                  type="file" 
-                  accept=".xlsx" 
-                  className="hidden" 
-                  ref={fileInputRef} 
-                  onChange={handleImport}
-                />
-                <button
-                   onClick={handleExport}
-                   disabled={isExporting}
-                   className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 shadow-sm rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
-                >
-                   {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                   Выгрузить в Excel
-                </button>
-                <button
-                   onClick={() => fileInputRef.current?.click()}
-                   disabled={isImporting || isClearing}
-                   className="flex items-center gap-2 px-4 py-2 bg-indigo-600 border border-transparent shadow-sm rounded-lg text-sm font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
-                >
-                   {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                   Загрузить цены
-                </button>
-                <button
-                   onClick={() => setShowClearConfirm(true)}
-                   disabled={isClearing}
-                   className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 shadow-sm rounded-lg text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-50 ml-2"
-                >
-                   {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                   Обнулить цены
-                </button>
-             </div>
+          {/* Action buttons (Excel / Clear) */}
+          <div className="flex flex-wrap items-center justify-start sm:justify-end gap-2 sm:gap-3 mb-4">
+            <input 
+              type="file" 
+              accept=".xlsx" 
+              className="hidden" 
+              ref={fileInputRef} 
+              onChange={handleImport}
+            />
+            <button
+               onClick={handleExport}
+               disabled={isExporting}
+               className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 shadow-sm rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+            >
+               {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+               Выгрузить в Excel
+            </button>
+            <button
+               onClick={() => {
+                 if (supplierId !== 'supplier1' && !selectedRegion) {
+                   alert("Пожалуйста, сначала выберите регион, для которого вы хотите загрузить цены.");
+                   return;
+                 }
+                 fileInputRef.current?.click();
+               }}
+               disabled={isImporting || isClearing}
+               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 border border-transparent shadow-sm rounded-lg text-sm font-semibold text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
+            >
+               {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+               Загрузить цены
+            </button>
+            <button
+               onClick={() => {
+                 if (supplierId !== 'supplier1' && !selectedRegion) {
+                   alert("Пожалуйста, сначала выберите регион для цен.");
+                   return;
+                 }
+                 setShowClearConfirm(true);
+               }}
+               disabled={isClearing}
+               className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 shadow-sm rounded-lg text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-50 ml-2"
+            >
+               {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+               Обнулить цены
+            </button>
+          </div>
+
+          {!selectedRegion && supplierId !== 'supplier1' && (
+            <div className="mb-4 bg-indigo-50 border border-indigo-200 text-indigo-900 px-4 py-3 rounded-xl flex items-center justify-between gap-3 text-sm shadow-xs">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-5 h-5 text-indigo-600 shrink-0" />
+                <span>
+                  Отображаются все товары каталога. Выберите конкретный регион в меню сверху, чтобы просмотреть и редактировать цены для него.
+                </span>
+              </div>
+            </div>
           )}
 
           <div className="bg-white border border-slate-200 shadow-sm rounded-xl overflow-hidden">
-             
-             {!selectedRegion && supplierId !== 'supplier1' ? (
-                <div className="p-12 text-center text-slate-500 flex flex-col items-center">
-                   <ArrowRight className="w-12 h-12 text-slate-300 mb-4 animate-bounce" />
-                   <h2 className="text-lg font-semibold text-slate-700">Выберите регион в меню сверху</h2>
-                   <p className="text-sm mt-2">Чтобы начать заполнять цены или добавить новый товар, укажите регион, для которого они действуют.</p>
-                </div>
-             ) : (
-             <div className="overflow-x-auto w-full">
-             <table className="w-full text-left border-collapse text-sm min-w-[850px]">
-             <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 z-10 text-[11px] uppercase tracking-wider text-slate-500">
-               <tr>
-                 <th className="px-3 py-3 w-16 text-center font-semibold">Фото</th>
-                 <th className="px-3 py-3 font-semibold">Наименование</th>
-                 <th className="px-3 py-3 w-32 font-semibold text-right">Сфера</th>
-                 <th className="px-3 py-3 w-28 font-semibold text-right">Базовая цена</th>
-                 <th className="px-3 py-3 w-28 font-semibold text-right">Ед. изм. *</th>
-                 <th className="px-3 py-3 w-36 font-bold text-indigo-700 bg-indigo-50 text-right">
-                   Твоя цена<br/>
-                   <span className="text-[9px] text-indigo-400 normal-case tracking-normal">{supplierId !== 'supplier1' && selectedRegion ? selectedRegion : 'Global'}</span>
-                 </th>
-                 <th className="px-3 py-3 w-28 text-center font-semibold">Действия</th>
-               </tr>
-             </thead>
+            <div className="overflow-x-auto w-full">
+              <table className="w-full text-left border-collapse text-sm min-w-[850px]">
+                <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 z-10 text-[11px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="px-3 py-3 w-16 text-center font-semibold">Фото</th>
+                    <th className="px-3 py-3 font-semibold">Наименование</th>
+                    <th className="px-3 py-3 w-32 font-semibold text-right">Сфера</th>
+                    <th className="px-3 py-3 w-28 font-semibold text-right">Базовая цена</th>
+                    <th className="px-3 py-3 w-28 font-semibold text-right">Ед. изм. *</th>
+                    <th className="px-3 py-3 w-36 font-bold text-indigo-700 bg-indigo-50 text-right">
+                      Твоя цена<br/>
+                      <span className="text-[9px] text-indigo-500 normal-case tracking-normal">
+                        {supplierId !== 'supplier1' ? (selectedRegion || 'Выберите регион') : 'Global'}
+                      </span>
+                    </th>
+                    <th className="px-3 py-3 w-28 text-center font-semibold">Действия</th>
+                  </tr>
+                </thead>
              <tbody className="divide-y divide-slate-200">
                {displayedProducts.slice(0, visibleCount).map(p => {
                  const baseVal = getBasePrice(p);
@@ -1045,11 +1157,20 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                      )}
                    </td>
                    <td className="px-3 py-2">
-                     <div className="font-semibold text-slate-900 leading-tight flex items-center gap-1.5">
+                     <div className="font-semibold text-slate-900 leading-tight flex items-center gap-1.5 flex-wrap">
                        <span>{p.name}</span>
                        {p.code && (
                          <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                            #{p.code}
+                         </span>
+                       )}
+                       {p.createdAt && Date.now() - p.createdAt < 24 * 60 * 60 * 1000 && (
+                         <span
+                           className="flex-shrink-0 text-[10px] font-bold tracking-wider text-rose-600 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                           title="Новый товар, загружен менее 24 часов назад"
+                         >
+                           <Clock className="w-3 h-3 text-rose-500" />
+                           НОВЫЙ
                          </span>
                        )}
                      </div>
@@ -1076,22 +1197,31 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                       </select>
                    </td>
                    <td className="px-3 py-2 w-36 text-right bg-indigo-50/30 font-mono">
-                     <div className="flex justify-end gap-1 items-center relative">
-                        <input
-                          type="text"
-                          value={displayVal}
-                          onClick={e => e.stopPropagation()}
-                          onChange={(e) => handlePriceChange(p.id, e.target.value)}
-                          onKeyDown={(e) => {
-                             if (e.key === 'Enter') {
-                               saveProductPrice(p.id);
-                             }
-                          }}
-                          placeholder={baseVal > 0 ? String(baseVal) : "0.00"}
-                          className={`w-24 text-right px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-semibold transition-colors
-                            ${hasChanged ? 'border-yellow-400 bg-yellow-50 text-indigo-900 shadow-inner' : 'border-slate-300 bg-white text-slate-900 focus:border-indigo-400'}`}
-                        />
-                     </div>
+                     {supplierId !== 'supplier1' && !selectedRegion ? (
+                       <span 
+                         className="text-xs text-slate-400 font-medium px-2 py-1 bg-slate-100 rounded border border-slate-200 select-none inline-block"
+                         title="Выберите регион в меню сверху, чтобы просмотреть и редактировать цены для конкретного региона"
+                       >
+                         —
+                       </span>
+                     ) : (
+                       <div className="flex justify-end gap-1 items-center relative">
+                          <input
+                            type="text"
+                            value={displayVal}
+                            onClick={e => e.stopPropagation()}
+                            onChange={(e) => handlePriceChange(p.id, e.target.value)}
+                            onKeyDown={(e) => {
+                               if (e.key === 'Enter') {
+                                 saveProductPrice(p.id);
+                               }
+                            }}
+                            placeholder={baseVal > 0 ? String(baseVal) : "0.00"}
+                            className={`w-24 text-right px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-semibold transition-colors
+                              ${hasChanged ? 'border-yellow-400 bg-yellow-50 text-indigo-900 shadow-inner' : 'border-slate-300 bg-white text-slate-900 focus:border-indigo-400'}`}
+                          />
+                       </div>
+                     )}
                    </td>
                    <td className="px-3 py-2 w-28 text-center border-l border-slate-200 bg-slate-50" onClick={e => e.stopPropagation()}>
                      <div className="flex items-center justify-center gap-1">
@@ -1102,9 +1232,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                        ) : (
                           <button
                             onClick={() => saveProductPrice(p.id)}
-                            disabled={!hasChanged || isRowSaving}
-                            className={`p-1.5 rounded-md transition-all ${hasChanged ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                            title="Сохранить цену"
+                            disabled={!hasChanged || isRowSaving || (!selectedRegion && supplierId !== 'supplier1')}
+                            className={`p-1.5 rounded-md transition-all ${hasChanged && (selectedRegion || supplierId === 'supplier1') ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                            title={!selectedRegion && supplierId !== 'supplier1' ? "Сначала выберите регион в меню сверху" : "Сохранить цену"}
                           >
                             <Save className="w-4 h-4" />
                           </button>
@@ -1131,7 +1261,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
              </tbody>
            </table>
             </div>
-           )}
 
            {displayedProducts.length > 0 && (
              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 font-medium">
@@ -1152,7 +1281,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
              </div>
            )}
 
-           {displayedProducts.length === 0 && selectedRegion && (
+           {displayedProducts.length === 0 && (
              <div className="p-8 text-center text-slate-500 text-sm">
                Товары не найдены
              </div>
@@ -1249,21 +1378,33 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       {/* Manual Add / Edit Product Modal */}
       {isProductModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-800">
-                {editingProductId ? "Редактировать товар" : "Добавить товар в каталог"}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-slate-800">
+                  {editingProductId
+                    ? "Редактировать товар"
+                    : "Добавить товар вручную"}
+                </h2>
+                {editingProductId && productForm.code && (
+                  <span className="text-xs font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                    #{productForm.code}
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => setIsProductModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitProduct} className="flex flex-col p-6 gap-4 overflow-y-auto" onPaste={handlePasteImage}>
-              
+            <form
+              onSubmit={handleSubmitProduct}
+              className="flex flex-col p-6 gap-4 overflow-y-auto max-h-[85vh]"
+              onPaste={handlePasteImage}
+            >
               {/* Spheres */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
@@ -1275,7 +1416,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                     onClick={() => setIsCustomSphere(!isCustomSphere)}
                     className="text-xs text-indigo-600 hover:underline"
                   >
-                    {isCustomSphere ? "Выбрать из списка" : "+ Добавить свою"}
+                    {isCustomSphere ? "Выбрать из списка" : "+ Добавить"}
                   </button>
                 </div>
                 {isCustomSphere ? (
@@ -1283,25 +1424,25 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                     type="text"
                     value={productForm.spheres.join(", ")}
                     onChange={(e) =>
-                      setProductForm(prev => ({
+                      setProductForm((prev) => ({
                         ...prev,
                         spheres: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
                       }))
                     }
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     required
                     placeholder="Введите сферы через запятую..."
                   />
                 ) : (
-                  <div className="flex flex-col gap-2 max-h-36 overflow-y-auto border border-slate-300 rounded-lg p-2 bg-white shadow-xs">
-                    {globalDict.spheres.map((s) => (
+                  <div className="flex flex-col gap-2 max-h-40 overflow-y-auto border border-slate-300 rounded-md p-2 bg-white shadow-sm">
+                    {uniqueSpheres.map((s) => (
                       <label key={s} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
                         <input
                           type="checkbox"
                           checked={productForm.spheres.includes(s)}
                           onChange={(e) => {
                             const checked = e.target.checked;
-                            setProductForm(prev => {
+                            setProductForm((prev) => {
                               const newSpheres = checked
                                 ? [...prev.spheres, s]
                                 : prev.spheres.filter((sphere) => sphere !== s);
@@ -1313,7 +1454,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                         {s}
                       </label>
                     ))}
-                    {globalDict.spheres.length === 0 && (
+                    {uniqueSpheres.length === 0 && (
                       <span className="text-slate-400 p-2 text-xs text-center">Нет доступных сфер</span>
                     )}
                   </div>
@@ -1324,7 +1465,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
                   <label className="text-sm font-semibold text-slate-700">
-                    Название товара *
+                    Название *
                   </label>
                   <button
                     type="button"
@@ -1339,64 +1480,14 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                   type="text"
                   value={productForm.name}
                   onChange={(e) =>
-                    setProductForm(prev => ({
+                    setProductForm((prev) => ({
                       ...prev,
                       name: e.target.value,
                     }))
                   }
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Например, Перфоратор TOTAL 800Вт"
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Например, Стол из нержавеющей стали"
                   required
-                />
-              </div>
-
-              {/* Code / Article */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Код / Артикул
-                  </label>
-                  <input
-                    type="text"
-                    value={productForm.code}
-                    onChange={(e) =>
-                      setProductForm(prev => ({
-                        ...prev,
-                        code: e.target.value,
-                      }))
-                    }
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="#0042"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Единица измерения *
-                  </label>
-                  <select
-                    value={productForm.unit}
-                    onChange={(e) => setProductForm(prev => ({ ...prev, unit: e.target.value }))}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                  >
-                    {UNITS.map(u => (
-                      <option key={u.value} value={u.value}>{u.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Category */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700">
-                  Категория
-                </label>
-                <input
-                  type="text"
-                  value={productForm.category}
-                  onChange={(e) => setProductForm(prev => ({ ...prev, category: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Например, Электроинструмент"
                 />
               </div>
 
@@ -1407,94 +1498,206 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 </label>
                 <textarea
                   value={productForm.description}
-                  onChange={(e) => setProductForm(prev => ({ ...prev, description: e.target.value }))}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none h-20"
-                  placeholder="Характеристики товара..."
+                  onChange={(e) =>
+                    setProductForm((prev) => ({
+                      ...prev,
+                      description: e.target.value,
+                    }))
+                  }
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none h-24"
+                  placeholder="Краткое описание товара..."
                 />
               </div>
 
-              {/* Prices */}
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-700">
-                    Базовая цена (Каталог)
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={productForm.basePrice}
-                      onChange={(e) => setProductForm(prev => ({ ...prev, basePrice: e.target.value }))}
-                      className="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1.5 text-sm font-mono font-semibold"
-                      placeholder="0.00"
-                    />
-                    <span className="absolute right-2.5 top-2 text-xs text-slate-400 font-bold">с.</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-indigo-700">
-                    Твоя цена {selectedRegion ? `(${selectedRegion})` : ''}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={productForm.supplierPrice}
-                      onChange={(e) => setProductForm(prev => ({ ...prev, supplierPrice: e.target.value }))}
-                      className="w-full border border-indigo-300 bg-indigo-50/50 rounded-lg pl-2.5 pr-8 py-1.5 text-sm font-mono font-bold text-indigo-900"
-                      placeholder="0.00"
-                    />
-                    <span className="absolute right-2.5 top-2 text-xs text-indigo-400 font-bold">с.</span>
-                  </div>
+              {/* Base Price */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-semibold text-slate-700">
+                  Базовая цена товара (Главный каталог) *
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={productForm.basePrice}
+                    onChange={(e) =>
+                      setProductForm((prev) => ({
+                        ...prev,
+                        basePrice: e.target.value,
+                      }))
+                    }
+                    className="w-full border border-slate-300 rounded-md pl-3 pr-12 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-semibold"
+                    placeholder="0.00"
+                    required
+                  />
+                  <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">
+                    с.
+                  </span>
                 </div>
               </div>
 
-              {/* Image Preview & Upload */}
+              {/* Regional Prices for Supplier */}
+              {supplierId !== 'supplier1' && (
+                <div className="flex flex-col gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 mt-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                      Цены по регионам ({currentSupplierLabel}):
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 mt-1">
+                    {globalDict.regions.map((reg) => {
+                      const currentOverride = productForm.regionalPrices[reg] ?? "";
+                      const basePriceVal = parseFloat(productForm.basePrice) || 0;
+                      const regionMarkup = globalDict.pricingRules?.[supplierId]?.[reg] ?? 0;
+
+                      return (
+                        <div
+                          key={reg}
+                          className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 gap-4"
+                        >
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-xs font-semibold text-slate-700 truncate">
+                              {reg}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-medium font-mono leading-none mt-0.5">
+                              Авто:{" "}
+                              {basePriceVal > 0
+                                ? `${(basePriceVal * (1 + regionMarkup / 100)).toFixed(2)} с. `
+                                : "—"}
+                              {regionMarkup !== 0
+                                ? `(${regionMarkup >= 0 ? "+" : ""}${regionMarkup}%)`
+                                : ""}
+                            </span>
+                          </div>
+                          <div className="relative shrink-0 w-28">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={currentOverride}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setProductForm((prev) => ({
+                                  ...prev,
+                                  regionalPrices: {
+                                    ...prev.regionalPrices,
+                                    [reg]: val,
+                                  },
+                                }));
+                              }}
+                              className="w-full border border-slate-300 rounded-md pl-2 pr-6 py-1 text-xs text-right font-mono font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              placeholder="Авто"
+                            />
+                            <span className="absolute right-1.5 top-1 px-0.5 text-[10px] text-slate-400 font-bold select-none">
+                              с.
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Unit of Measurement */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700">
-                  Фото товара
-                </label>
-                <div className="flex items-center gap-4">
-                  <div className="w-24 h-24 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 relative">
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-semibold text-slate-700">
+                    Ед. измерения *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomUnit(!isCustomUnit)}
+                    className="text-xs text-indigo-600 hover:underline"
+                  >
+                    {isCustomUnit ? "Выбрать из списка" : "+ Своя"}
+                  </button>
+                </div>
+                {isCustomUnit ? (
+                  <input
+                    type="text"
+                    value={productForm.unit}
+                    onChange={(e) =>
+                      setProductForm((prev) => ({
+                        ...prev,
+                        unit: e.target.value,
+                      }))
+                    }
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                    placeholder="Например: литр, метр, мм..."
+                  />
+                ) : (
+                  <select
+                    value={productForm.unit}
+                    onChange={(e) =>
+                      setProductForm((prev) => ({
+                        ...prev,
+                        unit: e.target.value,
+                      }))
+                    }
+                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    required
+                  >
+                    <option value="шт.">шт. (Штука)</option>
+                    <option value="кг">кг (Килограмм)</option>
+                    <option value="г">г (Грамм)</option>
+                    <option value="т">т (Тонна)</option>
+                    <option value="метр">метр (Метр)</option>
+                    <option value="мм">мм (Миллиметр)</option>
+                    <option value="см">см (Сантиметр)</option>
+                    <option value="литр">литр (Литр)</option>
+                    <option value="мл">мл (Миллилитр)</option>
+                    <option value="упак.">упак. (Упаковка)</option>
+                    <option value="короб.">короб. (Коробка)</option>
+                    <option value="компл.">компл. (Комплект)</option>
+                  </select>
+                )}
+              </div>
+
+              {/* Photo Upload and Preview */}
+              <div className="flex gap-4">
+                <div className="flex flex-col gap-1.5 flex-1">
+                  <label className="text-sm font-semibold text-slate-700">
+                    Фото
+                  </label>
+                  <label className="w-full h-24 border-2 border-dashed border-slate-300 rounded-md flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-colors relative">
                     {productForm.imageBase64 ? (
-                      <>
+                      <div className="relative h-full flex items-center justify-center p-1">
                         <img
                           src={productForm.imageBase64}
                           alt="Preview"
-                          className="w-full h-full object-contain p-1"
+                          className="h-full object-contain"
                         />
                         <button
                           type="button"
-                          onClick={() => setProductForm(prev => ({ ...prev, imageBase64: '', mimeType: '' }))}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setProductForm((prev) => ({ ...prev, imageBase64: '', mimeType: '' }));
+                          }}
                           className="absolute top-1 right-1 p-1 bg-slate-900/80 text-white rounded-full hover:bg-rose-600 transition-colors"
                           title="Удалить фото"
                         >
                           <X className="w-3 h-3" />
                         </button>
-                      </>
+                      </div>
                     ) : (
-                      <div className="flex flex-col items-center gap-1 text-slate-400 text-center p-2">
+                      <div className="flex flex-col items-center gap-1 text-slate-400">
                         <Camera className="w-6 h-6" />
-                        <span className="text-[10px]">Загрузить или Ctrl+V</span>
+                        <span className="text-xs">
+                          Загрузить фото (из файла или Ctrl+V)
+                        </span>
                       </div>
                     )}
-                  </div>
-
-                  <div className="flex flex-col gap-2 flex-1">
-                    <label className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg cursor-pointer transition-colors border border-slate-200 text-center">
-                      <span>Выберите файл с диска</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProductImageUpload}
-                        className="hidden"
-                      />
-                    </label>
-                    <span className="text-[11px] text-slate-400">Поддерживаются PNG, JPG, WEBP. Можно вставить из буфера обмена (Ctrl+V).</span>
-                  </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProductImageUpload}
+                      className="hidden"
+                    />
+                  </label>
                 </div>
               </div>
 
@@ -1502,20 +1705,21 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 <button
                   type="button"
                   onClick={() => setIsProductModalOpen(false)}
-                  className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors text-sm"
+                  className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors text-sm"
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg transition-all text-sm flex items-center gap-2 shadow-sm disabled:opacity-50"
+                  className="px-4 py-2 font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed rounded-md transition-colors shadow-sm text-sm flex items-center gap-1.5"
                 >
-                  {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                  <span>{editingProductId ? "Сохранить изменения" : "Добавить товар"}</span>
+                  {isSaving && (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  )}
+                  {isSaving ? "Сохранение..." : "Сохранить"}
                 </button>
               </div>
-
             </form>
           </div>
         </div>

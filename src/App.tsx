@@ -1064,7 +1064,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isAdminMode, setIsAdminMode] = useState(
     () => localStorage.getItem("catalog_admin") === "true",
   );
-  const isReallyAdmin = isAdminMode && !portalFacilitator;
+  const isReallyAdmin = !portalFacilitator && (isAdminMode || isAdminPageAuthenticated);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const priceExcelInputRef = useRef<HTMLInputElement>(null);
   const [isImportingPrices, setIsImportingPrices] = useState(false);
@@ -2617,19 +2617,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const hasGkPrice = displayProducts.some((p) => p.price !== undefined && p.price > 0);
 
   const hasSupplier2Price = displayProducts.some((p) => {
-    const activeReg = selectedRegion || p.region || "Душанбе";
+    const activeReg = selectedRegion || "Душанбе";
     const pr = getProductPriceForSupplierAndRegion(p, "supplier2", activeReg);
     return pr !== undefined && pr > 0;
   });
 
   const hasSupplier3Price = displayProducts.some((p) => {
-    const activeReg = selectedRegion || p.region || "Душанбе";
+    const activeReg = selectedRegion || "Душанбе";
     const pr = getProductPriceForSupplierAndRegion(p, "supplier3", activeReg);
     return pr !== undefined && pr > 0;
   });
 
   const hasSupplier4Price = displayProducts.some((p) => {
-    const activeReg = selectedRegion || p.region || "Душанбе";
+    const activeReg = selectedRegion || "Душанбе";
     const pr = getProductPriceForSupplierAndRegion(p, "supplier4", activeReg);
     return pr !== undefined && pr > 0;
   });
@@ -2676,6 +2676,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               if (adminPageInputCode === expectedPassword) {
                 sessionStorage.setItem("main_admin_auth", "true");
                 setIsAdminPageAuthenticated(true);
+                setIsAdminMode(true);
+                localStorage.setItem("catalog_admin", "true");
               } else {
                 alert("Неверный пароль!");
                 setAdminPageInputCode("");
@@ -3142,10 +3144,10 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   </>
                 )}
 
-                {isReallyAdmin && !isTabletMode && (
+                {isReallyAdmin && (
                   <button
                     onClick={handleOpenManualModal}
-                    className="flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+                    className="flex items-center gap-2 px-4 py-2 rounded-md shadow-sm transition-colors text-sm font-medium mr-2 bg-indigo-600 hover:bg-indigo-700 text-white shrink-0"
                   >
                     <Plus className="w-4 h-4" />
                     Добавить вручную

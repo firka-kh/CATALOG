@@ -73,9 +73,13 @@ export const UpdateNotifier: React.FC = () => {
     };
   }, []);
 
+  const [isReloading, setIsReloading] = useState(false);
+
   if (!updateAvailable) return null;
 
   const handleReload = async () => {
+    if (isReloading) return;
+    setIsReloading(true);
     try {
       if ("serviceWorker" in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
@@ -92,9 +96,8 @@ export const UpdateNotifier: React.FC = () => {
     } catch (e) {
       console.error("Cache clear error:", e);
     }
-    const currentUrl = new URL(window.location.href);
-    currentUrl.searchParams.set("_v", Date.now().toString());
-    window.location.href = currentUrl.toString();
+    // Hard refresh like F5
+    window.location.reload();
   };
 
   return (
@@ -115,10 +118,11 @@ export const UpdateNotifier: React.FC = () => {
 
       <button
         onClick={handleReload}
-        className="flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:scale-95 text-slate-900 font-extrabold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-lg transition-all transform hover:scale-105 cursor-pointer border border-yellow-400 whitespace-nowrap animate-bounce"
+        disabled={isReloading}
+        className="flex items-center gap-2 bg-yellow-300 hover:bg-yellow-200 active:scale-95 text-slate-900 font-extrabold px-4 py-2 rounded-xl text-xs sm:text-sm shadow-lg transition-all transform hover:scale-105 cursor-pointer border border-yellow-400 whitespace-nowrap animate-bounce disabled:opacity-75"
       >
-        <RefreshCw className="w-4 h-4 animate-spin text-slate-900" />
-        <span>ОБНОВИТЬ СЕЙЧАС</span>
+        <RefreshCw className={`w-4 h-4 text-slate-900 ${isReloading ? "animate-spin" : ""}`} />
+        <span>{isReloading ? "ОБНОВЛЕНИЕ..." : "ОБНОВИТЬ СЕЙЧАС"}</span>
       </button>
     </div>
   );

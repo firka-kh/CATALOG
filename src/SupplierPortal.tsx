@@ -6,6 +6,7 @@ import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCir
 import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
 import { UpdateNotifier } from './components/UpdateNotifier';
 import { generateNextProductCode } from './lib/generateNextCode';
+import { formatSupplierCode } from './lib/supplierUtils';
 
 const UNITS = [
     { value: 'шт.', label: 'шт. (Штука)' },
@@ -185,9 +186,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const getSupplierLabel = (sup: 'supplier1' | 'supplier2' | 'supplier3' | 'supplier4') => {
     if (sup === 'supplier1') return 'Логистика';
     const list = globalDict.suppliers || [];
-    if (sup === 'supplier2') return list[0] || 'Поставщик 1';
-    if (sup === 'supplier3') return list[1] || 'Поставщик 2';
-    return list[2] || 'Поставщик 3';
+    const idx = sup === 'supplier2' ? 0 : sup === 'supplier3' ? 1 : sup === 'supplier4' ? 2 : -1;
+    const assignedCode = globalDict.supplierAssignedCodes?.[sup];
+    return formatSupplierCode(sup, assignedCode || (idx >= 0 ? list[idx] : undefined), idx >= 0 ? idx : undefined);
   };
 
   const currentSupplierLabel = getSupplierLabel(supplierId);
@@ -233,12 +234,69 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
     setEditedUnits(prev => ({ ...prev, [productId]: val }));
   };
 
-  const saveProductPrice = async (productId: string) => {
-    if (!selectedRegion && supplierId !== 'supplier1') {
-      alert("Сначала выберите Регион, для которого вы хотите установить цену.");
-      return;
+  const getSupplierKey = (sup: string): keyof Product => {
+    return (sup === 'supplier2' ? 'priceSupplier2' : sup === 'supplier3' ? 'priceSupplier3' : sup === 'supplier4' ? 'priceSupplier4' : 'priceSupplier1') as keyof Product;
+  };
+
+  const getSupplierPriceDetails = useCallback((p: Product) => {
+    if (supplierId === 'supplier1') {
+      const val = typeof p.priceSupplier1 === 'number' && p.priceSupplier1 > 0 ? p.priceSupplier1 : (typeof p.price === 'number' && p.price > 0 ? p.price : 0);
+      return {
+        mainPrice: val,
+        hasVariation: false,
+        min: val,
+        max: val,
+        regions: [] as Array<{ region: string; price: number }>,
+      };
     }
 
+    const supKey = getSupplierKey(supplierId);
+    const baseSupPrice = typeof p[supKey] === 'number' ? (p[supKey] as number) : 0;
+    const supPrices = p.prices?.[supplierId] || {};
+    const validRegions = Object.entries(supPrices)
+      .filter(([_, v]) => typeof v === 'number' && (v as number) > 0)
+      .map(([region, price]) => ({ region, price: price as number }));
+
+    if (selectedRegion) {
+      const regPrice = supPrices[selectedRegion] !== undefined ? supPrices[selectedRegion] : (baseSupPrice || p.price || 0);
+      return {
+        mainPrice: regPrice,
+        hasVariation: false,
+        min: regPrice,
+        max: regPrice,
+        regions: validRegions,
+      };
+    }
+
+    // When "Выбери регион для цен" / Все регионы is active:
+    const allPrices = validRegions.map(r => r.price);
+    if (baseSupPrice > 0) {
+      allPrices.push(baseSupPrice);
+    }
+    if (allPrices.length === 0 && typeof p.price === 'number' && p.price > 0) {
+      allPrices.push(p.price);
+    }
+
+    const min = allPrices.length > 0 ? Math.min(...allPrices) : 0;
+    const max = allPrices.length > 0 ? Math.max(...allPrices) : 0;
+    const hasVariation = allPrices.length > 1 && min !== max;
+
+    // Default primary price: baseSupPrice > 0 ? baseSupPrice : Dushanbe price : first valid region : catalog base price
+    const dushanbePrice = supPrices['Душанбе'];
+    const mainPrice = baseSupPrice > 0 
+      ? baseSupPrice 
+      : (typeof dushanbePrice === 'number' && dushanbePrice > 0 ? dushanbePrice : (validRegions.length > 0 ? validRegions[0].price : (p.price || 0)));
+
+    return {
+      mainPrice,
+      hasVariation,
+      min,
+      max,
+      regions: validRegions,
+    };
+  }, [supplierId, selectedRegion]);
+
+  const saveProductPrice = async (productId: string) => {
     const priceInput = editedPrices[productId];
     const unitInput = editedUnits[productId];
     if (priceInput === undefined && unitInput === undefined) return;
@@ -262,13 +320,25 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         if (supplierId === 'supplier1') {
            updateData.priceSupplier1 = newPriceNum;
         } else {
-           const prices = p.prices || { supplier1: {}, supplier2: {}, supplier3: {}, supplier4: {} };
+           const prices = p.prices ? structuredClone(p.prices) : { supplier1: {}, supplier2: {}, supplier3: {}, supplier4: {} };
            if (!prices[supplierId]) prices[supplierId] = {};
-           
-           if (newPriceStr === '') {
-               delete prices[supplierId][selectedRegion];
+           const supKey = getSupplierKey(supplierId);
+
+           if (selectedRegion) {
+             if (newPriceStr === '' || newPriceNum === 0) {
+                 delete prices[supplierId][selectedRegion];
+             } else {
+                 prices[supplierId][selectedRegion] = newPriceNum;
+             }
            } else {
-               prices[supplierId][selectedRegion] = newPriceNum;
+             (updateData as any)[supKey] = newPriceNum;
+             if (newPriceStr === '' || newPriceNum === 0) {
+                 prices[supplierId] = {};
+             } else {
+                 globalDict.regions.forEach(reg => {
+                     prices[supplierId][reg] = newPriceNum;
+                 });
+             }
            }
            updateData.prices = prices;
         }
@@ -291,11 +361,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   };
 
   const handleSaveAllPrices = async () => {
-    if (!selectedRegion && supplierId !== 'supplier1') {
-      alert("Сначала выберите Регион, для которого вы хотите сохранить цены.");
-      return;
-    }
-
     const updatesToMake = displayedProducts.filter(p => {
         const priceInput = editedPrices[p.id];
         const unitInput = editedUnits[p.id];
@@ -329,13 +394,25 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             if (supplierId === 'supplier1') {
                updateData.priceSupplier1 = newPriceNum;
             } else {
-               const prices = p.prices || { supplier1: {}, supplier2: {}, supplier3: {}, supplier4: {} };
+               const prices = p.prices ? structuredClone(p.prices) : { supplier1: {}, supplier2: {}, supplier3: {}, supplier4: {} };
                if (!prices[supplierId]) prices[supplierId] = {};
-               
-               if (newPriceStr === '') {
-                   delete prices[supplierId][selectedRegion];
+               const supKey = getSupplierKey(supplierId);
+
+               if (selectedRegion) {
+                 if (newPriceStr === '' || newPriceNum === 0) {
+                     delete prices[supplierId][selectedRegion];
+                 } else {
+                     prices[supplierId][selectedRegion] = newPriceNum;
+                 }
                } else {
-                   prices[supplierId][selectedRegion] = newPriceNum;
+                 (updateData as any)[supKey] = newPriceNum;
+                 if (newPriceStr === '' || newPriceNum === 0) {
+                     prices[supplierId] = {};
+                 } else {
+                     globalDict.regions.forEach(reg => {
+                         prices[supplierId][reg] = newPriceNum;
+                     });
+                 }
                }
                updateData.prices = prices;
             }
@@ -373,11 +450,8 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   };
 
   const getCurrentOverride = (p: Product) => {
-     if (supplierId === 'supplier1') return p.priceSupplier1 || '';
-     if (selectedRegion && p.prices && p.prices[supplierId] && p.prices[supplierId][selectedRegion] !== undefined) {
-         return p.prices[supplierId][selectedRegion];
-     }
-     return '';
+     const details = getSupplierPriceDetails(p);
+     return details.mainPrice > 0 ? details.mainPrice : '';
   };
 
   useEffect(() => {
@@ -386,10 +460,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
   const handleExport = async () => {
     if (products.length === 0) return;
-    if (supplierId !== 'supplier1' && !selectedRegion) {
-        alert("Пожалуйста, сначала выберите Регион для формирования прайса.");
-        return;
-    }
     try {
         setIsExporting(true);
         await downloadSupplierExcel(displayedProducts, supplierId, selectedRegion, currentSupplierLabel);
@@ -404,12 +474,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (supplierId !== 'supplier1' && !selectedRegion) {
-        alert("Пожалуйста, выберите Регион перед загрузкой прайса.");
-        if (fileInputRef.current) fileInputRef.current.value = '';
-        return;
-    }
 
     try {
         setIsImporting(true);
@@ -434,13 +498,26 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                const val = update.price === '' ? 0 : update.price;
                updateData.priceSupplier1 = val;
            } else {
-               const prices = p.prices || { supplier1: {}, supplier2: {}, supplier3: {}, supplier4: {} };
+               const prices = p.prices ? structuredClone(p.prices) : { supplier1: {}, supplier2: {}, supplier3: {}, supplier4: {} };
                if (!prices[supplierId]) prices[supplierId] = {};
-               
-               if (update.price === '') {
-                   delete prices[supplierId][selectedRegion];
+               const supKey = getSupplierKey(supplierId);
+
+               if (selectedRegion) {
+                 if (update.price === '' || update.price === 0) {
+                     delete prices[supplierId][selectedRegion];
+                 } else {
+                     prices[supplierId][selectedRegion] = update.price;
+                 }
                } else {
-                   prices[supplierId][selectedRegion] = update.price;
+                 const numVal = update.price === '' ? 0 : update.price;
+                 (updateData as any)[supKey] = numVal;
+                 if (numVal === 0) {
+                     prices[supplierId] = {};
+                 } else {
+                     globalDict.regions.forEach(r => {
+                         prices[supplierId][r] = numVal;
+                     });
+                 }
                }
                
                updateData.prices = prices;
@@ -450,7 +527,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
            count++;
            totalUpdated++;
 
-           if (count === 500) {
+           if (count === 400) {
                await batch.commit();
                batch = writeBatch(db);
                count = 0;
@@ -477,6 +554,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         let batch = writeBatch(db);
         let count = 0;
         let totalUpdated = 0;
+        const supKey = getSupplierKey(supplierId);
 
         for (const p of products) {
             let hasPriceToClear = false;
@@ -488,13 +566,27 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                     updatePayload = { priceSupplier1: 0 };
                 }
             } else {
-                if (selectedRegion && p.prices && p.prices[supplierId] && p.prices[supplierId][selectedRegion] !== undefined) {
-                    hasPriceToClear = true;
-                    const nextPrices = structuredClone(p.prices);
-                    if (nextPrices[supplierId]) {
-                        delete nextPrices[supplierId][selectedRegion];
+                if (selectedRegion) {
+                    if (p.prices && p.prices[supplierId] && p.prices[supplierId][selectedRegion] !== undefined) {
+                        hasPriceToClear = true;
+                        const nextPrices = structuredClone(p.prices);
+                        if (nextPrices[supplierId]) {
+                            delete nextPrices[supplierId][selectedRegion];
+                        }
+                        updatePayload = { prices: nextPrices };
                     }
-                    updatePayload = { prices: nextPrices };
+                } else {
+                    const currentBase = (p as any)[supKey];
+                    const hasRegPrices = p.prices && p.prices[supplierId] && Object.keys(p.prices[supplierId]).length > 0;
+                    if ((currentBase !== undefined && currentBase !== 0) || hasRegPrices) {
+                        hasPriceToClear = true;
+                        const nextPrices = p.prices ? structuredClone(p.prices) : {};
+                        nextPrices[supplierId] = {};
+                        updatePayload = {
+                            [supKey]: 0,
+                            prices: nextPrices,
+                        };
+                    }
                 }
             }
 
@@ -504,7 +596,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 count++;
                 totalUpdated++;
 
-                if (count === 500) {
+                if (count === 400) {
                    await batch.commit();
                    batch = writeBatch(db);
                    count = 0;
@@ -513,7 +605,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         }
 
         if (count > 0) {
-           await batch.commit();
+            await batch.commit();
         }
 
         setShowClearConfirm(false);
@@ -1030,7 +1122,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               onChange={(e) => setSelectedRegion(e.target.value)}
               className="border border-indigo-400 rounded-lg px-3 py-1.5 text-sm bg-indigo-50 text-indigo-900 font-semibold shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 shrink-0"
             >
-              <option value="">Выберите регион для цен...</option>
+              <option value="">Выбери регион для цен (Все регионы)</option>
               {globalDict.regions.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           )}
@@ -1073,10 +1165,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             </button>
             <button
                onClick={() => {
-                 if (supplierId !== 'supplier1' && !selectedRegion) {
-                   alert("Пожалуйста, сначала выберите регион, для которого вы хотите загрузить цены.");
-                   return;
-                 }
                  fileInputRef.current?.click();
                }}
                disabled={isImporting || isClearing}
@@ -1087,10 +1175,6 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             </button>
             <button
                onClick={() => {
-                 if (supplierId !== 'supplier1' && !selectedRegion) {
-                   alert("Пожалуйста, сначала выберите регион для цен.");
-                   return;
-                 }
                  setShowClearConfirm(true);
                }}
                disabled={isClearing}
@@ -1106,7 +1190,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               <div className="flex items-center gap-2.5">
                 <AlertCircle className="w-5 h-5 text-indigo-600 shrink-0" />
                 <span>
-                  Отображаются все товары каталога. Выберите конкретный регион в меню сверху, чтобы просмотреть и редактировать цены для него.
+                  Режим «Все регионы»: в колонке «Твоя цена» отображаются цены всех товаров. Вы можете редактировать общие цены сразу для всех регионов, либо переключиться на конкретный регион в меню выше для точечной настройки.
                 </span>
               </div>
             </div>
@@ -1125,7 +1209,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                     <th className="px-3 py-3 w-36 font-bold text-indigo-700 bg-indigo-50 text-right">
                       Твоя цена<br/>
                       <span className="text-[9px] text-indigo-500 normal-case tracking-normal">
-                        {supplierId !== 'supplier1' ? (selectedRegion || 'Выберите регион') : 'Global'}
+                        {supplierId !== 'supplier1' ? (selectedRegion || 'Все регионы') : 'Global'}
                       </span>
                     </th>
                     <th className="px-3 py-3 w-28 text-center font-semibold">Действия</th>
@@ -1134,7 +1218,8 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
              <tbody className="divide-y divide-slate-200">
                {displayedProducts.slice(0, visibleCount).map(p => {
                  const baseVal = getBasePrice(p);
-                 const originalVal = getCurrentOverride(p);
+                 const priceDetails = getSupplierPriceDetails(p);
+                 const originalVal = priceDetails.mainPrice > 0 ? priceDetails.mainPrice : '';
                  const editedVal = editedPrices[p.id];
                  const originalUnit = p.unit || 'шт.';
                  const editedUnitVal = editedUnits[p.id];
@@ -1197,15 +1282,8 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                       </select>
                    </td>
                    <td className="px-3 py-2 w-36 text-right bg-indigo-50/30 font-mono">
-                     {supplierId !== 'supplier1' && !selectedRegion ? (
-                       <span 
-                         className="text-xs text-slate-400 font-medium px-2 py-1 bg-slate-100 rounded border border-slate-200 select-none inline-block"
-                         title="Выберите регион в меню сверху, чтобы просмотреть и редактировать цены для конкретного региона"
-                       >
-                         —
-                       </span>
-                     ) : (
-                       <div className="flex justify-end gap-1 items-center relative">
+                     <div className="flex flex-col items-end">
+                       <div className="flex justify-end gap-1 items-center relative w-full">
                           <input
                             type="text"
                             value={displayVal}
@@ -1216,12 +1294,26 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                                  saveProductPrice(p.id);
                                }
                             }}
-                            placeholder={baseVal > 0 ? String(baseVal) : "0.00"}
+                            placeholder={baseVal > 0 ? String(baseVal) : (priceDetails.mainPrice > 0 ? String(priceDetails.mainPrice) : "0.00")}
                             className={`w-24 text-right px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-indigo-500 text-sm font-semibold transition-colors
                               ${hasChanged ? 'border-yellow-400 bg-yellow-50 text-indigo-900 shadow-inner' : 'border-slate-300 bg-white text-slate-900 focus:border-indigo-400'}`}
                           />
                        </div>
-                     )}
+                       {!selectedRegion && priceDetails.hasVariation && (
+                         <div 
+                           className="text-[10px] text-amber-700 font-sans font-medium mt-0.5 cursor-help flex items-center justify-end gap-1"
+                           title={`Цены по регионам:\n${priceDetails.regions.map(r => `• ${r.region}: ${r.price} с.`).join('\n')}`}
+                         >
+                           <span>{priceDetails.min}–{priceDetails.max} с.</span>
+                           <span className="text-[9px] bg-amber-100 text-amber-800 px-1 py-0.2 rounded font-medium">регионы</span>
+                         </div>
+                       )}
+                       {!selectedRegion && !priceDetails.hasVariation && priceDetails.mainPrice > 0 && (
+                         <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                           все регионы
+                         </div>
+                       )}
+                     </div>
                    </td>
                    <td className="px-3 py-2 w-28 text-center border-l border-slate-200 bg-slate-50" onClick={e => e.stopPropagation()}>
                      <div className="flex items-center justify-center gap-1">
@@ -1232,9 +1324,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                        ) : (
                           <button
                             onClick={() => saveProductPrice(p.id)}
-                            disabled={!hasChanged || isRowSaving || (!selectedRegion && supplierId !== 'supplier1')}
-                            className={`p-1.5 rounded-md transition-all ${hasChanged && (selectedRegion || supplierId === 'supplier1') ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
-                            title={!selectedRegion && supplierId !== 'supplier1' ? "Сначала выберите регион в меню сверху" : "Сохранить цену"}
+                            disabled={!hasChanged || isRowSaving}
+                            className={`p-1.5 rounded-md transition-all ${hasChanged ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-xs' : 'bg-slate-200 text-slate-400 cursor-not-allowed'}`}
+                            title={hasChanged ? "Сохранить изменения" : "Нет изменений"}
                           >
                             <Save className="w-4 h-4" />
                           </button>
@@ -1319,7 +1411,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               </div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">Обнулить все цены?</h3>
               <p className="text-sm text-slate-500 mb-6">
-                 Вы уверены, что хотите удалить ВСЕ введенные вами цены {supplierId === 'supplier1' ? 'в базе' : `для региона «${selectedRegion}»`}? Это действие необратимо.
+                 Вы уверены, что хотите удалить ВСЕ введенные вами цены {supplierId === 'supplier1' ? 'в базе' : (selectedRegion ? `для региона «${selectedRegion}»` : 'во всех регионах')}? Это действие необратимо.
               </p>
               <div className="flex w-full gap-3">
                 <button

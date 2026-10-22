@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { Product } from '../types';
+import { formatSupplierCode } from './supplierUtils';
 
 /**
  * Converts any image DataURL (including WebP, AVIF, HEIC, etc.)
@@ -81,9 +82,9 @@ export async function downloadCatalogExcel(products: Product[], suppliers?: stri
   const getSupLabel = (sup: 'supplier2' | 'supplier3' | 'supplier4', withCurrency = false) => {
     const suffix = withCurrency ? ' (с.)' : '';
     const list = suppliers || [];
-    if (sup === 'supplier2') return (list[0] || 'Поставщик 1') + suffix;
-    if (sup === 'supplier3') return (list[1] || 'Поставщик 2') + suffix;
-    return (list[2] || 'Поставщик 3') + suffix;
+    const idx = sup === 'supplier2' ? 0 : sup === 'supplier3' ? 1 : 2;
+    const code = formatSupplierCode(sup, list[idx], idx);
+    return `${code}${suffix}`;
   };
 
   const activeSuppliers = selectedSupplierScope 
@@ -311,7 +312,10 @@ export async function downloadCartExcel(
   selectedSphere?: string,
   clientName?: string,
   facilitatorName?: string,
-  note?: string
+  note?: string,
+  district?: string,
+  specialistName?: string,
+  beneficiaryId?: string
 ) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AI Catalog Creator';
@@ -351,10 +355,8 @@ export async function downloadCartExcel(
   const getSupName = (supp?: string) => {
     if (!supp || supp === "supplier1") return "Логистика";
     const list = suppliers || [];
-    if (supp === "supplier2") return list[0] || "Поставщик 1";
-    if (supp === "supplier3") return list[1] || "Поставщик 2";
-    if (supp === "supplier4") return list[2] || "Поставщик 3";
-    return "Поставщик";
+    const idx = supp === "supplier2" ? 0 : supp === "supplier3" ? 1 : supp === "supplier4" ? 2 : -1;
+    return formatSupplierCode(supp, idx >= 0 ? list[idx] : undefined, idx >= 0 ? idx : undefined);
   };
 
   // Group cart items by supplier
@@ -405,7 +407,8 @@ export async function downloadCartExcel(
     rowCursor++;
 
     if (clientName) {
-      const clientRow = summaryWs.addRow(["Миҷоз / Заказчик (ФИО):", clientName, "", "", "", "", ""]);
+      const displayClient = beneficiaryId ? `[ID: ${beneficiaryId}] ${clientName}` : clientName;
+      const clientRow = summaryWs.addRow(["Миҷоз / Заказчик (ФИО):", displayClient, "", "", "", "", ""]);
       summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
       clientRow.getCell(1).font = { bold: true, size: 10 };
       clientRow.getCell(2).font = { bold: true, size: 10 };
@@ -426,6 +429,17 @@ export async function downloadCartExcel(
       rowCursor++;
     }
 
+    if (specialistName) {
+      const specRow = summaryWs.addRow(["Специалист (кто заполнял):", specialistName, "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
+      specRow.getCell(1).font = { bold: true, size: 10 };
+      specRow.getCell(2).font = { bold: true, size: 10 };
+      for (let c = 1; c <= 7; c++) {
+        summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      }
+      rowCursor++;
+    }
+
     const infoRow1 = summaryWs.addRow(["Минтақа (Регион):", selectedRegion || "Ҳамаи минтақаҳо", "", "", "", "", ""]);
     summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
     infoRow1.getCell(1).font = { bold: true, size: 10 };
@@ -434,6 +448,17 @@ export async function downloadCartExcel(
       summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     }
     rowCursor++;
+
+    if (district) {
+      const distRow = summaryWs.addRow(["Ноҳия (Район):", district, "", "", "", "", ""]);
+      summaryWs.mergeCells(`B${rowCursor}:G${rowCursor}`);
+      distRow.getCell(1).font = { bold: true, size: 10 };
+      distRow.getCell(2).font = { size: 10 };
+      for (let c = 1; c <= 7; c++) {
+        summaryWs.getCell(rowCursor, c).border = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      }
+      rowCursor++;
+    }
 
     if (note) {
       const noteRow = summaryWs.addRow(["Заметка:", note, "", "", "", "", ""]);
@@ -617,11 +642,12 @@ export async function downloadQuotesRegistryExcel(
     const totalAmt = q.totalAmount || (q.items ? q.items.reduce((sum: number, item: any) => sum + (item.selectedPrice || 0) * (item.quantity || 1), 0) : 0) + (q.logisticsCost || 0);
     grandTotal += totalAmt;
 
+    const clientDisplay = q.beneficiaryId ? `[ID: ${q.beneficiaryId}] ${q.clientName || '—'}` : (q.clientName || '—');
     const row = registryWs.addRow([
       idx + 1,
       q.id || '',
       q.createdAt || '',
-      q.clientName || '—',
+      clientDisplay,
       q.facilitatorName || '—',
       q.selectedRegion || 'Все регионы',
       q.selectedSphere || '—',
@@ -746,3 +772,263 @@ export async function downloadQuotesRegistryExcel(
   const filenameTag = filterFacilitatorName && filterFacilitatorName !== 'all' ? `_${filterFacilitatorName.replace(/\s+/g, '_')}` : '';
   saveAs(blob, `Registry_Quotes${filenameTag}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '_')}.xlsx`);
 }
+
+export interface SupplierExportEntry {
+  key: string;
+  code: string;
+  legalName: string;
+  phone: string;
+  spheres: string[];
+  allRegions: boolean;
+  regions: string[];
+  districts: string[];
+  portalUrl: string;
+  pin: string;
+}
+
+export async function downloadSuppliersRegistryExcel(suppliersData: SupplierExportEntry[]) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Система каталога (Администратор)';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('Реестр поставщиков');
+
+  // Title Row
+  ws.mergeCells('A1:I1');
+  const titleCell = ws.getCell('A1');
+  titleCell.value = 'РЕЕСТР ПОСТАВЩИКОВ • ТАБЛИЦА СООТВЕТСТВИЯ КОДОВ И ЮРИДИЧЕСКИХ НАЗВАНИЙ';
+  titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(1).height = 30;
+
+  // Subtitle Row
+  ws.mergeCells('A2:I2');
+  const subtitleCell = ws.getCell('A2');
+  subtitleCell.value = `Конфиденциально для администратора • Дата формирования: ${new Date().toLocaleString('ru-RU')} • Всего поставщиков: ${suppliersData.length}`;
+  subtitleCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+  subtitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(2).height = 20;
+
+  // Header Row
+  const headers = [
+    '№',
+    'Код в системе',
+    'Юридическое (реальное) название',
+    'Телефон',
+    'Сферы деятельности',
+    'Охват регионов',
+    'Районы',
+    'Ссылка на портал',
+    'PIN-код'
+  ];
+
+  const headerRow = ws.addRow(headers);
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4338CA' } }; // Indigo-700
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF312E81' } },
+      bottom: { style: 'medium', color: { argb: 'FF312E81' } },
+      left: { style: 'thin', color: { argb: 'FF312E81' } },
+      right: { style: 'thin', color: { argb: 'FF312E81' } }
+    };
+  });
+
+  // Column widths
+  ws.getColumn(1).width = 6;   // No
+  ws.getColumn(2).width = 16;  // Code
+  ws.getColumn(3).width = 38;  // Legal Name
+  ws.getColumn(4).width = 20;  // Phone
+  ws.getColumn(5).width = 32;  // Spheres
+  ws.getColumn(6).width = 28;  // Regions
+  ws.getColumn(7).width = 34;  // Districts
+  ws.getColumn(8).width = 46;  // Portal URL
+  ws.getColumn(9).width = 14;  // PIN
+
+  // Data rows
+  suppliersData.forEach((s, idx) => {
+    const spheresStr = s.spheres && s.spheres.length > 0 ? s.spheres.join(', ') : 'Все сферы';
+    const regionsStr = s.allRegions ? 'Вся страна (все регионы)' : (s.regions && s.regions.length > 0 ? s.regions.join(', ') : 'Не указано');
+    const districtsStr = s.allRegions ? 'Все районы (вся страна)' : (s.districts && s.districts.length > 0 ? s.districts.join(', ') : 'Все районы выбранных регионов');
+
+    const row = ws.addRow([
+      idx + 1,
+      s.code,
+      s.legalName || '—',
+      s.phone || '—',
+      spheresStr,
+      regionsStr,
+      districtsStr,
+      s.portalUrl || '—',
+      s.pin || '—'
+    ]);
+
+    row.height = 24;
+    const isEven = idx % 2 === 0;
+
+    row.eachCell((cell, colNum) => {
+      cell.font = { name: 'Arial', size: 10 };
+      if (!isEven) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+      }
+
+      let horz: 'left' | 'center' | 'right' = 'left';
+      if (colNum === 1 || colNum === 2 || colNum === 4 || colNum === 9) {
+        horz = 'center';
+      }
+
+      if (colNum === 2) {
+        // Highlight code
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF4338CA' } };
+      }
+      if (colNum === 3) {
+        cell.font = { name: 'Arial', size: 10, bold: true };
+      }
+
+      cell.alignment = { vertical: 'middle', horizontal: horz, wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const dateStr = new Date().toISOString().slice(0, 10);
+  saveAs(blob, `Реестр_поставщиков_коды_${dateStr}.xlsx`);
+}
+
+export interface FacilitatorExportEntry {
+  key: string;
+  code: string;
+  legalName: string;
+  representative: string;
+  phone: string;
+  email: string;
+  region: string;
+  portalUrl: string;
+  pin: string;
+}
+
+export async function downloadFacilitatorsRegistryExcel(facilitatorsData: FacilitatorExportEntry[]) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Система каталога (Администратор)';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('Реестр фасилитаторов');
+
+  // Title Row
+  ws.mergeCells('A1:I1');
+  const titleCell = ws.getCell('A1');
+  titleCell.value = 'РЕЕСТР ФАСИЛИТАТОРОВ И ПРЕДСТАВИТЕЛЕЙ ОРГАНИЗАЦИЙ';
+  titleCell.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+  titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(1).height = 30;
+
+  // Subtitle Row
+  ws.mergeCells('A2:I2');
+  const subtitleCell = ws.getCell('A2');
+  subtitleCell.value = `Конфиденциально для администратора • Дата формирования: ${new Date().toLocaleString('ru-RU')} • Всего фасилитаторов: ${facilitatorsData.length}`;
+  subtitleCell.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+  subtitleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+  ws.getRow(2).height = 20;
+
+  // Header Row
+  const headers = [
+    '№',
+    'Код в системе',
+    'Организация (Юр. название)',
+    'ФИО представителя',
+    'Телефон',
+    'Электронная почта (Email)',
+    'Регион охвата',
+    'Ссылка на портал',
+    'PIN / Код доступа'
+  ];
+
+  const headerRow = ws.addRow(headers);
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4338CA' } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'medium', color: { argb: 'FF312E81' } },
+      bottom: { style: 'medium', color: { argb: 'FF312E81' } },
+      left: { style: 'thin', color: { argb: 'FF312E81' } },
+      right: { style: 'thin', color: { argb: 'FF312E81' } }
+    };
+  });
+
+  // Column widths
+  ws.getColumn(1).width = 6;   // No
+  ws.getColumn(2).width = 16;  // Code / Slot
+  ws.getColumn(3).width = 36;  // Org
+  ws.getColumn(4).width = 28;  // FIO
+  ws.getColumn(5).width = 18;  // Phone
+  ws.getColumn(6).width = 34;  // Email
+  ws.getColumn(7).width = 24;  // Region
+  ws.getColumn(8).width = 46;  // Portal URL
+  ws.getColumn(9).width = 18;  // PIN
+
+  // Data rows
+  facilitatorsData.forEach((f, idx) => {
+    const row = ws.addRow([
+      idx + 1,
+      f.code,
+      f.legalName || '—',
+      f.representative || '—',
+      f.phone || '—',
+      f.email || '—',
+      f.region || '—',
+      f.portalUrl || '—',
+      f.pin || '—'
+    ]);
+
+    row.height = 24;
+    const isEven = idx % 2 === 0;
+
+    row.eachCell((cell, colNum) => {
+      cell.font = { name: 'Arial', size: 10 };
+      if (!isEven) {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+      }
+
+      let horz: 'left' | 'center' | 'right' = 'left';
+      if (colNum === 1 || colNum === 2 || colNum === 5 || colNum === 7 || colNum === 9) {
+        horz = 'center';
+      }
+
+      if (colNum === 2) {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF4338CA' } };
+      }
+      if (colNum === 3) {
+        cell.font = { name: 'Arial', size: 10, bold: true };
+      }
+      if (colNum === 4) {
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF1E293B' } };
+      }
+
+      cell.alignment = { vertical: 'middle', horizontal: horz, wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } }
+      };
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const dateStr = new Date().toISOString().slice(0, 10);
+  saveAs(blob, `Реестр_фасилитаторов_${dateStr}.xlsx`);
+}
+

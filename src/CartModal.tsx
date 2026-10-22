@@ -16,6 +16,17 @@ import {
   BookmarkCheck,
   CheckCircle2,
   AlertTriangle,
+  Lock,
+  MapPin,
+  UserCheck,
+  Building2,
+  FileText,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Edit3,
+  History,
+  HelpCircle,
 } from "lucide-react";
 import { Product } from "./types";
 import {
@@ -29,7 +40,8 @@ import {
 import { db } from "./lib/firebase";
 
 import { downloadCartExcel } from "./lib/excelExport";
-import { saveQuoteToHistory } from "./lib/quotesHistory";
+import { saveQuoteToHistory, updateQuoteInHistory } from "./lib/quotesHistory";
+import { DISTRICTS_BY_REGION } from "./App";
 
 interface CartItem {
   product: Product;
@@ -48,7 +60,19 @@ interface Props {
     delta: number,
   ) => void;
   onPrint: () => void;
-  onPrintWithMeta?: (clientName: string, facilitatorName: string, note: string, quoteId?: string) => void;
+  onPrintWithMeta?: (
+    clientName: string,
+    facilitatorName: string,
+    note: string,
+    quoteId?: string,
+    district?: string,
+    specialistName?: string,
+    facilitatorLegalName?: string,
+    facilitatorRep?: string,
+    facilitatorPhone?: string,
+    facilitatorEmail?: string,
+    beneficiaryId?: string
+  ) => void;
   onOpenQuotesHistory?: () => void;
   suppliers: string[];
   products: Product[];
@@ -58,6 +82,9 @@ interface Props {
     price?: number,
   ) => void;
   selectedRegion: string;
+  selectedDistrict?: string;
+  onDistrictChange?: (district: string) => void;
+  districtsByRegion?: Record<string, string[]>;
   getProductPrice: (
     p: Product,
     supplier: "supplier1" | "supplier2" | "supplier3" | "supplier4",
@@ -74,10 +101,33 @@ interface Props {
   showBestPrice?: boolean;
   supplierPhones?: Record<string, string>;
   supplierLegalNames?: Record<string, string>;
+  supplierAssignedCodes?: Record<string, string>;
   selectedSphere?: string;
   onClearCart?: () => void;
   defaultFacilitatorName?: string;
-  restoredMetadata?: { clientName?: string; facilitatorName?: string; note?: string };
+  facilitatorLegalName?: string;
+  facilitatorRep?: string;
+  facilitatorPhone?: string;
+  facilitatorEmail?: string;
+  facilitatorLegalNames?: Record<string, string>;
+  facilitatorRepresentatives?: Record<string, string>;
+  facilitatorPhones?: Record<string, string>;
+  facilitatorEmails?: Record<string, string>;
+  facilitatorRegions?: Record<string, string>;
+  facilitators?: string[];
+  restoredMetadata?: {
+    quoteId?: string;
+    clientName?: string;
+    beneficiaryId?: string;
+    facilitatorName?: string;
+    facilitatorLegalName?: string;
+    facilitatorRep?: string;
+    facilitatorPhone?: string;
+    facilitatorEmail?: string;
+    specialistName?: string;
+    note?: string;
+    district?: string;
+  };
 }
 
 export function CartModal({
@@ -92,6 +142,9 @@ export function CartModal({
   products,
   onAddToCart,
   selectedRegion,
+  selectedDistrict = "",
+  onDistrictChange,
+  districtsByRegion,
   getProductPrice,
   onUpdateSupplier,
   regions = [],
@@ -100,9 +153,20 @@ export function CartModal({
   showBestPrice = false,
   supplierPhones,
   supplierLegalNames,
+  supplierAssignedCodes,
   selectedSphere,
   onClearCart,
   defaultFacilitatorName = "Фасилитатор",
+  facilitatorLegalName,
+  facilitatorRep,
+  facilitatorPhone,
+  facilitatorEmail,
+  facilitatorLegalNames,
+  facilitatorRepresentatives,
+  facilitatorPhones,
+  facilitatorEmails,
+  facilitatorRegions,
+  facilitators,
   restoredMetadata,
 }: Props) {
   const [addMode, setAddMode] = useState<"single" | "mass">("single");
@@ -118,25 +182,207 @@ export function CartModal({
 
   // Customer metadata state
   const [clientName, setClientName] = useState("");
+  const [beneficiaryId, setBeneficiaryId] = useState("");
+  const handleBeneficiaryIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setBeneficiaryId(rawVal);
+  };
   const [facilitatorName, setFacilitatorName] = useState(defaultFacilitatorName);
+  const [currentFacilitatorLegalName, setCurrentFacilitatorLegalName] = useState(facilitatorLegalName || "");
+  const [currentFacilitatorRep, setCurrentFacilitatorRep] = useState(facilitatorRep || "");
+  const [currentFacilitatorPhone, setCurrentFacilitatorPhone] = useState(facilitatorPhone || "");
+  const [currentFacilitatorEmail, setCurrentFacilitatorEmail] = useState(facilitatorEmail || "");
+  const [specialistName, setSpecialistName] = useState("");
+  const [district, setDistrict] = useState(selectedDistrict || "");
   const [note, setNote] = useState("");
   const [isSavingHistory, setIsSavingHistory] = useState(false);
   const [historySavedMsg, setHistorySavedMsg] = useState<string | null>(null);
   const [clientNameError, setClientNameError] = useState(false);
+  const [specialistNameError, setSpecialistNameError] = useState(false);
+  const [districtError, setDistrictError] = useState(false);
   const [isSavedToHistory, setIsSavedToHistory] = useState(false);
   const [savedQuoteId, setSavedQuoteId] = useState<string | null>(null);
+  const [isEditingArchiveQuote, setIsEditingArchiveQuote] = useState(false);
+  const [isMetaCollapsed, setIsMetaCollapsed] = useState(true);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [saveRequiredError, setSaveRequiredError] = useState(false);
+  const [isConfirmSaveModalOpen, setIsConfirmSaveModalOpen] = useState(false);
+  const [isSavedSuccessModalOpen, setIsSavedSuccessModalOpen] = useState(false);
   const clientNameInputRef = useRef<HTMLInputElement>(null);
+  const specialistNameInputRef = useRef<HTMLInputElement>(null);
+  const districtSelectRef = useRef<HTMLSelectElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
 
+  const [clientNameCharWarning, setClientNameCharWarning] = useState<string | null>(null);
+  const clientNameWarningTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerClientNameWarning = (msg = "Разрешены только буквы (латиница и кириллица). Цифры и знаки запрещены!") => {
+    setClientNameCharWarning(msg);
+    if (clientNameWarningTimerRef.current) {
+      clearTimeout(clientNameWarningTimerRef.current);
+    }
+    clientNameWarningTimerRef.current = setTimeout(() => {
+      setClientNameCharWarning(null);
+    }, 3500);
+  };
+
+  const handleClientNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Allow navigation, control keys, Backspace, Delete, Tab, Arrow keys, etc.
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) {
+      return;
+    }
+    // Only allow Latin [a-zA-Z], Cyrillic [\u0400-\u04FF] (Russian + Tajik), space, hyphen
+    const isAllowed = /^[a-zA-Z\u0400-\u04FF\s\-]$/.test(e.key);
+    if (!isAllowed) {
+      e.preventDefault();
+      triggerClientNameWarning();
+    }
+  };
+
+  const handleClientNamePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasteData = e.clipboardData.getData("text");
+    if (/[^a-zA-Z\u0400-\u04FF\s\-]/.test(pasteData)) {
+      e.preventDefault();
+      const filtered = pasteData.replace(/[^a-zA-Z\u0400-\u04FF\s\-]/g, "");
+      const input = e.currentTarget;
+      const start = input.selectionStart || 0;
+      const end = input.selectionEnd || 0;
+      const currentVal = input.value;
+      const nextVal = currentVal.slice(0, start) + filtered + currentVal.slice(end);
+      setClientName(nextVal);
+      if (nextVal.trim()) setClientNameError(false);
+      triggerClientNameWarning("Цифры и спецсимволы отфильтрованы! Разрешены только буквы.");
+    }
+  };
+
+  const handleClientNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value;
+    if (/[^a-zA-Z\u0400-\u04FF\s\-]/.test(rawVal)) {
+      const filtered = rawVal.replace(/[^a-zA-Z\u0400-\u04FF\s\-]/g, "");
+      setClientName(filtered);
+      if (filtered.trim()) setClientNameError(false);
+      triggerClientNameWarning();
+    } else {
+      setClientName(rawVal);
+      if (rawVal.trim()) setClientNameError(false);
+      if (clientNameCharWarning) setClientNameCharWarning(null);
+    }
+  };
+
+  const handleClientNameBeforeInput = (e: any) => {
+    if (e.data && /[^a-zA-Z\u0400-\u04FF\s\-]/.test(e.data)) {
+      e.preventDefault();
+      triggerClientNameWarning();
+    }
+  };
+
   useEffect(() => {
-    if (restoredMetadata?.clientName) {
-      setClientName(restoredMetadata.clientName);
+    return () => {
+      if (clientNameWarningTimerRef.current) {
+        clearTimeout(clientNameWarningTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (selectedDistrict) {
+      setDistrict(selectedDistrict);
+    }
+  }, [selectedDistrict]);
+
+  useEffect(() => {
+    if (facilitatorLegalName !== undefined && facilitatorLegalName !== "") {
+      setCurrentFacilitatorLegalName(facilitatorLegalName);
+    }
+    if (facilitatorRep !== undefined && facilitatorRep !== "") {
+      setCurrentFacilitatorRep(facilitatorRep);
+    }
+    if (facilitatorPhone !== undefined && facilitatorPhone !== "") {
+      setCurrentFacilitatorPhone(facilitatorPhone);
+    }
+    if (facilitatorEmail !== undefined && facilitatorEmail !== "") {
+      setCurrentFacilitatorEmail(facilitatorEmail);
+    }
+  }, [facilitatorLegalName, facilitatorRep, facilitatorPhone, facilitatorEmail]);
+
+  useEffect(() => {
+    // If phone, email, or representative is missing, try to resolve from dictionary
+    const targetName = (currentFacilitatorLegalName || facilitatorLegalName || facilitatorName || "").trim().toLowerCase();
+    if (!targetName || targetName === "фасилитатор") return;
+
+    let matchKey: string | null = null;
+    if (facilitatorLegalNames) {
+      for (const [k, lName] of Object.entries(facilitatorLegalNames)) {
+        const lStr = String(lName || "").trim().toLowerCase();
+        if (lStr && (lStr === targetName || targetName.includes(lStr) || lStr.includes(targetName))) {
+          matchKey = k;
+          break;
+        }
+      }
+    }
+    if (!matchKey && facilitators) {
+      const idx = facilitators.findIndex(
+        (f) => f && (f.trim().toLowerCase() === targetName || targetName.includes(f.trim().toLowerCase()) || f.trim().toLowerCase().includes(targetName))
+      );
+      if (idx >= 0) matchKey = `facilitator${idx + 2}`;
+    }
+    if (matchKey) {
+      if (!currentFacilitatorPhone && facilitatorPhones?.[matchKey]) {
+        setCurrentFacilitatorPhone(facilitatorPhones[matchKey]);
+      }
+      if (!currentFacilitatorEmail && facilitatorEmails?.[matchKey]) {
+        setCurrentFacilitatorEmail(facilitatorEmails[matchKey]);
+      }
+      if (!currentFacilitatorRep && facilitatorRepresentatives?.[matchKey]) {
+        setCurrentFacilitatorRep(facilitatorRepresentatives[matchKey]);
+      }
+    }
+  }, [
+    currentFacilitatorLegalName,
+    facilitatorLegalName,
+    facilitatorName,
+    facilitatorPhones,
+    facilitatorEmails,
+    facilitatorRepresentatives,
+    facilitators,
+    facilitatorLegalNames,
+    currentFacilitatorPhone,
+    currentFacilitatorEmail,
+    currentFacilitatorRep,
+  ]);
+
+  useEffect(() => {
+    if (restoredMetadata?.clientName || restoredMetadata?.quoteId || restoredMetadata?.beneficiaryId) {
+      if (restoredMetadata.clientName) setClientName(restoredMetadata.clientName);
+      if (restoredMetadata.beneficiaryId !== undefined) setBeneficiaryId(restoredMetadata.beneficiaryId);
       if (restoredMetadata.facilitatorName) setFacilitatorName(restoredMetadata.facilitatorName);
+      if (restoredMetadata.facilitatorLegalName) setCurrentFacilitatorLegalName(restoredMetadata.facilitatorLegalName);
+      if (restoredMetadata.facilitatorRep) setCurrentFacilitatorRep(restoredMetadata.facilitatorRep);
+      if (restoredMetadata.facilitatorPhone) setCurrentFacilitatorPhone(restoredMetadata.facilitatorPhone);
+      if (restoredMetadata.facilitatorEmail) setCurrentFacilitatorEmail(restoredMetadata.facilitatorEmail);
+      if (restoredMetadata.specialistName) setSpecialistName(restoredMetadata.specialistName);
+      if (restoredMetadata.district) {
+        setDistrict(restoredMetadata.district);
+        onDistrictChange?.(restoredMetadata.district);
+      }
       if (restoredMetadata.note !== undefined) setNote(restoredMetadata.note);
+      if (restoredMetadata.quoteId) {
+        setSavedQuoteId(restoredMetadata.quoteId);
+        setIsEditingArchiveQuote(true);
+      } else {
+        setIsEditingArchiveQuote(false);
+      }
       setIsSavedToHistory(true);
     }
-  }, [restoredMetadata]);
+  }, [restoredMetadata, onDistrictChange]);
+
+  const availableDistricts = useMemo(() => {
+    if (!selectedRegion) return [];
+    if (districtsByRegion && districtsByRegion[selectedRegion] && districtsByRegion[selectedRegion].length > 0) {
+      return districtsByRegion[selectedRegion];
+    }
+    return DISTRICTS_BY_REGION[selectedRegion] || [];
+  }, [districtsByRegion, selectedRegion]);
 
   const displayedCart = useMemo(() => {
     if (!selectedSphere || selectedSphere === "Все сферы" || selectedSphere.toLowerCase().includes("все") || selectedSphere.trim() === "") return cart;
@@ -152,11 +398,11 @@ export function CartModal({
     });
   }, [cart, selectedSphere]);
 
-  const validateClientName = (): boolean => {
+  const validateClientName = (shouldFocus = true): boolean => {
     if (!clientName.trim()) {
       setClientNameError(true);
       setSaveRequiredError(false);
-      if (clientNameInputRef.current) {
+      if (shouldFocus && clientNameInputRef.current) {
         clientNameInputRef.current.focus();
         clientNameInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
       }
@@ -166,10 +412,64 @@ export function CartModal({
     return true;
   };
 
-  const validateCanExportOrPrint = (): boolean => {
-    if (!validateClientName()) return false;
+  const validateSpecialistName = (shouldFocus = true): boolean => {
+    if (!specialistName.trim()) {
+      setSpecialistNameError(true);
+      setSaveRequiredError(false);
+      if (shouldFocus && specialistNameInputRef.current) {
+        specialistNameInputRef.current.focus();
+        specialistNameInputRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
+    }
+    setSpecialistNameError(false);
+    return true;
+  };
+
+  const validateDistrict = (shouldFocus = true): boolean => {
+    if (!district.trim()) {
+      setDistrictError(true);
+      setSaveRequiredError(false);
+      if (shouldFocus && districtSelectRef.current) {
+        districtSelectRef.current.focus();
+        districtSelectRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      return false;
+    }
+    setDistrictError(false);
+    return true;
+  };
+
+  const validateAllRequiredFields = (): boolean => {
+    const okClient = validateClientName(false);
+    const okSpec = validateSpecialistName(false);
+    const okDist = validateDistrict(false);
+
+    if (!okClient || !okSpec || !okDist) {
+      setIsMetaCollapsed(false);
+    }
+
+    if (!okClient) {
+      clientNameInputRef.current?.focus();
+      clientNameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
+    if (!okSpec) {
+      specialistNameInputRef.current?.focus();
+      specialistNameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
+    if (!okDist) {
+      districtSelectRef.current?.focus();
+      districtSelectRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return false;
+    }
     setSaveRequiredError(false);
     return true;
+  };
+
+  const validateCanExportOrPrint = (): boolean => {
+    return validateAllRequiredFields();
   };
 
   useEffect(() => {
@@ -181,6 +481,8 @@ export function CartModal({
   useEffect(() => {
     if (!isOpen) {
       setIsConfirmingClear(false);
+      setIsConfirmSaveModalOpen(false);
+      setIsSavedSuccessModalOpen(false);
     }
   }, [isOpen]);
 
@@ -190,9 +492,14 @@ export function CartModal({
     } else {
       onClearCart?.();
       setClientName("");
+      setBeneficiaryId("");
+      setSpecialistName("");
+      setDistrict(selectedDistrict || "");
       setNote("");
       setIsSavedToHistory(false);
       setClientNameError(false);
+      setSpecialistNameError(false);
+      setDistrictError(false);
       setSaveRequiredError(false);
       setIsConfirmingClear(false);
     }
@@ -201,12 +508,17 @@ export function CartModal({
   useEffect(() => {
     if (cart.length === 0) {
       setClientName("");
+      setBeneficiaryId("");
+      setSpecialistName("");
+      setDistrict(selectedDistrict || "");
       setNote("");
       setIsSavedToHistory(false);
       setClientNameError(false);
+      setSpecialistNameError(false);
+      setDistrictError(false);
       setSaveRequiredError(false);
     }
-  }, [cart.length]);
+  }, [cart.length, selectedDistrict]);
 
   useEffect(() => {
     if (isConfirmingClear) {
@@ -225,10 +537,27 @@ export function CartModal({
     supp?: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
   ) => {
     if (!supp || supp === "supplier1") return "Логистика";
+    if (supp && supplierAssignedCodes?.[supp]) {
+      const code = supplierAssignedCodes[supp];
+      if (code.match(/^(?:ПОС|POS)[-_]\d+$/i)) {
+        const num = parseInt(code.replace(/\D/g, ""), 10) || 1;
+        return `SPMEI-${99 + num}`;
+      }
+      return code;
+    }
     const list = suppliers || [];
-    if (supp === "supplier2") return list[0] || "Поставщик 1";
-    if (supp === "supplier3") return list[1] || "Поставщик 2";
-    if (supp === "supplier4") return list[2] || "Поставщик 3";
+    const idx = supp === "supplier2" ? 0 : supp === "supplier3" ? 1 : supp === "supplier4" ? 2 : -1;
+    if (idx >= 0 && list[idx]) {
+      const code = list[idx];
+      if (code.match(/^(?:ПОС|POS)[-_]\d+$/i)) {
+        const num = parseInt(code.replace(/\D/g, ""), 10) || 1;
+        return `SPMEI-${99 + num}`;
+      }
+      return code;
+    }
+    if (supp === "supplier2") return "SPMEI-100";
+    if (supp === "supplier3") return "SPMEI-101";
+    if (supp === "supplier4") return "SPMEI-102";
     return "Логистика";
   };
 
@@ -471,28 +800,89 @@ export function CartModal({
     }
   };
 
-  const handleSaveToHistory = async () => {
+  const handleInitiateSaveToHistory = () => {
     if (displayedCart.length === 0) return;
-    if (!validateClientName()) return;
+    if (!validateAllRequiredFields()) return;
+    if (isSavedToHistory && !isEditingArchiveQuote) {
+      setIsSavedSuccessModalOpen(true);
+      return;
+    }
+    setIsConfirmSaveModalOpen(true);
+  };
+
+  const executeSaveToHistory = async () => {
+    if (displayedCart.length === 0) return;
+    if (!validateAllRequiredFields()) return;
     setIsSavingHistory(true);
     try {
+      if (isEditingArchiveQuote && savedQuoteId) {
+        // Update existing quote in archive with full revision history
+        await updateQuoteInHistory(savedQuoteId, {
+          clientName: clientName.trim(),
+          beneficiaryId: beneficiaryId.trim() || undefined,
+          facilitatorName: facilitatorName.trim() || "Фасилитатор",
+          facilitatorLegalName: (currentFacilitatorLegalName || facilitatorLegalName)?.trim(),
+          facilitatorRep: (currentFacilitatorRep || facilitatorRep)?.trim(),
+          facilitatorPhone: (currentFacilitatorPhone || facilitatorPhone)?.trim(),
+          facilitatorEmail: (currentFacilitatorEmail || facilitatorEmail)?.trim(),
+          specialistName: specialistName.trim(),
+          note: note.trim(),
+          selectedRegion: selectedRegion || "Все регионы",
+          selectedDistrict: district.trim(),
+          selectedSphere: selectedSphere || "Все сферы",
+          logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
+          cart: displayedCart,
+        });
+
+        setHistorySavedMsg("✓ Изменения сохранены в Архив КП! Корзина очищена.");
+        setSaveRequiredError(false);
+        setIsSavedToHistory(false);
+        setSavedQuoteId(null);
+        setIsEditingArchiveQuote(false);
+        setIsConfirmSaveModalOpen(false);
+
+        // Automatically clear cart as requested!
+        onClearCart?.();
+        setClientName("");
+        setBeneficiaryId("");
+        setSpecialistName("");
+        setNote("");
+
+        // Close cart and immediately open Archive to show updated quote with revisions
+        setTimeout(() => {
+          onClose();
+          onOpenQuotesHistory?.();
+        }, 600);
+        return;
+      }
+
+      // Brand new quote creation
       const qId = await saveQuoteToHistory({
         clientName: clientName.trim(),
+        beneficiaryId: beneficiaryId.trim() || undefined,
         facilitatorName: facilitatorName.trim() || "Фасилитатор",
+        facilitatorLegalName: (currentFacilitatorLegalName || facilitatorLegalName)?.trim(),
+        facilitatorRep: (currentFacilitatorRep || facilitatorRep)?.trim(),
+        facilitatorPhone: (currentFacilitatorPhone || facilitatorPhone)?.trim(),
+        facilitatorEmail: (currentFacilitatorEmail || facilitatorEmail)?.trim(),
+        specialistName: specialistName.trim(),
         note: note.trim(),
         selectedRegion: selectedRegion || "Все регионы",
+        selectedDistrict: district.trim(),
         selectedSphere: selectedSphere || "Все сферы",
         logisticsCost: displayedCart.length > 0 ? logisticsCost : 0,
         cart: displayedCart,
       });
+
+      setIsConfirmSaveModalOpen(false);
       setIsSavedToHistory(true);
       setSavedQuoteId(qId);
       setSaveRequiredError(false);
-      setHistorySavedMsg("✓ Успешно сохранено в Архив КП!");
-      setTimeout(() => setHistorySavedMsg(null), 3500);
+      setHistorySavedMsg("✓ Успешно сохранено в Архив купонов!");
+      setIsSavedSuccessModalOpen(true);
     } catch (err: any) {
       console.error("Error saving quote to history:", err);
-      alert(`Не удалось сохранить подборку в архив: ${err?.message || "Ошибка подключения"}`);
+      alert(`Не удалось сохранить купон в архив: ${err?.message || "Ошибка подключения"}`);
     } finally {
       setIsSavingHistory(false);
     }
@@ -508,14 +898,29 @@ export function CartModal({
       selectedSphere,
       clientName.trim(),
       facilitatorName.trim(),
-      note.trim()
+      note.trim(),
+      district.trim(),
+      specialistName.trim(),
+      beneficiaryId.trim() || undefined
     );
   };
 
   const handlePrintAction = () => {
     if (!validateCanExportOrPrint()) return;
     if (onPrintWithMeta) {
-      onPrintWithMeta(clientName.trim(), facilitatorName.trim(), note.trim(), savedQuoteId || undefined);
+      onPrintWithMeta(
+        clientName.trim(),
+        facilitatorName.trim(),
+        note.trim(),
+        savedQuoteId || undefined,
+        district.trim(),
+        specialistName.trim(),
+        currentFacilitatorLegalName || facilitatorLegalName,
+        currentFacilitatorRep || facilitatorRep,
+        currentFacilitatorPhone || facilitatorPhone,
+        currentFacilitatorEmail || facilitatorEmail,
+        beneficiaryId.trim() || undefined
+      );
     } else {
       onPrint();
     }
@@ -530,14 +935,21 @@ export function CartModal({
         <div className="flex flex-col md:flex-row md:items-center justify-between p-4 sm:p-6 border-b border-slate-100 shrink-0 gap-3">
           <div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-900">
-              Лист выборки (корзина)
+              КУПОН (корзина)
             </h2>
             <div className="text-xs sm:text-sm text-slate-500 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
               <span>{displayedCart.length} наименований</span>
               <span className="text-slate-300">|</span>
-              <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10px] sm:text-xs border border-slate-200">
-                Регион: {selectedRegion || "Все регионы"}
+              <span className="font-semibold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[10px] sm:text-xs border border-slate-200 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-slate-400" />
+                Регион: <strong className="text-slate-900">{selectedRegion || "Все регионы"}</strong> (закреплен)
               </span>
+              {district && (
+                <span className="font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px] sm:text-xs border border-indigo-200 flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-indigo-500" />
+                  Район: <strong>{district}</strong>
+                </span>
+              )}
               <span className="font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px] sm:text-xs border border-indigo-100">
                 Сфера: {selectedSphere || "Все сферы"}
               </span>
@@ -553,7 +965,7 @@ export function CartModal({
                   ? "bg-green-600 hover:bg-green-700 text-white shadow-sm cursor-pointer opacity-100"
                   : "bg-slate-700 text-slate-400 cursor-not-allowed opacity-50 border border-slate-600"
               }`}
-              title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
+              title={!isSavedToHistory ? "Сначала укажите ФИО Бенефициара и сохраните купон в Архив!" : undefined}
             >
               <FileDown className="w-4 h-4 shrink-0" />
               <span>Excel</span>
@@ -567,7 +979,7 @@ export function CartModal({
                   ? "bg-slate-800 hover:bg-slate-700 text-white shadow-sm cursor-pointer opacity-100"
                   : "bg-slate-700 text-slate-400 cursor-not-allowed opacity-50 border border-slate-600"
               }`}
-              title={!isSavedToHistory ? "Сначала укажите Ф.И.О Бенефициара и сохраните подборку в Архив КП!" : undefined}
+              title={!isSavedToHistory ? "Сначала укажите ФИО Бенефициара и сохраните купон в Архив!" : undefined}
             >
               <Printer className="w-4 h-4 shrink-0" />
               <span>Печать</span>
@@ -581,218 +993,592 @@ export function CartModal({
           </div>
         </div>
 
-        {/* Customer Metadata / Archive KP Card */}
-        <div className="bg-slate-900 text-white p-3.5 sm:p-4 border-b border-slate-800 shrink-0">
+        {/* Editing Archive Coupon Notice Banner */}
+        {isEditingArchiveQuote && savedQuoteId && (
+          <div className="bg-amber-100 border-b border-amber-300 px-3.5 sm:px-6 py-2.5 flex items-center justify-between gap-3 text-black text-xs shrink-0 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="p-1.5 rounded-lg bg-amber-200 border border-amber-400 text-black shrink-0">
+                <Edit3 className="w-4 h-4 text-black" />
+              </div>
+              <div>
+                <div className="font-extrabold text-black text-xs sm:text-sm flex items-center gap-2">
+                  <span className="text-black font-extrabold">Режим редактирования Купона #{savedQuoteId} (Архив КП)</span>
+                  <span className="text-[10px] bg-amber-200 text-black px-2 py-0.5 rounded-full border border-amber-400 font-bold">
+                    Из архива
+                  </span>
+                </div>
+                <div className="text-black font-medium text-[11px] mt-0.5 leading-snug">
+                  Внесите изменения в товары или анкету. Нажмите <strong className="text-black font-black underline">«Сохранить изменения»</strong> — купон обновится в Архиве с сохранением истории изменений, а корзина автоматически очистится.
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClearCart?.();
+                setIsEditingArchiveQuote(false);
+                setSavedQuoteId(null);
+                setClientName("");
+                setBeneficiaryId("");
+                setSpecialistName("");
+                setNote("");
+                onClose();
+              }}
+              className="px-3 py-1.5 text-[11px] font-bold text-black hover:text-black bg-amber-200 hover:bg-amber-300 active:bg-amber-400 border border-amber-400 rounded-lg transition-all shrink-0 cursor-pointer shadow-xs"
+              title="Отменить редактирование и закрыть"
+            >
+              Отменить правку
+            </button>
+          </div>
+        )}
+
+        {/* Customer Metadata / Archive Coupon Card */}
+        <div className="bg-slate-900 text-white p-3.5 sm:p-5 border-b border-slate-800 shrink-0 shadow-inner">
           {clientNameError && (
             <div className="bg-rose-500/20 border border-rose-500/50 text-rose-200 p-3 rounded-lg text-xs flex items-center justify-between gap-2 mb-3 shadow-lg animate-pulse">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
                 <span>
-                  <strong>Ошибка:</strong> Пожалуйста, укажите <strong>Ф.И.О Бенефициара / Клиента *</strong> перед сохранением, печатью или скачиванием Excel!
+                  <strong>Ошибка:</strong> Пожалуйста, укажите <strong>ФИО Бенефициара / Клиента *</strong> перед сохранением, печатью или скачиванием Excel!
                 </span>
               </div>
               <button
                 onClick={() => setClientNameError(false)}
-                className="text-rose-400 hover:text-white p-1"
+                className="text-rose-400 hover:text-white p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          {saveRequiredError && !clientNameError && (
+          {specialistNameError && (
+            <div className="bg-rose-500/20 border border-rose-500/50 text-rose-200 p-3 rounded-lg text-xs flex items-center justify-between gap-2 mb-3 shadow-lg animate-pulse">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  <strong>Ошибка:</strong> Пожалуйста, укажите <strong>ФИО специалиста *</strong>, кто заполнял купон!
+                </span>
+              </div>
+              <button
+                onClick={() => setSpecialistNameError(false)}
+                className="text-rose-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {districtError && (
+            <div className="bg-rose-500/20 border border-rose-500/50 text-rose-200 p-3 rounded-lg text-xs flex items-center justify-between gap-2 mb-3 shadow-lg animate-pulse">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  <strong>Ошибка:</strong> Пожалуйста, обязательно выберите <strong>Район *</strong> для закрепленного региона {selectedRegion ? `«${selectedRegion}»` : ''}!
+                </span>
+              </div>
+              <button
+                onClick={() => setDistrictError(false)}
+                className="text-rose-400 hover:text-white p-1 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {saveRequiredError && !clientNameError && !specialistNameError && !districtError && (
             <div className="bg-amber-500/20 border border-amber-500/50 text-amber-200 p-3 rounded-lg text-xs flex items-center justify-between gap-2 mb-3 shadow-lg animate-pulse">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
                 <span>
-                  <strong>Предупреждение:</strong> Необходимы данные! Подборка ещё не сохранена в Архив КП. Нажмите синюю кнопку <strong>«Сохранить подборку в Архив КП»</strong> для получения доступа к Excel и печати!
+                  <strong>Предупреждение:</strong> Необходимы данные! Купон ещё не сохранен в Архив. Нажмите кнопку <strong>«Сохранить купон в Архив»</strong> для получения доступа к Excel и печати!
                 </span>
               </div>
               <button
                 onClick={() => setSaveRequiredError(false)}
-                className="text-amber-400 hover:text-white p-1"
+                className="text-amber-400 hover:text-white p-1 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
           )}
 
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2.5">
-            <div className="flex items-center gap-2">
-              <User className="w-4 h-4 text-indigo-400 shrink-0" />
-              <span className="font-bold text-xs sm:text-sm text-white">
-                Карточка клиента / Метаданные выборки
-              </span>
-              {isSavedToHistory ? (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
-                  <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Сохранено в Архив
-                </span>
-              ) : (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1">
-                  <AlertTriangle className="w-3 h-3 text-amber-400" /> Требуется сохранение
-                </span>
-              )}
-            </div>
-            {onOpenQuotesHistory && (
-              <button
-                type="button"
-                onClick={onOpenQuotesHistory}
-                className="flex items-center gap-1 px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 border border-indigo-400/30 rounded text-xs font-semibold transition-all self-start md:self-auto"
-              >
-                <Archive className="w-3.5 h-3.5 text-indigo-300" />
-                <span>Реестр (Архив КП)</span>
-              </button>
-            )}
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Ф.И.О Бенефициара / Клиента <span className="text-rose-400">*</span>
-              </label>
-              <input
-                ref={clientNameInputRef}
-                type="text"
-                placeholder="Ф.И.О бенефициара / клиента..."
-                value={clientName}
-                onChange={(e) => {
-                  setClientName(e.target.value);
-                  if (e.target.value.trim()) setClientNameError(false);
-                }}
-                className={`w-full bg-slate-800 border rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all ${
-                  clientNameError
-                    ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
-                    : "border-slate-700 focus:border-indigo-500"
-                }`}
-              />
-              {clientNameError && (
-                <span className="text-[10px] font-bold text-rose-400 mt-1 block">
-                  Заполните Ф.И.О Бенефициара / Клиента!
-                </span>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Кто создал (Фасилитатор)
-              </label>
-              <input
-                type="text"
-                readOnly
-                disabled
-                value={facilitatorName}
-                className="w-full bg-slate-800/60 border border-slate-700/60 rounded px-2.5 py-1.5 text-xs text-slate-300 font-medium cursor-not-allowed select-none focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Заметка к КП <span className="text-slate-400 font-normal normal-case tracking-normal italic">*Не обязательно*</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Примечание к заказу..."
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                className="w-full bg-slate-800 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-medium"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 mt-2.5 pt-2 border-t border-slate-800">
-            <span className="text-[11px] text-slate-400 flex items-center gap-1">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-              При сохранении система запечатывает точные цены и открывает экспорт/печать
-            </span>
-            <button
-              ref={saveButtonRef}
-              type="button"
-              onClick={handleSaveToHistory}
-              disabled={isSavingHistory || displayedCart.length === 0}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-bold transition-all shadow-md shrink-0 active:scale-95 ${
-                isSavedToHistory
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-400/50"
-                  : saveRequiredError
-                  ? "bg-rose-600 hover:bg-rose-500 text-white ring-4 ring-rose-500/50 animate-bounce"
-                  : "bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white"
-              }`}
-            >
-              {isSavingHistory ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : isSavedToHistory ? (
-                <CheckCircle2 className="w-4 h-4 text-white" />
-              ) : (
-                <BookmarkCheck className="w-4 h-4" />
-              )}
-              <span>
-                {isSavingHistory
-                  ? "Сохранение..."
-                  : isSavedToHistory
-                  ? "✓ Сохранено в Архив КП"
-                  : historySavedMsg || "Сохранить подборку в Архив КП"}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Quick Add Form Section */}
-        <div className="bg-slate-100 border-b border-slate-200 px-3.5 sm:px-6 py-3 sm:py-4 shrink-0 flex flex-col gap-3 relative z-20">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white border border-slate-200/65 p-3 rounded-xl shadow-sm">
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setAddMode("single")}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                    addMode === "single"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
+          {isMetaCollapsed ? (
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 py-0.5">
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                {/* Beneficiary */}
+                <div
+                  onClick={() => {
+                    setIsMetaCollapsed(false);
+                    setTimeout(() => clientNameInputRef.current?.focus(), 50);
+                  }}
+                  className="flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 px-2.5 py-1 rounded-lg cursor-pointer transition-colors shadow-xs"
+                  title="Нажмите, чтобы указать или изменить ID и ФИО бенефициара"
                 >
-                  Одиночный поиск
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAddMode("mass")}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
-                    addMode === "mass"
-                      ? "bg-indigo-600 text-white shadow-sm"
-                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
-                  }`}
+                  <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="text-slate-400">Бенефициар:</span>
+                  {beneficiaryId && (
+                    <span className="bg-slate-900 text-white font-mono font-bold text-[11px] px-1.5 py-0.5 rounded border border-slate-600 shadow-2xs">
+                      ID: {beneficiaryId}
+                    </span>
+                  )}
+                  {clientName ? (
+                    <strong className="text-white font-semibold">{clientName}</strong>
+                  ) : (
+                    <span className="text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/30">
+                      ⚠️ Не указан *
+                    </span>
+                  )}
+                </div>
+
+                {/* Specialist */}
+                <div
+                  onClick={() => {
+                    setIsMetaCollapsed(false);
+                    setTimeout(() => specialistNameInputRef.current?.focus(), 50);
+                  }}
+                  className="flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 px-2.5 py-1 rounded-lg cursor-pointer transition-colors shadow-xs"
+                  title="Нажмите, чтобы указать или изменить ФИО специалиста"
                 >
-                  Массовый ввод
-                </button>
+                  <UserCheck className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="text-slate-400">Специалист:</span>
+                  {specialistName ? (
+                    <strong className="text-white font-semibold">{specialistName}</strong>
+                  ) : (
+                    <span className="text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/30">
+                      ⚠️ Не указан *
+                    </span>
+                  )}
+                </div>
+
+                {/* District */}
+                <div
+                  onClick={() => {
+                    setIsMetaCollapsed(false);
+                    setTimeout(() => districtSelectRef.current?.focus(), 50);
+                  }}
+                  className="flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 px-2.5 py-1 rounded-lg cursor-pointer transition-colors shadow-xs"
+                  title="Нажмите, чтобы выбрать район"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="text-slate-400">Район:</span>
+                  {district ? (
+                    <strong className="text-white font-semibold">{district}</strong>
+                  ) : (
+                    <span className="text-rose-400 font-bold bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/30">
+                      ⚠️ Не выбран *
+                    </span>
+                  )}
+                </div>
+
+                {/* Status Badge */}
+                {isEditingArchiveQuote && savedQuoteId ? (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-xs">
+                    <Edit3 className="w-3 h-3 text-amber-400" /> Правка #{savedQuoteId}
+                  </span>
+                ) : isSavedToHistory ? (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1 shadow-xs">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" /> В Архиве
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1 shadow-xs">
+                    <AlertTriangle className="w-3 h-3 text-amber-400" /> Не сохранен
+                  </span>
+                )}
               </div>
 
-              {/* Region Selector right here inside CartModal */}
-              {regions.length > 0 && (
-                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg shadow-inner">
-                  <span className="text-[10px] text-slate-500 font-extrabold uppercase tracking-wider font-sans">
-                    Регион:
+              {/* Action Buttons in Collapsed Strip */}
+              <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                <button
+                  type="button"
+                  onClick={handleInitiateSaveToHistory}
+                  disabled={isSavingHistory || displayedCart.length === 0 || (isSavedToHistory && !isEditingArchiveQuote)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg transition-all shadow-sm ${
+                    isEditingArchiveQuote
+                      ? "bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
+                      : isSavedToHistory
+                      ? "bg-slate-700 text-emerald-400 border border-emerald-500/40 cursor-not-allowed opacity-90"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
+                  }`}
+                  title={
+                    isSavedToHistory && !isEditingArchiveQuote
+                      ? `Купон уже сохранен в Архиве КП под номером ${savedQuoteId}. Для изменения перейдите в Архив КП.`
+                      : "Сохранить купон в Архив"
+                  }
+                >
+                  {isSavingHistory ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : isEditingArchiveQuote ? (
+                    <Edit3 className="w-3.5 h-3.5" />
+                  ) : isSavedToHistory ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {isSavingHistory
+                      ? "Сохранение..."
+                      : isEditingArchiveQuote
+                      ? "Сохранить изменения"
+                      : isSavedToHistory
+                      ? "✓ Сохранен в Архив"
+                      : "Сохранить в Архив"}
                   </span>
-                  <select
-                    value={selectedRegion}
-                    onChange={(e) => onRegionChange?.(e.target.value)}
-                    className="bg-transparent border-0 text-xs font-black text-slate-800 focus:outline-none cursor-pointer hover:text-slate-950 font-sans leading-none p-0 pr-1 h-auto"
+                </button>
+
+                {onOpenQuotesHistory && (
+                  <button
+                    type="button"
+                    onClick={onOpenQuotesHistory}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold transition-all shadow-sm cursor-pointer"
+                    title="Открыть реестр / Архив КП"
                   >
-                    <option value="">Все регионы</option>
-                    {regions.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
+                    <Archive className="w-3.5 h-3.5 text-indigo-400" />
+                    <span className="hidden sm:inline">Реестр (Архив)</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsMetaCollapsed(false)}
+                  className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer active:scale-95"
+                  title="Развернуть анкету для изменения полей"
+                >
+                  <span>Анкета</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-white" />
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* Header when expanded */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-md bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center">
+                    <User className="w-3 h-3 text-indigo-400" />
+                  </div>
+                  <span className="font-bold text-xs sm:text-sm text-white tracking-wide">
+                    Анкета клиента и реквизиты купона
+                  </span>
+                  {isEditingArchiveQuote && savedQuoteId ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                      Редактирование #{savedQuoteId}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsMetaCollapsed(true)}
+                    className="flex items-center gap-1 px-3 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white border border-slate-700 rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                    title="Свернуть анкету в компактную полосу"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Свернуть анкету</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 3 Required Fields in One Clean Row */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Field 1: Beneficiary ID and Name */}
+                <div className="flex gap-2 items-start">
+                  {/* ID Input */}
+                  <div className="w-20 sm:w-24 shrink-0">
+                    <label
+                      className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1"
+                      title="ID бенефициара (только цифры, не более 6 символов)"
+                    >
+                      ID
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={6}
+                      placeholder="ID"
+                      value={beneficiaryId}
+                      onChange={handleBeneficiaryIdChange}
+                      className="w-full h-[36px] bg-slate-800 border border-slate-700 hover:border-slate-600 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none font-mono font-bold text-center transition-all shadow-sm"
+                    />
+                  </div>
+
+                  {/* Beneficiary Name */}
+                  <div className="flex-1 min-w-0 relative">
+                    <label
+                      className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center justify-between cursor-help"
+                      title="ФИО бенефициара / получателя помощи (только буквы)"
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <User className="w-3 h-3 text-indigo-400 shrink-0" />
+                        <span className="truncate">ФИО Бенефициара <span className="text-rose-400 font-black">*</span></span>
+                      </span>
+                    </label>
+                    <input
+                      ref={clientNameInputRef}
+                      type="text"
+                      placeholder="ФИО бенефициара / клиента..."
+                      value={clientName}
+                      onChange={handleClientNameChange}
+                      onKeyDown={handleClientNameKeyDown}
+                      onPaste={handleClientNamePaste}
+                      onBeforeInput={handleClientNameBeforeInput}
+                      className={`w-full h-[36px] bg-slate-800 border rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all shadow-sm ${
+                        clientNameCharWarning
+                          ? "border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/40"
+                          : clientNameError
+                          ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
+                          : "border-slate-700 hover:border-slate-600 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                      }`}
+                    />
+                    {clientNameCharWarning && (
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-300 bg-amber-950/90 border border-amber-500/60 px-2 py-0.5 rounded-md mt-1 shadow-lg">
+                        <AlertCircle className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>{clientNameCharWarning}</span>
+                      </div>
+                    )}
+                    {clientNameError && !clientNameCharWarning && (
+                      <span className="text-[10px] font-bold text-rose-400 mt-1 block">
+                        Заполните ФИО Бенефициара!
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Field 2: Specialist Name */}
+                <div>
+                  <label
+                    className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center justify-between cursor-help"
+                    title="ФИО специалиста организации, оформившего купон"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <UserCheck className="w-3 h-3 text-indigo-400 shrink-0" />
+                      <span className="truncate">ФИО Специалиста <span className="text-rose-400 font-black">*</span></span>
+                    </span>
+                  </label>
+                  <input
+                    ref={specialistNameInputRef}
+                    type="text"
+                    placeholder="ФИО специалиста..."
+                    value={specialistName}
+                    onChange={(e) => {
+                      setSpecialistName(e.target.value);
+                      if (e.target.value.trim()) setSpecialistNameError(false);
+                    }}
+                    className={`w-full h-[36px] bg-slate-800 border rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none font-medium transition-all shadow-sm ${
+                      specialistNameError
+                        ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
+                        : "border-slate-700 hover:border-slate-600 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                    }`}
+                  />
+                  {specialistNameError && (
+                    <span className="text-[10px] font-bold text-rose-400 mt-1 block">
+                      Укажите ФИО специалиста!
+                    </span>
+                  )}
+                </div>
+
+                {/* Field 3: District */}
+                <div>
+                  <label
+                    className="block text-[11px] font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center justify-between cursor-help"
+                    title="Район закрепленного региона из справочника"
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <MapPin className="w-3 h-3 text-indigo-400 shrink-0" />
+                      <span className="truncate">Район <span className="text-rose-400 font-black">*</span></span>
+                    </span>
+                  </label>
+                  <select
+                    ref={districtSelectRef}
+                    value={district}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDistrict(val);
+                      onDistrictChange?.(val);
+                      if (val.trim()) setDistrictError(false);
+                    }}
+                    className={`w-full h-[36px] bg-slate-800 border rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none font-medium cursor-pointer transition-all shadow-sm ${
+                      districtError
+                        ? "border-rose-500 ring-2 ring-rose-500/50 bg-rose-950/40"
+                        : "border-slate-700 hover:border-slate-600 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20"
+                    }`}
+                  >
+                    <option value="" className="bg-slate-900 text-slate-400">
+                      {availableDistricts.length > 0 ? "-- Выберите район --" : "-- Нет районов для региона --"}
+                    </option>
+                    {availableDistricts.map((d) => (
+                      <option key={d} value={d} className="bg-slate-900 text-white">
+                        {d}
                       </option>
                     ))}
                   </select>
+                  {districtError && (
+                    <span className="text-[10px] font-bold text-rose-400 mt-1 block">
+                      Обязательно выберите район!
+                    </span>
+                  )}
                 </div>
-              )}
+              </div>
+
+              {/* Second Row: Optional Note & Compact Locked Info & Save */}
+              <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-3 pt-2.5 border-t border-slate-800">
+                <div className="flex items-center gap-2 w-full md:w-auto flex-1">
+                  <input
+                    type="text"
+                    placeholder="Примечание / заметка к купону (не обязательно)..."
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="w-full md:max-w-md h-[34px] bg-slate-800 border border-slate-700 rounded-lg px-3 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400 shadow-sm"
+                  />
+                  <div className="text-[11px] text-slate-400 hidden lg:flex items-center gap-1.5 shrink-0">
+                    <Lock className="w-3 h-3 text-slate-500" />
+                    <span>{selectedRegion || "Все регионы"}</span>
+                    <span>•</span>
+                    <span className="truncate max-w-[200px]" title={currentFacilitatorLegalName || facilitatorLegalName || facilitatorName}>
+                      {currentFacilitatorLegalName || facilitatorLegalName || facilitatorName}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0 self-end md:self-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsMetaCollapsed(true)}
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-all cursor-pointer"
+                  >
+                    Свернуть
+                  </button>
+                  <button
+                    ref={saveButtonRef}
+                    type="button"
+                    onClick={handleInitiateSaveToHistory}
+                    disabled={isSavingHistory || displayedCart.length === 0 || (isSavedToHistory && !isEditingArchiveQuote)}
+                    className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md ${
+                      isEditingArchiveQuote
+                        ? "bg-amber-600 hover:bg-amber-500 text-white cursor-pointer"
+                        : isSavedToHistory
+                        ? "bg-slate-700 text-emerald-400 border border-emerald-500/40 cursor-not-allowed opacity-90"
+                        : "bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer"
+                    }`}
+                    title={
+                      isSavedToHistory && !isEditingArchiveQuote
+                        ? `Купон уже сохранен в Архиве КП под номером ${savedQuoteId}. Для изменения перейдите в Архив КП.`
+                        : "Сохранить купон в Архив"
+                    }
+                  >
+                    {isSavingHistory ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : isEditingArchiveQuote ? (
+                      <Edit3 className="w-3.5 h-3.5 text-white" />
+                    ) : isSavedToHistory ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <BookmarkCheck className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {isSavingHistory
+                        ? "Сохранение..."
+                        : isEditingArchiveQuote
+                        ? `Сохранить изменения #${savedQuoteId}`
+                        : isSavedToHistory
+                        ? "✓ Сохранен в Архив"
+                        : "Сохранить в Архив"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+    </div>
+
+        {/* Quick Add Form Section - Collapsible / Space-Saving */}
+        <div className="bg-slate-100 border-b border-slate-200 shrink-0 relative z-20">
+          <div className="px-3.5 sm:px-6 py-2 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setIsQuickAddOpen(!isQuickAddOpen)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                  isQuickAddOpen
+                    ? "bg-slate-800 text-white hover:bg-slate-700"
+                    : "bg-white hover:bg-slate-50 text-indigo-700 border border-indigo-200 hover:border-indigo-300"
+                }`}
+              >
+                {isQuickAddOpen ? (
+                  <>
+                    <ChevronUp className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Скрыть поиск товаров</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Добавить товар по коду / поиску</span>
+                    <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
+                  </>
+                )}
+              </button>
+              <span className="text-[11px] text-slate-500 hidden md:inline">
+                Поиск по ID, коду или массовая вставка
+              </span>
             </div>
 
-            {addedMessage && (
-              <div className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-3 py-1 rounded text-xs font-bold flex items-center gap-1.5 animate-fade-in font-sans shrink-0">
-                <Check className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
-                <span>{addedMessage}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-slate-600 font-medium">
+                Товаров в списке: <strong className="text-slate-900 font-bold">{displayedCart.length}</strong>
+              </span>
+              {displayedCart.length > 0 && onClearCart && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm("Очистить список товаров в корзине?")) {
+                      onClearCart();
+                    }
+                  }}
+                  className="text-slate-400 hover:text-rose-600 text-xs underline cursor-pointer"
+                  title="Очистить корзину"
+                >
+                  Очистить
+                </button>
+              )}
+            </div>
           </div>
+
+          {(isQuickAddOpen || displayedCart.length === 0) && (
+            <div className="px-3.5 sm:px-6 pb-3 sm:pb-4 flex flex-col gap-3 border-t border-slate-200/60 pt-2.5">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 bg-white border border-slate-200/65 p-2 rounded-xl shadow-xs">
+                <div className="flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setAddMode("single")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                      addMode === "single"
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    Одиночный поиск
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddMode("mass")}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${
+                      addMode === "mass"
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                    }`}
+                  >
+                    Массовый ввод
+                  </button>
+                </div>
+
+                {addedMessage && (
+                  <div className="bg-emerald-50 text-emerald-800 border border-emerald-100 px-3 py-1 rounded text-xs font-bold flex items-center gap-1.5 animate-fade-in font-sans shrink-0">
+                    <Check className="w-3.5 h-3.5 text-emerald-600 animate-bounce" />
+                    <span>{addedMessage}</span>
+                  </div>
+                )}
+              </div>
 
           {addMode === "single" ? (
             <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-end">
@@ -1125,6 +1911,8 @@ export function CartModal({
               )}
             </div>
           )}
+            </div>
+          )}
         </div>
 
         {/* Content */}
@@ -1189,8 +1977,11 @@ export function CartModal({
                              </span>
                            </span>
                          ) : (() => {
-                           const availableSuppliers = (["supplier2", "supplier3", "supplier4"] as const).map(sup => {
-                             const price = getProductPrice(item.product, sup, selectedRegion || "Душанбе");
+                           const supCandidates = (suppliers && suppliers.length > 0)
+                             ? suppliers.map((_, idx) => "supplier" + (idx + 2))
+                             : ["supplier2", "supplier3", "supplier4"];
+                           const availableSuppliers = supCandidates.map(sup => {
+                             const price = getProductPrice(item.product, sup as any, selectedRegion || "Душанбе");
                              return { id: sup, price };
                            }).filter(s => s.price > 0);
 
@@ -1201,7 +1992,7 @@ export function CartModal({
                                  <select
                                    value={item.selectedSupplier}
                                    onChange={(e) => {
-                                     const newSup = e.target.value as "supplier2" | "supplier3" | "supplier4";
+                                     const newSup = e.target.value as any;
                                      onUpdateSupplier(item.product.id, item.selectedSupplier, newSup);
                                    }}
                                    className="bg-transparent border-none text-indigo-900 font-bold text-[10px] sm:text-[11px] focus:outline-none cursor-pointer transition-colors p-0 pr-1"
@@ -1224,21 +2015,7 @@ export function CartModal({
                                {getSupplierName(item.selectedSupplier || 'supplier2')}
                              </span>
                            );
-                         })()}
-
-                        {item.selectedPrice !== Infinity && (supplierLegalNames?.[item.selectedSupplier || 'supplier2'] || supplierPhones?.[item.selectedSupplier || 'supplier2']) && (
-                          <span className="inline-flex items-center gap-1 bg-slate-50 border border-slate-200 text-[9px] sm:text-[10px] text-slate-500 px-1.5 sm:px-2 py-0.5 rounded font-medium">
-                            {supplierLegalNames?.[item.selectedSupplier || 'supplier2'] && (
-                              <span>Юр: {supplierLegalNames[item.selectedSupplier || 'supplier2']}</span>
-                            )}
-                            {supplierLegalNames?.[item.selectedSupplier || 'supplier2'] && supplierPhones?.[item.selectedSupplier || 'supplier2'] && (
-                              <span className="text-slate-300">|</span>
-                            )}
-                            {supplierPhones?.[item.selectedSupplier || 'supplier2'] && (
-                              <span>Тел: {supplierPhones[item.selectedSupplier || 'supplier2']}</span>
-                            )}
-                          </span>
-                        )}
+                          })()}
 
                         <span className="bg-slate-100 text-slate-700 px-1.5 sm:px-2 py-0.5 rounded font-medium text-[10px] sm:text-[11px] truncate max-w-full">
                           {selectedSphere ? (
@@ -1359,6 +2136,186 @@ export function CartModal({
           </div>
         )}
       </div>
+
+      {/* Confirmation Modal Before Saving to Archive */}
+      {isConfirmSaveModalOpen && (
+        <div className="fixed inset-0 z-[130] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden p-6 animate-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3.5 mb-4">
+              <div className="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200/80 flex items-center justify-center text-amber-600 shrink-0 shadow-xs">
+                <HelpCircle className="w-6 h-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 leading-tight">
+                  {isEditingArchiveQuote
+                    ? `Сохранить изменения в купон #${savedQuoteId}?`
+                    : "Сохранить купон в Архив КП?"}
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-1">
+                  Вы уверены, что внесли все необходимые товары и данные?
+                </p>
+              </div>
+            </div>
+
+            {/* Brief review box */}
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Бенефициар:</span>
+                <span className="font-bold text-slate-900 truncate max-w-[220px]" title={clientName}>
+                  {beneficiaryId ? `[ID: ${beneficiaryId}] ` : ""}{clientName || "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Специалист:</span>
+                <span className="font-semibold text-slate-900 truncate max-w-[220px]" title={specialistName}>
+                  {specialistName || "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-medium">Район:</span>
+                <span className="font-semibold text-slate-900">
+                  {district ? `${district} (${selectedRegion})` : selectedRegion}
+                </span>
+              </div>
+              <div className="flex items-center justify-between border-t border-slate-200 pt-1.5">
+                <span className="text-slate-500 font-medium">Состав купона:</span>
+                <span className="font-extrabold text-indigo-700">
+                  {displayedCart.length} наим. на {total.toFixed(2)} с.
+                </span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
+              {isEditingArchiveQuote
+                ? "Изменения будут записаны в историю версий купона, а корзина очистится."
+                : "После подтверждения данные будут зафиксированы в Архиве КП. Дальнейшие изменения будут доступны только через режим редактирования в Архиве КП."}
+            </p>
+
+            {/* Action buttons */}
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 mt-5 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsConfirmSaveModalOpen(false)}
+                className="w-full sm:w-auto px-4 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-all cursor-pointer"
+              >
+                Нет, вернуться к редактированию
+              </button>
+              <button
+                type="button"
+                disabled={isSavingHistory}
+                onClick={executeSaveToHistory}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {isSavingHistory ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Сохранение...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Да, сохранить в Архив</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Center Success Notification Modal After Saving to Archive */}
+      {isSavedSuccessModalOpen && (
+        <div className="fixed inset-0 z-[130] bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden p-6 text-center animate-in zoom-in-95 duration-150 relative">
+            <button
+              onClick={() => setIsSavedSuccessModalOpen(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              title="Закрыть уведомление"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Emerald success icon with pulse badge */}
+            <div className="w-14 h-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-3.5 shadow-sm ring-8 ring-emerald-50">
+              <CheckCircle2 className="w-8 h-8" />
+            </div>
+
+            <h3 className="text-lg sm:text-xl font-extrabold text-slate-900 leading-tight">
+              Купон сохранен в Архиве КП!
+            </h3>
+
+            {savedQuoteId && (
+              <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1 bg-slate-100 border border-slate-200/90 rounded-lg text-xs font-mono font-bold text-slate-800 shadow-2xs">
+                <span className="text-slate-500 font-sans font-medium">Код купона:</span>
+                <span className="text-indigo-600 font-black">{savedQuoteId}</span>
+              </div>
+            )}
+
+            <p className="text-xs sm:text-sm text-slate-600 mt-3 leading-relaxed">
+              Все данные и снимок цен зафиксированы в Архиве КП. Кнопка сохранения заблокирована во избежание дублирования.
+            </p>
+
+            <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3 text-left text-xs text-amber-900 mt-3.5 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="leading-snug">
+                <strong>Обратите внимание:</strong> Для внесения любых изменений в этот купон перейдите в <strong>Архив КП</strong> и нажмите <strong>«Редактировать»</strong>.
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSavedSuccessModalOpen(false);
+                  onClearCart?.();
+                  setClientName("");
+                  setBeneficiaryId("");
+                  setSpecialistName("");
+                  setNote("");
+                  setIsSavedToHistory(false);
+                  setSavedQuoteId(null);
+                  onClose();
+                  setTimeout(() => {
+                    onOpenQuotesHistory?.();
+                  }, 200);
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl transition-all shadow-md cursor-pointer"
+              >
+                <Archive className="w-4 h-4" />
+                <span>Перейти в Архив КП</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSavedSuccessModalOpen(false)}
+                  className="flex-1 px-3 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                  title="Остаться в корзине, чтобы распечатать купон или скачать Excel"
+                >
+                  Остаться в купоне (Печать / Excel)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSavedSuccessModalOpen(false);
+                    onClearCart?.();
+                    setClientName("");
+                    setBeneficiaryId("");
+                    setSpecialistName("");
+                    setNote("");
+                    setIsSavedToHistory(false);
+                    setSavedQuoteId(null);
+                  }}
+                  className="px-3 py-2 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl transition-colors cursor-pointer"
+                  title="Очистить корзину для нового клиента"
+                >
+                  Новый купон
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

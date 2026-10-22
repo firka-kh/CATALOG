@@ -1,5 +1,6 @@
 import React from 'react';
 import { Product } from './types';
+import { formatSupplierCode } from './lib/supplierUtils';
 
 interface CartItem {
   product: Product;
@@ -14,11 +15,25 @@ interface Props {
   suppliers?: string[];
   logisticsCost?: number;
   selectedRegion?: string;
+  selectedDistrict?: string;
   selectedSphere?: string;
   supplierPhones?: Record<string, string>;
   supplierLegalNames?: Record<string, string>;
+  supplierAssignedCodes?: Record<string, string>;
   clientName?: string;
+  beneficiaryId?: string;
   facilitatorName?: string;
+  facilitatorLegalName?: string;
+  facilitatorRep?: string;
+  facilitatorPhone?: string;
+  facilitatorEmail?: string;
+  facilitatorLegalNames?: Record<string, string>;
+  facilitatorRepresentatives?: Record<string, string>;
+  facilitatorPhones?: Record<string, string>;
+  facilitatorEmails?: Record<string, string>;
+  facilitatorRegions?: Record<string, string>;
+  facilitators?: string[];
+  specialistName?: string;
   note?: string;
   createdAt?: string;
   quoteId?: string;
@@ -34,8 +49,134 @@ const getImageSrc = (img?: string, mime?: string) => {
   return `data:${mime || "image/jpeg"};base64,${trimmed}`;
 };
 
-export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, isPrinting, suppliers, logisticsCost = 0, selectedRegion = 'Душанбе', selectedSphere, supplierPhones, supplierLegalNames, clientName, facilitatorName, note, createdAt, quoteId, allProducts }, ref) => {
+export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
+  cart,
+  isPrinting,
+  suppliers,
+  logisticsCost = 0,
+  selectedRegion = 'Душанбе',
+  selectedDistrict,
+  selectedSphere,
+  supplierPhones,
+  supplierLegalNames,
+  supplierAssignedCodes,
+  clientName,
+  beneficiaryId,
+  facilitatorName,
+  facilitatorLegalName,
+  facilitatorRep,
+  facilitatorPhone,
+  facilitatorEmail,
+  facilitatorLegalNames,
+  facilitatorRepresentatives,
+  facilitatorPhones,
+  facilitatorEmails,
+  facilitatorRegions,
+  facilitators,
+  specialistName,
+  note,
+  createdAt,
+  quoteId,
+  allProducts,
+}, ref) => {
   if (!isPrinting) return null;
+
+  // Resolve facilitator details accurately
+  let matchedFacKey: string | null = null;
+  const lookupNames = [facilitatorName, facilitatorLegalName].filter(Boolean) as string[];
+
+  // 1. Direct key match (e.g. "facilitator2")
+  for (const name of lookupNames) {
+    if (
+      facilitatorRepresentatives?.[name] ||
+      facilitatorPhones?.[name] ||
+      facilitatorLegalNames?.[name] ||
+      facilitatorEmails?.[name] ||
+      facilitatorRegions?.[name]
+    ) {
+      matchedFacKey = name;
+      break;
+    }
+  }
+
+  // 2. Lookup in facilitators array (e.g. index -> facilitator${idx+2})
+  if (!matchedFacKey && facilitators && facilitators.length > 0) {
+    for (const name of lookupNames) {
+      const cleanName = name.trim().toLowerCase();
+      const idx = facilitators.findIndex(
+        (f) => f && (f.trim().toLowerCase() === cleanName ||
+                     cleanName.includes(f.trim().toLowerCase()) ||
+                     f.trim().toLowerCase().includes(cleanName))
+      );
+      if (idx >= 0) {
+        matchedFacKey = `facilitator${idx + 2}`;
+        break;
+      }
+    }
+  }
+
+  // 3. Lookup in facilitatorLegalNames values
+  if (!matchedFacKey && facilitatorLegalNames) {
+    for (const name of lookupNames) {
+      const cleanName = name.trim().toLowerCase();
+      for (const [k, lName] of Object.entries(facilitatorLegalNames)) {
+        const lStr = String(lName || "").trim().toLowerCase();
+        if (lStr && (lStr === cleanName || cleanName.includes(lStr) || lStr.includes(cleanName))) {
+          matchedFacKey = k;
+          break;
+        }
+      }
+      if (matchedFacKey) break;
+    }
+  }
+
+  // 4. Match by selectedRegion in facilitatorRegions
+  if (!matchedFacKey && selectedRegion && facilitatorRegions) {
+    for (const [k, reg] of Object.entries(facilitatorRegions)) {
+      const regStr = String(reg || "").trim().toLowerCase();
+      if (regStr && regStr === selectedRegion.trim().toLowerCase()) {
+        matchedFacKey = k;
+        break;
+      }
+    }
+  }
+
+  // 5. Default fallback if only one facilitator is in dictionary or pick first configured
+  if (!matchedFacKey && facilitators && facilitators.length > 0) {
+    // Check if any facilitator has phone or email configured
+    for (let i = 0; i < facilitators.length; i++) {
+      const k = `facilitator${i + 2}`;
+      if (facilitatorPhones?.[k] || facilitatorEmails?.[k] || facilitatorRepresentatives?.[k] || facilitatorLegalNames?.[k]) {
+        matchedFacKey = k;
+        break;
+      }
+    }
+    if (!matchedFacKey) {
+      matchedFacKey = 'facilitator2';
+    }
+  }
+
+  const resolvedFacLegalName =
+    (facilitatorLegalName && facilitatorLegalName !== "Фасилитатор" ? facilitatorLegalName : undefined) ||
+    (matchedFacKey ? facilitatorLegalNames?.[matchedFacKey] : undefined) ||
+    (facilitatorName && facilitatorName !== "Фасилитатор" ? facilitatorName : undefined) ||
+    (facilitators && facilitators[0]) ||
+    "Фасилитатор";
+
+  const resolvedFacRep =
+    facilitatorRep ||
+    (matchedFacKey ? facilitatorRepresentatives?.[matchedFacKey] : undefined) ||
+    "";
+
+  const resolvedFacPhone =
+    facilitatorPhone ||
+    (matchedFacKey ? facilitatorPhones?.[matchedFacKey] : undefined) ||
+    "";
+
+  const resolvedFacEmail =
+    facilitatorEmail ||
+    (matchedFacKey ? facilitatorEmails?.[matchedFacKey] : undefined) ||
+    "";
 
   // Filter cart items by selected sphere if provided
   let filteredCart = cart;
@@ -54,11 +195,18 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
 
   const getSupplierName = (supp?: 'supplier1' | 'supplier2' | 'supplier3' | 'supplier4' | string) => {
     if (!supp || supp === 'supplier1') return 'Логистика';
-    const list = suppliers || [];
-    if (supp === 'supplier2') return list[0] || 'Поставщик 1';
-    if (supp === 'supplier3') return list[1] || 'Поставщик 2';
-    if (supp === 'supplier4') return list[2] || 'Поставщик 3';
-    return 'Логистика';
+    const assignedCode = supp ? supplierAssignedCodes?.[supp] : undefined;
+    let listEntry: string | undefined;
+    let idx = -1;
+    if (supp.startsWith('supplier')) {
+      idx = parseInt(supp.replace(/\D/g, ''), 10) - 2;
+    } else if (suppliers) {
+      idx = suppliers.indexOf(supp);
+    }
+    if (idx >= 0 && suppliers && suppliers[idx]) {
+      listEntry = suppliers[idx];
+    }
+    return formatSupplierCode(supp, assignedCode || listEntry, idx >= 0 ? idx : undefined);
   };
 
   const suppliersInCart = Array.from(new Set(filteredCart.map(item => item.selectedSupplier || 'supplier2'))) as ('supplier1' | 'supplier2' | 'supplier3' | 'supplier4')[];
@@ -77,7 +225,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
           }
-          .print\:hidden {
+          .print\\:hidden {
             display: none !important;
           }
         }
@@ -115,79 +263,156 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
               breakAfter: sIndex < suppliersInCart.length - 1 ? 'page' : 'auto'
             }}
           >
-            <div className="flex items-center justify-between mb-6 border-b-2 border-black pb-4">
+            {/* Header: Document Title & Metadata */}
+            <div className="flex items-center justify-between mb-5 border-b-2 border-black pb-4">
               <div>
-                <h1 className="text-2xl font-bold uppercase tracking-wider">Купон</h1>
-                <p className="text-gray-600 mt-1">Официальный коммерческий пакет</p>
+                <h1 className="text-2xl font-bold uppercase tracking-wider text-slate-900">КУПОН</h1>
                 {quoteId && (
-                  <p className="text-xs font-mono font-semibold text-slate-700 mt-0.5">Код: {quoteId}</p>
+                  <p className="text-xs font-mono font-semibold text-slate-700 mt-1">
+                    Код купона: {quoteId} {beneficiaryId ? `• ID: ${beneficiaryId}` : ""}
+                  </p>
                 )}
               </div>
               <div className="text-right">
-                <p className="font-semibold">Дата формирования: {createdAt || new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                <p className="text-gray-500">Документ сгенерирован автоматически</p>
+                <p className="font-semibold text-slate-900">Дата формирования: {createdAt || new Date().toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                <p className="text-xs text-gray-500">Документ сгенерирован автоматически</p>
               </div>
             </div>
 
-            {/* Client, Facilitator, Supplier and Selection Parameters Header Section */}
-            {clientName && (
-              <div className="mb-4 p-4 border border-slate-300 rounded-lg bg-indigo-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            {/* 3-Column Header Details: Client/Parameters, Facilitator Organization, and Selected Supplier */}
+            <div className="mb-6 grid grid-cols-3 gap-3.5 items-stretch">
+              {/* Column 1: Client & Geographic Parameters */}
+              <div className="p-4 border-2 border-slate-300/90 rounded-xl bg-slate-50/70 flex flex-col justify-between shadow-xs">
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-indigo-700">Заказчик (ФИО / Объект):</div>
-                  <div className="text-lg font-bold text-slate-900 mt-0.5">{clientName}</div>
-                </div>
-                {facilitatorName && (
-                  <div className="text-right">
-                    <div className="text-xs font-semibold uppercase text-slate-500">Фасилитатор:</div>
-                    <div className="text-sm font-bold text-slate-800">{facilitatorName}</div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="mb-6 grid grid-cols-2 gap-4">
-              <div className="p-4 border border-gray-300 rounded-lg bg-gray-50/70">
-                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Выбранный поставщик:</div>
-                <div className="text-sm space-y-1">
-                  <div className="font-bold text-slate-950 flex items-center gap-1.5 text-base">
-                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 block"></span>
-                    <span>{supplierName}</span>
-                  </div>
-                  {supplierSphere && (
-                    <div className="text-xs text-gray-800 font-semibold pl-3 mt-1 flex items-center gap-1.5">
-                      <span className="text-gray-500 font-normal">Сфера:</span>
-                      <span className="font-bold text-indigo-900 bg-indigo-50/80 px-2 py-0.5 rounded border border-indigo-200/70 text-xs">
-                        {supplierSphere}
-                      </span>
-                    </div>
-                  )}
-                  {supplierLegalNames?.[supplierKey] && (
-                    <div className="text-xs text-gray-700 font-medium pl-3 mt-1">
-                      <span className="text-gray-500">Юридическое название:</span> {supplierLegalNames[supplierKey]}
-                    </div>
-                  )}
-                  {supplierPhones?.[supplierKey] && (
-                    <div className="text-xs text-gray-700 font-medium pl-3">
-                      <span className="text-gray-500">Телефон:</span> {supplierPhones[supplierKey]}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="p-4 border border-gray-300 rounded-lg bg-gray-50/70">
-                <div className="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-2">Параметры формирования купона:</div>
-                <div className="text-sm space-y-1.5 mt-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-500">Регион:</span>
-                    <span className="font-bold text-slate-900 bg-slate-200 px-2.5 py-0.5 rounded text-xs border border-slate-300">
-                      {selectedRegion || "—"}
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-800 mb-3 border-b-2 border-slate-200 pb-1.5 flex items-center justify-between">
+                    <span>1. Заказчик и параметры:</span>
+                    <span className="text-[9px] bg-slate-200/80 text-slate-700 font-bold px-1.5 py-0.5 rounded">
+                      Клиент
                     </span>
                   </div>
-                  {note && (
-                    <div className="text-xs text-slate-600 italic mt-1 pt-1 border-t border-slate-200">
-                      Заметка: {note}
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">
+                        Бенефициар (Клиент):
+                      </span>
+                      <div className="font-extrabold text-slate-950 text-sm leading-tight mt-0.5 flex items-center gap-2 flex-wrap">
+                        {beneficiaryId && (
+                          <span className="bg-slate-900 text-white font-mono text-xs px-2 py-0.5 rounded font-black tracking-wider">
+                            ID: {beneficiaryId}
+                          </span>
+                        )}
+                        <span>{clientName || "—"}</span>
+                      </div>
                     </div>
-                  )}
+
+                    <div className="flex items-center justify-between gap-1 border-t border-slate-200 pt-1.5">
+                      <span className="text-slate-600 font-medium">Регион:</span>
+                      <span className="font-bold text-slate-900 bg-white px-2 py-0.5 rounded text-xs border border-slate-300 shadow-2xs">
+                        {selectedRegion || "—"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-1 border-t border-slate-200 pt-1.5">
+                      <span className="text-slate-600 font-medium">Район:</span>
+                      <span className="font-bold text-indigo-950 bg-indigo-50 px-2 py-0.5 rounded text-xs border border-indigo-200 shadow-2xs">
+                        {selectedDistrict || "—"}
+                      </span>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-1.5 text-[11px]">
+                      <span className="text-slate-500 font-medium block text-[10px] uppercase tracking-wider">Заметка:</span>
+                      <span className={`block mt-0.5 font-medium ${note ? 'text-slate-800 italic' : 'text-slate-400'}`}>
+                        {note || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2: Facilitator Organization Information */}
+              <div className="p-4 border-2 border-indigo-200 rounded-xl bg-indigo-50/40 flex flex-col justify-between shadow-xs">
+                <div>
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-indigo-950 mb-3 border-b-2 border-indigo-200/80 pb-1.5 flex items-center justify-between">
+                    <span>2. Организация-Фасилитатор:</span>
+                    <span className="text-[9px] bg-indigo-100 text-indigo-800 font-bold px-1.5 py-0.5 rounded border border-indigo-200">
+                      Партнер
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    {/* Юр. название (Организация) */}
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-indigo-700 tracking-wider block">
+                        Юр. название (Организация) *:
+                      </span>
+                      <div className="font-extrabold text-indigo-950 text-sm leading-tight mt-0.5">
+                        {resolvedFacLegalName || facilitatorName || "—"}
+                      </div>
+                    </div>
+
+                    {/* ФИО представителя */}
+                    <div className="flex items-start justify-between gap-1 border-t border-indigo-100 pt-1.5">
+                      <span className="text-slate-600 font-medium whitespace-nowrap">ФИО представителя:</span>
+                      <span className="font-bold text-slate-900 text-right">
+                        {resolvedFacRep || "—"}
+                      </span>
+                    </div>
+
+                    {/* Телефон */}
+                    <div className="flex items-center justify-between gap-1 border-t border-indigo-100 pt-1.5">
+                      <span className="text-slate-600 font-medium whitespace-nowrap">Телефон фирмы:</span>
+                      <span className="font-bold text-slate-900 text-right">
+                        {resolvedFacPhone || "—"}
+                      </span>
+                    </div>
+
+                    {/* Email */}
+                    <div className="flex items-center justify-between gap-1 border-t border-indigo-100 pt-1.5">
+                      <span className="text-slate-600 font-medium whitespace-nowrap">Email для связи:</span>
+                      <span className="font-bold text-slate-900 text-right truncate max-w-[160px]" title={resolvedFacEmail}>
+                        {resolvedFacEmail || "—"}
+                      </span>
+                    </div>
+
+                    {/* Заполнил специалист */}
+                    <div className="pt-2 mt-1.5 border-t-2 border-indigo-200/80 bg-white/80 -mx-4 -mb-4 px-4 py-2 rounded-b-xl flex items-center justify-between">
+                      <span className="text-[11px] text-slate-600 font-semibold">Специалист (заполнил):</span>
+                      <span className="font-extrabold text-indigo-950 text-xs">
+                        {specialistName || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 3: Selected Supplier */}
+              <div className="p-4 border-2 border-slate-300/90 rounded-xl bg-slate-50/70 flex flex-col justify-between shadow-xs">
+                <div>
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-slate-800 mb-3 border-b-2 border-slate-200 pb-1.5 flex items-center justify-between">
+                    <span>3. Выбранный поставщик:</span>
+                    <span className="text-[9px] bg-slate-200/80 text-slate-700 font-bold px-1.5 py-0.5 rounded">
+                      Поставщик
+                    </span>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">
+                        Код поставщика:
+                      </span>
+                      <div className="font-extrabold text-slate-950 text-sm flex items-center gap-1.5 mt-0.5">
+                        <span className="w-2 h-2 rounded-full bg-indigo-600 block shrink-0"></span>
+                        <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-300 font-mono">{supplierName}</span>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-1.5">
+                      <span className="text-slate-500 font-medium block text-[10px] uppercase tracking-wider">Сфера:</span>
+                      <span className="font-bold text-indigo-900 text-xs line-clamp-2 mt-0.5 block">
+                        {supplierSphere || selectedSphere || "Все сферы"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -286,19 +511,46 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({ cart, is
               </tbody>
             </table>
 
-            <div className="mt-12 grid grid-cols-3 gap-6 px-6 pt-8 border-t border-gray-300 break-inside-avoid">
-                <div className="text-center">
-                    <div className="w-full max-w-[200px] mx-auto border-b border-black mb-2"></div>
-                    <div className="text-xs font-semibold uppercase text-gray-500">Подпись клиента</div>
+            {/* Signature block with EXACTLY 3 signatures as requested */}
+            <div className="mt-12 grid grid-cols-3 gap-8 px-6 pt-8 border-t-2 border-slate-300 break-inside-avoid">
+              {/* 1. ПОДПИСЬ БЕНЕФИЦИАРА */}
+              <div className="text-center">
+                <div className="w-full max-w-[210px] mx-auto border-b-2 border-slate-900 mb-2.5 min-h-[30px] flex items-end justify-center">
+                  {/* Space for hand signature */}
                 </div>
-                <div className="text-center">
-                    <div className="w-full max-w-[200px] mx-auto border-b border-black mb-2"></div>
-                    <div className="text-xs font-semibold uppercase text-gray-500">Подпись поставщика</div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  ПОДПИСЬ БЕНЕФИЦИАРА
                 </div>
-                <div className="text-center">
-                    <div className="w-full max-w-[200px] mx-auto border-b border-black mb-2"></div>
-                    <div className="text-xs font-semibold uppercase text-gray-500">Подпись ГРП-МТМЗН РТ</div>
+                <div className="text-[11px] text-slate-500 mt-1 font-medium truncate">
+                  {clientName ? `(${beneficiaryId ? `ID: ${beneficiaryId} • ` : ""}${clientName})` : "____________________"}
                 </div>
+              </div>
+
+              {/* 2. ПОДПИСЬ ФАСИЛИТАТОРА */}
+              <div className="text-center">
+                <div className="w-full max-w-[210px] mx-auto border-b-2 border-slate-900 mb-2.5 min-h-[30px] flex items-end justify-center">
+                  {/* Space for hand signature */}
+                </div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  ПОДПИСЬ ФАСИЛИТАТОРА
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1 font-medium truncate">
+                  {resolvedFacRep ? `(${resolvedFacRep})` : resolvedFacLegalName ? `(${resolvedFacLegalName})` : specialistName ? `(${specialistName})` : "____________________"}
+                </div>
+              </div>
+
+              {/* 3. ПОДПИСЬ ПОСТАВЩИКА */}
+              <div className="text-center">
+                <div className="w-full max-w-[210px] mx-auto border-b-2 border-slate-900 mb-2.5 min-h-[30px] flex items-end justify-center">
+                  {/* Space for hand signature */}
+                </div>
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  ПОДПИСЬ ПОСТАВЩИКА
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1 font-medium truncate">
+                  {supplierName ? `(${supplierName})` : "____________________"}
+                </div>
+              </div>
             </div>
           </div>
         );

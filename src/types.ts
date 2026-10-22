@@ -10,6 +10,7 @@ export interface Product {
     priceSupplier3?: number;
     priceSupplier4?: number;
     prices?: {
+      [supplierKey: string]: Record<string, number> | undefined;
       supplier1?: Record<string, number>;
       supplier2?: Record<string, number>;
       supplier3?: Record<string, number>;
@@ -34,7 +35,17 @@ export interface GlobalDictionary {
     logisticsCosts?: Record<string, number>;
     supplierPhones?: Record<string, string>;
     supplierLegalNames?: Record<string, string>;
+    supplierSpheres?: Record<string, string[]>;
+    supplierAllRegions?: Record<string, boolean>;
+    supplierRegions?: Record<string, string[]>;
+    supplierDistricts?: Record<string, string[]>;
+    supplierAssignedCodes?: Record<string, string>;
     facilitators?: string[];
+    facilitatorLegalNames?: Record<string, string>;
+    facilitatorRepresentatives?: Record<string, string>;
+    facilitatorPhones?: Record<string, string>;
+    facilitatorEmails?: Record<string, string>;
     facilitatorRegions?: Record<string, string>;
     facilitatorCodes?: Record<string, string>;
+    adminPassword?: string;
 }

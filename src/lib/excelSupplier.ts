@@ -51,7 +51,7 @@ export async function downloadSupplierExcel(
     ws.getColumn(5).width = 20; // Unit
     ws.getColumn(6).width = 15; // Your Price
 
-    const headerName = supplierId === 'supplier1' ? 'Ваша цена (Основная)' : `Ваша цена (${selectedRegion || 'Всем'})`;
+    const headerName = supplierId === 'supplier1' ? 'Ваша цена (Основная)' : `Ваша цена (${selectedRegion || 'Все регионы'})`;
 
     const headerRow = ws.addRow([
         'ID товара (НЕ РЕДАКТИРОВАТЬ)',
@@ -76,10 +76,13 @@ export async function downloadSupplierExcel(
         let originalVal: number | string = '';
 
         if (supplierId === 'supplier1') {
-            originalVal = p.priceSupplier1 || '';
+            originalVal = p.priceSupplier1 || p.price || '';
         } else {
             if (selectedRegion && p.prices && p.prices[supplierId] && p.prices[supplierId][selectedRegion] !== undefined) {
                 originalVal = p.prices[supplierId][selectedRegion];
+            } else {
+                const supKey = supplierId === 'supplier2' ? 'priceSupplier2' : supplierId === 'supplier3' ? 'priceSupplier3' : 'priceSupplier4';
+                originalVal = (p as any)[supKey] || (p.prices?.[supplierId]?.['Душанбе']) || (p.prices?.[supplierId] ? Object.values(p.prices[supplierId]).find(v => typeof v === 'number' && v > 0) : '') || p.price || '';
             }
         }
 

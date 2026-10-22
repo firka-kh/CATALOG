@@ -3,6 +3,7 @@ import { saveAs } from "file-saver";
 import { Product } from "../types";
 import { db } from "./firebase";
 import { doc, writeBatch, deleteField } from "firebase/firestore";
+import { formatSupplierCode } from "./supplierUtils";
 
 export async function downloadPriceEditExcel(
   products: Product[],
@@ -21,9 +22,9 @@ export async function downloadPriceEditExcel(
     "Сфера",
     "Регион",
     "Ед. изм.",
-    suppliers[0] || "Поставщик 1",
-    suppliers[1] || "Поставщик 2",
-    suppliers[2] || "Поставщик 3",
+    formatSupplierCode("supplier2", suppliers[0], 0),
+    formatSupplierCode("supplier3", suppliers[1], 1),
+    formatSupplierCode("supplier4", suppliers[2], 2),
   ];
 
   ws.addRow(headers);
@@ -75,7 +76,7 @@ export async function downloadPriceEditExcel(
     "1. Не изменяйте значения в колонке ID (Колонка A) и Регион (Колонка E)! Они нужны для обновления товара.",
   ]);
   instructionRow.addRow([
-    '2. Редактируйте цены в 3-х колонках поставщиков ("Поставщик 1", "Поставщик 2", "Поставщик 3").',
+    '2. Редактируйте цены в 3-х колонках поставщиков (SPMEI-100, SPMEI-101, SPMEI-102).',
   ]);
   instructionRow.addRow([
     '3. Если нужно удалить цену, поставьте символ "-" (минус). Оставление пустой ячейки проигнорирует обновление.',

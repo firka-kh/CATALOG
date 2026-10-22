@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Product } from "./types";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { Product, GlobalDictionary } from "./types";
 import { downloadCatalogExcel } from "./lib/excelExport";
 import { downloadPriceEditExcel, importPriceEditExcel } from "./lib/priceExcelSync";
 import {
@@ -14,6 +14,7 @@ import {
   Download,
   Trash2,
   Plus,
+  Truck,
   X,
   Printer,
   Pencil,
@@ -29,10 +30,16 @@ import {
   Lock,
   Archive,
   TrendingUp,
+  ShieldAlert,
+  LogIn,
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
+import { AuditConsoleModal } from "./components/AuditConsoleModal";
+import { AnimatedLoginScreen } from "./components/AnimatedLoginScreen";
+import { logAuditEvent } from "./lib/auditLogger";
 import { UpdateNotifier } from "./components/UpdateNotifier";
+import { formatSupplierCode } from "./lib/supplierUtils";
 import { db, handleFirestoreError, OperationType } from "./lib/firebase";
 import { generateNextProductCode } from "./lib/generateNextCode";
 import {
@@ -55,7 +62,7 @@ import { PrintCartView } from "./PrintCartView";
 // @ts-ignore
 import { useRegisterSW } from "virtual:pwa-register/react";
 
-const DISTRICTS_BY_REGION: Record<string, string[]> = {
+export const DISTRICTS_BY_REGION: Record<string, string[]> = {
   Душанбе: ["Исмоили Сомони", "Сино", "Фирдавси", "Шохмансур"],
   ГБАО: [
     "г. Хорог",
@@ -198,6 +205,79 @@ const DEFAULT_SPHERES = [
   "Консервирование",
 ];
 
+export const DEFAULT_FACILITATORS = [
+  "ОО Пешсаф",
+  "ОО Бонувони Хатлон",
+  "ОО Умедбахш",
+  "ОО Шарикон барои рушд",
+  "ООО Академияи рушди иҷтимои (РРП)",
+  "ООО Академияи рушди иҷтимои (Душанбе)",
+];
+
+export const DEFAULT_FACILITATOR_LEGAL_NAMES: Record<string, string> = {
+  facilitator2: "ОО Пешсаф",
+  facilitator3: "ОО Бонувони Хатлон",
+  facilitator4: "ОО Умедбахш",
+  facilitator5: "ОО Шарикон барои рушд",
+  facilitator6: "ООО Академияи рушди иҷтимои",
+  facilitator7: "ООО Академияи рушди иҷтимои",
+};
+
+export const DEFAULT_FACILITATOR_REPRESENTATIVES: Record<string, string> = {
+  facilitator2: "Махмадмуродов Далер",
+  facilitator3: "Дилбар Шомуратова",
+  facilitator4: "Курбонов Раҷабали",
+  facilitator5: "Қаламфурова Асел",
+  facilitator6: "Ахмадов Бахтиёр",
+  facilitator7: "Ахмадов Бахтиёр",
+};
+
+export const DEFAULT_FACILITATOR_PHONES: Record<string, string> = {
+  facilitator2: "909191032",
+  facilitator3: "927758599",
+  facilitator4: "931580301",
+  facilitator5: "990040088",
+  facilitator6: "907387474",
+  facilitator7: "907387474",
+};
+
+export const DEFAULT_FACILITATOR_EMAILS: Record<string, string> = {
+  facilitator2: "daler.mahmadmurodov@flagman.tj",
+  facilitator3: "bonuvonikhatlon@gmail.com",
+  facilitator4: "umedbakhsh2018@mail.ru",
+  facilitator5: "asel.potn@gmail.com",
+  facilitator6: "b.ahmadov.91@mail.ru",
+  facilitator7: "b.ahmadov.91@mail.ru",
+};
+
+export const DEFAULT_FACILITATOR_REGIONS: Record<string, string> = {
+  facilitator2: "Хатлон 1 (Бохтар)",
+  facilitator3: "Согдийская область",
+  facilitator4: "Хатлон 2 (Куляб)",
+  facilitator5: "ГБАО",
+  facilitator6: "РРП",
+  facilitator7: "Душанбе",
+};
+
+export const DEFAULT_FACILITATOR_CODES: Record<string, string> = {
+  facilitator2: "909191032",
+  facilitator3: "927758599",
+  facilitator4: "931580301",
+  facilitator5: "990040088",
+  facilitator6: "907387474",
+  facilitator7: "907387474",
+};
+
+export const normalizeFacilitatorRegions = (raw?: Record<string, string>): Record<string, string> => {
+  const result: Record<string, string> = { ...(raw && Object.keys(raw).length > 0 ? raw : DEFAULT_FACILITATOR_REGIONS) };
+  for (const [k, v] of Object.entries(result)) {
+    if (v === "Вилояти Суғд" || v === "Вилояти Сугд") {
+      result[k] = "Согдийская область";
+    }
+  }
+  return result;
+};
+
 const compressImageBase64 = (
   base64: string,
   maxWidth = 800,
@@ -319,6 +399,33 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     },
   });
 
+  const [isSwReloading, setIsSwReloading] = useState(false);
+
+  const handleSwUpdate = async () => {
+    if (isSwReloading) return;
+    setIsSwReloading(true);
+    try {
+      if (typeof updateServiceWorker === "function") {
+        await updateServiceWorker(true);
+      }
+      if ("serviceWorker" in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+        }
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          await caches.delete(key);
+        }
+      }
+    } catch (e) {
+      console.error("SW update / cache clear error:", e);
+    }
+    window.location.reload();
+  };
+
   // Facilitator Auth & Lock States
   const [isDictLoaded, setIsDictLoaded] = useState(() => {
     try {
@@ -386,26 +493,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     total: number;
   }>({ active: false, current: 0, total: 0 });
 
-  const [globalDict, setGlobalDict] = useState<{
-    regions: string[];
-    districtsByRegion: Record<string, string[]>;
-    spheres: string[];
-    suppliers: string[];
-    pricingRules?: {
-      supplier1?: Record<string, number>;
-      supplier2?: Record<string, number>;
-      supplier3?: Record<string, number>;
-      supplier4?: Record<string, number>;
-    };
-    supplierCodes?: Record<string, string>;
-    logisticsCosts?: Record<string, number>;
-    supplierPhones?: Record<string, string>;
-    supplierLegalNames?: Record<string, string>;
-    facilitators?: string[];
-    facilitatorRegions?: Record<string, string>;
-    facilitatorCodes?: Record<string, string>;
-    adminPassword?: string;
-  }>(() => {
+  const [globalDict, setGlobalDict] = useState<GlobalDictionary>(() => {
     try {
       const cached = localStorage.getItem("global_dict_cache");
       if (cached) {
@@ -426,9 +514,18 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
             logisticsCosts: parsed.logisticsCosts || {},
             supplierPhones: parsed.supplierPhones || {},
             supplierLegalNames: parsed.supplierLegalNames || {},
-            facilitators: parsed.facilitators || [],
-            facilitatorRegions: parsed.facilitatorRegions || {},
-            facilitatorCodes: parsed.facilitatorCodes || {},
+            supplierSpheres: parsed.supplierSpheres || {},
+            supplierAllRegions: parsed.supplierAllRegions || {},
+            supplierRegions: parsed.supplierRegions || {},
+            supplierDistricts: parsed.supplierDistricts || {},
+            supplierAssignedCodes: parsed.supplierAssignedCodes || {},
+            facilitators: (parsed.facilitators && parsed.facilitators.length > 0) ? parsed.facilitators : DEFAULT_FACILITATORS,
+            facilitatorLegalNames: (parsed.facilitatorLegalNames && Object.keys(parsed.facilitatorLegalNames).length > 0) ? parsed.facilitatorLegalNames : DEFAULT_FACILITATOR_LEGAL_NAMES,
+            facilitatorRepresentatives: (parsed.facilitatorRepresentatives && Object.keys(parsed.facilitatorRepresentatives).length > 0) ? parsed.facilitatorRepresentatives : DEFAULT_FACILITATOR_REPRESENTATIVES,
+            facilitatorPhones: (parsed.facilitatorPhones && Object.keys(parsed.facilitatorPhones).length > 0) ? parsed.facilitatorPhones : DEFAULT_FACILITATOR_PHONES,
+            facilitatorEmails: (parsed.facilitatorEmails && Object.keys(parsed.facilitatorEmails).length > 0) ? parsed.facilitatorEmails : DEFAULT_FACILITATOR_EMAILS,
+            facilitatorRegions: normalizeFacilitatorRegions(parsed.facilitatorRegions),
+            facilitatorCodes: (parsed.facilitatorCodes && Object.keys(parsed.facilitatorCodes).length > 0) ? parsed.facilitatorCodes : DEFAULT_FACILITATOR_CODES,
             adminPassword: parsed.adminPassword || "020779",
           };
         }
@@ -450,18 +547,70 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       logisticsCosts: {},
       supplierPhones: {},
       supplierLegalNames: {},
-      facilitators: [],
-      facilitatorRegions: {},
-      facilitatorCodes: {},
+      supplierSpheres: {},
+      supplierAllRegions: {},
+      supplierRegions: {},
+      supplierDistricts: {},
+      supplierAssignedCodes: {},
+      facilitators: DEFAULT_FACILITATORS,
+      facilitatorLegalNames: DEFAULT_FACILITATOR_LEGAL_NAMES,
+      facilitatorRepresentatives: DEFAULT_FACILITATOR_REPRESENTATIVES,
+      facilitatorPhones: DEFAULT_FACILITATOR_PHONES,
+      facilitatorEmails: DEFAULT_FACILITATOR_EMAILS,
+      facilitatorRegions: DEFAULT_FACILITATOR_REGIONS,
+      facilitatorCodes: DEFAULT_FACILITATOR_CODES,
       adminPassword: "020779",
     };
+  });
+
+  const [selectedRegion, setSelectedRegion] = useState(() => {
+    const r = localStorage.getItem("catalog_region") || "";
+    if (r === "Хатлонская область") return "Хатлон 1 (Бохтар)";
+    return r;
+  });
+  const [selectedDistrict, setSelectedDistrict] = useState(() => {
+    return localStorage.getItem("catalog_district") || "";
   });
 
   // Robust facilitator lookup that directly resolves keys without wrong fallbacks
   const getResolvedFacilitator = () => {
     let activeKey = portalFacilitator || authenticatedFacilitatorKey || "";
     if (!activeKey) {
-      return { key: "", code: "", name: "Фасилитатор", region: "" };
+      // 1. Look up if any facilitator is assigned to selectedRegion
+      if (selectedRegion && globalDict.facilitatorRegions) {
+        for (const [k, reg] of Object.entries(globalDict.facilitatorRegions)) {
+          const regStr = String(reg || "").trim().toLowerCase();
+          const selStr = selectedRegion.trim().toLowerCase();
+          const isMatch = regStr && (
+            regStr === selStr ||
+            (selStr.includes("согдийск") && (regStr.includes("суғд") || regStr.includes("согдийск"))) ||
+            (selStr.includes("суғд") && (regStr.includes("суғд") || regStr.includes("согдийск"))) ||
+            (selStr.includes("бохтар") && (regStr.includes("бохтар") || regStr.includes("хатлон 1"))) ||
+            (selStr.includes("куляб") && (regStr.includes("куляб") || regStr.includes("хатлон 2")))
+          );
+          if (isMatch) {
+            activeKey = k;
+            break;
+          }
+        }
+      }
+      // 2. If still no activeKey, check if there are any facilitators in dictionary
+      if (!activeKey && globalDict.facilitators && globalDict.facilitators.length > 0) {
+        activeKey = "facilitator2";
+      }
+    }
+
+    if (!activeKey) {
+      return {
+        key: "",
+        code: "",
+        name: "Фасилитатор",
+        legalName: "Фасилитатор",
+        representative: "",
+        phone: "",
+        email: "",
+        region: "",
+      };
     }
 
     // Direct key resolution if activeKey starts with "facilitator" (e.g. facilitator2, facilitator3)
@@ -470,11 +619,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       const name = (idx >= 0 && globalDict.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
       const region = globalDict.facilitatorRegions?.[activeKey] || "";
       const code = String(globalDict.facilitatorCodes?.[activeKey] || "");
+      const legalName = globalDict.facilitatorLegalNames?.[activeKey] || name;
+      const representative = globalDict.facilitatorRepresentatives?.[activeKey] || "";
+      const phone = globalDict.facilitatorPhones?.[activeKey] || "";
+      const email = globalDict.facilitatorEmails?.[activeKey] || "";
       return {
         key: activeKey,
         code,
         name,
-        region
+        legalName,
+        representative,
+        phone,
+        email,
+        region,
       };
     }
 
@@ -485,17 +642,89 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           const idx = parseInt(key.replace("facilitator", ""), 10) - 2;
           const name = (idx >= 0 && globalDict.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
           const region = globalDict.facilitatorRegions?.[key] || "";
+          const legalName = globalDict.facilitatorLegalNames?.[key] || name;
+          const representative = globalDict.facilitatorRepresentatives?.[key] || "";
+          const phone = globalDict.facilitatorPhones?.[key] || "";
+          const email = globalDict.facilitatorEmails?.[key] || "";
           return {
             key,
             code: String(codeVal),
             name,
-            region
+            legalName,
+            representative,
+            phone,
+            email,
+            region,
           };
         }
       }
     }
 
-    return { key: activeKey, code: "", name: "Фасилитатор", region: "" };
+    // If activeKey is a facilitator name or legal name, look up in facilitators or facilitatorLegalNames
+    if (globalDict.facilitators) {
+      const idx = globalDict.facilitators.findIndex(
+        (f) => f && (f.trim().toLowerCase() === activeKey.trim().toLowerCase() ||
+                     f.trim().toLowerCase().includes(activeKey.trim().toLowerCase()) ||
+                     activeKey.trim().toLowerCase().includes(f.trim().toLowerCase()))
+      );
+      if (idx >= 0) {
+        const key = `facilitator${idx + 2}`;
+        const name = globalDict.facilitators[idx];
+        const region = globalDict.facilitatorRegions?.[key] || "";
+        const code = String(globalDict.facilitatorCodes?.[key] || "");
+        const legalName = globalDict.facilitatorLegalNames?.[key] || name;
+        const representative = globalDict.facilitatorRepresentatives?.[key] || "";
+        const phone = globalDict.facilitatorPhones?.[key] || "";
+        const email = globalDict.facilitatorEmails?.[key] || "";
+        return {
+          key,
+          code,
+          name,
+          legalName,
+          representative,
+          phone,
+          email,
+          region,
+        };
+      }
+    }
+
+    if (globalDict.facilitatorLegalNames) {
+      for (const [key, lName] of Object.entries(globalDict.facilitatorLegalNames)) {
+        const lStr = String(lName || "").trim().toLowerCase();
+        const aStr = activeKey.trim().toLowerCase();
+        if (lStr && (lStr === aStr || lStr.includes(aStr) || aStr.includes(lStr))) {
+          const idx = parseInt(key.replace("facilitator", ""), 10) - 2;
+          const name = (idx >= 0 && globalDict.facilitators?.[idx]) ? globalDict.facilitators[idx] : String(lName);
+          const region = globalDict.facilitatorRegions?.[key] || "";
+          const code = String(globalDict.facilitatorCodes?.[key] || "");
+          const representative = globalDict.facilitatorRepresentatives?.[key] || "";
+          const phone = globalDict.facilitatorPhones?.[key] || "";
+          const email = globalDict.facilitatorEmails?.[key] || "";
+          return {
+            key,
+            code,
+            name,
+            legalName: lName,
+            representative,
+            phone,
+            email,
+            region,
+          };
+        }
+      }
+    }
+
+    return {
+      key: activeKey,
+      code: "",
+      name: activeKey || "Фасилитатор",
+      legalName: activeKey || "Фасилитатор",
+      representative: "",
+      phone: "",
+      email: "",
+      region: "",
+    };
   };
 
   const resolvedFacilitator = getResolvedFacilitator();
@@ -512,36 +741,75 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   };
 
   const getSupplierLabel = (
-    sup: "supplier1" | "supplier2" | "supplier3" | "supplier4",
+    sup: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
   ) => {
     if (sup === "supplier1") return "Логистика";
-    const list = globalDict.suppliers || [];
-    if (sup === "supplier2") return list[0] || "Поставщик 1";
-    if (sup === "supplier3") return list[1] || "Поставщик 2";
-    return list[2] || "Поставщик 3";
+    const assignedCode = globalDict.supplierAssignedCodes?.[sup];
+    let listEntry: string | undefined;
+    let idx = -1;
+    if (sup.startsWith("supplier")) {
+      idx = parseInt(sup.replace(/\D/g, ""), 10) - 2;
+    } else {
+      idx = (globalDict.suppliers || []).indexOf(sup);
+    }
+    if (idx >= 0 && globalDict.suppliers && globalDict.suppliers[idx]) {
+      listEntry = globalDict.suppliers[idx];
+    }
+    return formatSupplierCode(sup, assignedCode || listEntry, idx >= 0 ? idx : undefined);
   };
 
   const getSupplierFormTabName = (
-    sup: "supplier1" | "supplier2" | "supplier3" | "supplier4",
+    sup: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
   ) => {
-    if (sup === "supplier1") return "Логистика";
-    const list = globalDict.suppliers || [];
-    if (sup === "supplier2") return list[0] || "Пост. 1";
-    if (sup === "supplier3") return list[1] || "Пост. 2";
-    return list[2] || "Пост. 3";
+    return getSupplierLabel(sup);
   };
-  const [selectedRegion, setSelectedRegion] = useState(() => {
-    const r = localStorage.getItem("catalog_region") || "";
-    if (r === "Хатлонская область") return "Хатлон 1 (Бохтар)";
-    return r;
-  });
-  const [selectedSupplier, setSelectedSupplier] = useState<
-    "supplier2" | "supplier3" | "supplier4"
-  >(() => {
+
+  const availableSupplierKeys = useMemo(() => {
+    const keySet = new Set<string>();
+    const assigned = globalDict.supplierAssignedCodes || {};
+    Object.keys(assigned).filter(k => k.startsWith("supplier") && k !== "supplier1").forEach(k => keySet.add(k));
+
+    const legal = globalDict.supplierLegalNames || {};
+    Object.keys(legal).filter(k => k.startsWith("supplier") && k !== "supplier1").forEach(k => keySet.add(k));
+
+    const sups = globalDict.suppliers || [];
+    sups.forEach((_, i) => keySet.add(`supplier${i + 2}`));
+
+    if (keySet.size === 0) {
+      return ["supplier2", "supplier3", "supplier4"] as ("supplier2" | "supplier3" | "supplier4")[];
+    }
+
+    return Array.from(keySet).sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+      const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+      return numA - numB;
+    }) as ("supplier2" | "supplier3" | "supplier4")[];
+  }, [globalDict.supplierAssignedCodes, globalDict.supplierLegalNames, globalDict.suppliers]);
+
+  useEffect(() => {
+    if (selectedDistrict) {
+      localStorage.setItem("catalog_district", selectedDistrict);
+    } else {
+      localStorage.removeItem("catalog_district");
+    }
+  }, [selectedDistrict]);
+  const [selectedSupplier, setSelectedSupplier] = useState<string>(() => {
     const saved = localStorage.getItem("catalog_supplier");
-    if (saved === "supplier1" || !saved) return "supplier2";
-    return saved as any;
+    if (!saved || saved === "supplier1") return "all";
+    return saved;
   });
+
+  useEffect(() => {
+    if (selectedSupplier !== "all" && availableSupplierKeys.length > 0 && !availableSupplierKeys.includes(selectedSupplier as any)) {
+      setSelectedSupplier("all");
+    }
+  }, [availableSupplierKeys, selectedSupplier]);
+
+  useEffect(() => {
+    if (selectedSupplier) {
+      localStorage.setItem("catalog_supplier", selectedSupplier);
+    }
+  }, [selectedSupplier]);
   const [selectedSphere, setSelectedSphere] = useState(
     () => localStorage.getItem("catalog_sphere") || "",
   );
@@ -631,21 +899,34 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
   const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isSwitchLoginOpen, setIsSwitchLoginOpen] = useState(false);
   const [cartPrintMetadata, setCartPrintMetadata] = useState<{
     clientName?: string;
+    beneficiaryId?: string;
     facilitatorName?: string;
+    specialistName?: string;
     note?: string;
     createdAt?: string;
     quoteId?: string;
     selectedRegion?: string;
+    selectedDistrict?: string;
     selectedSphere?: string;
     logisticsCost?: number;
     cart?: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[];
   }>({});
   const [restoredCartMeta, setRestoredCartMeta] = useState<{
+    quoteId?: string;
     clientName?: string;
+    beneficiaryId?: string;
     facilitatorName?: string;
+    facilitatorLegalName?: string;
+    facilitatorRep?: string;
+    facilitatorPhone?: string;
+    facilitatorEmail?: string;
+    specialistName?: string;
     note?: string;
+    district?: string;
   }>({});
   const [isTabletMode, setIsTabletMode] = useState(
     () => localStorage.getItem("catalog_tablet_mode") === "true",
@@ -787,8 +1068,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          let loadedRegions = data.regions || Object.keys(DISTRICTS_BY_REGION);
-          let loadedDistricts = data.districtsByRegion || DISTRICTS_BY_REGION;
+          let loadedRegions: string[] = data.regions || Object.keys(DISTRICTS_BY_REGION);
+          let loadedDistricts: Record<string, string[]> = data.districtsByRegion || DISTRICTS_BY_REGION;
+
+          // Clean legacy "Вилояти Суғд" / "Вилояти Сугд" if empty
+          loadedRegions = loadedRegions.filter(
+            (r: string) => (r !== "Вилояти Суғд" && r !== "Вилояти Сугд") || ((loadedDistricts[r] || []).length > 0)
+          );
 
           if (
             loadedRegions.includes("Хатлонская область") ||
@@ -851,6 +1137,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           }
 
             const updatedDict = {
+              ...data,
               regions: loadedRegions,
               districtsByRegion: loadedDistricts,
               spheres: data.spheres || DEFAULT_SPHERES,
@@ -865,9 +1152,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               logisticsCosts: data.logisticsCosts || {},
               supplierPhones: data.supplierPhones || {},
               supplierLegalNames: data.supplierLegalNames || {},
-              facilitators: data.facilitators || [],
-              facilitatorRegions: data.facilitatorRegions || {},
-              facilitatorCodes: data.facilitatorCodes || {},
+              supplierSpheres: data.supplierSpheres || {},
+              supplierAllRegions: data.supplierAllRegions || {},
+              supplierRegions: data.supplierRegions || {},
+              supplierDistricts: data.supplierDistricts || {},
+              supplierAssignedCodes: data.supplierAssignedCodes || {},
+              facilitators: (data.facilitators && data.facilitators.length > 0) ? data.facilitators : DEFAULT_FACILITATORS,
+              facilitatorLegalNames: (data.facilitatorLegalNames && Object.keys(data.facilitatorLegalNames).length > 0) ? data.facilitatorLegalNames : DEFAULT_FACILITATOR_LEGAL_NAMES,
+              facilitatorRepresentatives: (data.facilitatorRepresentatives && Object.keys(data.facilitatorRepresentatives).length > 0) ? data.facilitatorRepresentatives : DEFAULT_FACILITATOR_REPRESENTATIVES,
+              facilitatorPhones: (data.facilitatorPhones && Object.keys(data.facilitatorPhones).length > 0) ? data.facilitatorPhones : DEFAULT_FACILITATOR_PHONES,
+              facilitatorEmails: (data.facilitatorEmails && Object.keys(data.facilitatorEmails).length > 0) ? data.facilitatorEmails : DEFAULT_FACILITATOR_EMAILS,
+              facilitatorRegions: normalizeFacilitatorRegions(data.facilitatorRegions),
+              facilitatorCodes: (data.facilitatorCodes && Object.keys(data.facilitatorCodes).length > 0) ? data.facilitatorCodes : DEFAULT_FACILITATOR_CODES,
+              adminPassword: data.adminPassword || "020779",
             };
             setGlobalDict(updatedDict);
             try {
@@ -897,9 +1194,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   >(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
-  const [formSelectedSupplier, setFormSelectedSupplier] = useState<
-    "supplier1" | "supplier2" | "supplier3" | "supplier4"
-  >("supplier2");
+  const [formSelectedSupplier, setFormSelectedSupplier] = useState<string>("supplier2");
   const [isSavingManual, setIsSavingManual] = useState(false);
   const [manualForm, setManualForm] = useState<{
     code?: string;
@@ -911,15 +1206,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     imageBase64: string;
     mimeType: string;
     unit: string;
-    supplier: "supplier1" | "supplier2" | "supplier3" | "supplier4";
+    supplier: string;
     priceSupplier1: string;
     priceSupplier2: string;
     priceSupplier3: string;
     priceSupplier4: string;
-    prices: Record<
-      "supplier1" | "supplier2" | "supplier3" | "supplier4",
-      Record<string, string>
-    >;
+    prices: Record<string, Record<string, string>>;
     createdAt?: number;
   }>({
     name: "",
@@ -935,12 +1227,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     priceSupplier2: "",
     priceSupplier3: "",
     priceSupplier4: "",
-    prices: {
-      supplier1: {},
-      supplier2: {},
-      supplier3: {},
-      supplier4: {},
-    },
+    prices: {},
   });
   const [pendingPrintMode, setPendingPrintMode] = useState<
     "catalog" | "cart" | null
@@ -1884,10 +2171,41 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setCart([]);
   };
 
-  const handleCartPrint = (meta?: { clientName?: string; facilitatorName?: string; note?: string; createdAt?: string; quoteId?: string }) => {
+  const handleCartPrint = (meta?: {
+    clientName?: string;
+    beneficiaryId?: string;
+    facilitatorName?: string;
+    facilitatorLegalName?: string;
+    facilitatorRep?: string;
+    facilitatorPhone?: string;
+    facilitatorEmail?: string;
+    specialistName?: string;
+    selectedDistrict?: string;
+    note?: string;
+    createdAt?: string;
+    quoteId?: string;
+  }) => {
     if (meta) {
-      setCartPrintMetadata(meta);
+      setCartPrintMetadata((prev) => ({ ...prev, ...meta }));
     }
+
+    const currentItems = meta?.quoteId && cartPrintMetadata.cart ? cartPrintMetadata.cart : cart;
+    const itemsTotal = currentItems.reduce((acc, it) => acc + (it.selectedPrice || 0) * it.quantity, 0) + (selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0);
+    logAuditEvent({
+      actionType: "PRINT_CART",
+      actorName: meta?.specialistName || meta?.facilitatorRep || getFacilitatorName(),
+      actorRole: isReallyAdmin ? "admin" : "facilitator",
+      facilitatorName: meta?.facilitatorName || getFacilitatorName(),
+      region: selectedRegion,
+      district: meta?.selectedDistrict || selectedDistrict,
+      beneficiaryName: meta?.clientName,
+      beneficiaryId: meta?.beneficiaryId,
+      quoteId: meta?.quoteId,
+      totalAmount: itemsTotal,
+      itemsCount: currentItems.length,
+      details: `Печать официального бланка Спецификации / Акта приема-передачи (Бенефициар: ${meta?.clientName || "Не указан"}, сумма: ${itemsTotal.toLocaleString("ru-RU")} сомони)`,
+    }).catch((err) => console.warn("Audit error:", err));
+
     const now = new Date();
     const datePart = now.toLocaleDateString("ru-RU", {
       day: "2-digit",
@@ -1927,19 +2245,38 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     sphere?: string,
     clientName?: string,
     facilitatorName?: string,
-    note?: string
+    note?: string,
+    district?: string,
+    specialistName?: string,
+    facilitatorLegalName?: string,
+    facilitatorRep?: string,
+    facilitatorPhone?: string,
+    facilitatorEmail?: string,
+    quoteId?: string,
+    beneficiaryId?: string
   ) => {
     setCart(items || []);
     if (region !== undefined) {
       setSelectedRegion(region === "Все регионы" ? "" : region);
     }
+    if (district !== undefined) {
+      setSelectedDistrict(district);
+    }
     if (sphere !== undefined) {
       setSelectedSphere(sphere === "Все сферы" ? "" : sphere);
     }
     setRestoredCartMeta({
+      quoteId: quoteId || "",
       clientName: clientName || "",
+      beneficiaryId: beneficiaryId || "",
       facilitatorName: facilitatorName || "",
+      facilitatorLegalName: facilitatorLegalName || "",
+      facilitatorRep: facilitatorRep || "",
+      facilitatorPhone: facilitatorPhone || "",
+      facilitatorEmail: facilitatorEmail || "",
+      specialistName: specialistName || "",
       note: note || "",
+      district: district || "",
     });
     setIsQuotesHistoryOpen(false);
     setIsCartOpen(true);
@@ -1947,11 +2284,18 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const handleTriggerPdfPrintFromHistory = (data: {
     clientName: string;
+    beneficiaryId?: string;
     facilitatorName: string;
+    facilitatorLegalName?: string;
+    facilitatorRep?: string;
+    facilitatorPhone?: string;
+    facilitatorEmail?: string;
+    specialistName?: string;
     note?: string;
     createdAt?: string;
     quoteId?: string;
     selectedRegion?: string;
+    selectedDistrict?: string;
     selectedSphere?: string;
     logisticsCost?: number;
     cart: { product: Product; quantity: number; selectedSupplier: "supplier1" | "supplier2" | "supplier3" | "supplier4"; selectedPrice: number }[];
@@ -1960,15 +2304,39 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     // Simply supply the quote metadata and cart items for print rendering
     setCartPrintMetadata({
       clientName: data.clientName,
+      beneficiaryId: data.beneficiaryId,
       facilitatorName: data.facilitatorName,
+      facilitatorLegalName: data.facilitatorLegalName,
+      facilitatorRep: data.facilitatorRep,
+      facilitatorPhone: data.facilitatorPhone,
+      facilitatorEmail: data.facilitatorEmail,
+      specialistName: data.specialistName,
       note: data.note,
       createdAt: data.createdAt,
       quoteId: data.quoteId,
       selectedRegion: data.selectedRegion,
+      selectedDistrict: data.selectedDistrict,
       selectedSphere: data.selectedSphere,
       logisticsCost: data.logisticsCost,
       cart: data.cart,
     });
+
+    const historyTotal = data.cart.reduce((acc, it) => acc + (it.selectedPrice || 0) * it.quantity, 0) + (data.logisticsCost || 0);
+    logAuditEvent({
+      actionType: "PRINT_CART",
+      actorName: data.specialistName || data.facilitatorRep || data.facilitatorName || "Фасилитатор",
+      actorRole: "facilitator",
+      facilitatorName: data.facilitatorName,
+      region: data.selectedRegion,
+      district: data.selectedDistrict,
+      beneficiaryName: data.clientName,
+      beneficiaryId: data.beneficiaryId,
+      quoteId: data.quoteId,
+      totalAmount: historyTotal,
+      itemsCount: data.cart.length,
+      details: `Повторная печать бланка спецификации из архива КП № ${data.quoteId} (Бенефициар: ${data.clientName})`,
+    }).catch((err) => console.warn("Audit error:", err));
+
     const now = new Date();
     const datePart = now.toLocaleDateString("ru-RU", {
       day: "2-digit",
@@ -2024,6 +2392,16 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const handleConfirmPrint = () => {
     setIsPrintOptionsOpen(false);
+    const regLabel = printCatalogType === "full" ? "Все регионы" : (printSelectedRegion || "Не указан");
+    logAuditEvent({
+      actionType: "PRINT_CATALOG",
+      actorName: getFacilitatorName(),
+      actorRole: isReallyAdmin ? "admin" : "facilitator",
+      facilitatorName: getFacilitatorName(),
+      region: regLabel,
+      details: `Печать каталога цен (${printCatalogType === "full" ? "Все регионы и поставщики" : `Регион: ${regLabel}${printSelectedSphere ? `, сфера: ${printSelectedSphere}` : ""}`})`,
+    }).catch((err) => console.warn("Audit error:", err));
+
     setTimeout(() => {
       if (window !== window.parent) {
         setPrintWarningType("catalog");
@@ -2054,6 +2432,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     try {
       setIsImportingPrices(true);
       const res = await importPriceEditExcel(file);
+      logAuditEvent({
+        actionType: "UPDATE_PRICE_EXCEL",
+        actorName: "Администратор цен",
+        actorRole: "admin",
+        region: selectedRegion,
+        details: `Загружен Excel-файл с обновлением цен поставщиков (обновлено ${res.updated} товаров)`,
+      }).catch((err) => console.warn("Audit error:", err));
       alert(`Успешно обновлено товаров: ${res.updated}`);
     } catch (e: any) {
       console.error(e);
@@ -2134,6 +2519,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         globalDict.suppliers,
         supplierScope as any,
       );
+
+      logAuditEvent({
+        actionType: "EXPORT_EXCEL",
+        actorName: getFacilitatorName(),
+        actorRole: isReallyAdmin ? "admin" : "facilitator",
+        details: `Выгрузка каталога товаров в Excel (${mappedProducts.length} позиций, охват: ${exportScope})`,
+      }).catch((err) => console.warn("Audit error:", err));
     } catch (err: any) {
       console.error(err);
       alert("Export failed: " + err.message);
@@ -2171,21 +2563,15 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     setIsCustomRegion(false);
     setIsCustomSphere(false);
 
-    const initialPrices: Record<
-      "supplier1" | "supplier2" | "supplier3" | "supplier4",
-      Record<string, string>
-    > = {
-      supplier1: {},
-      supplier2: {},
-      supplier3: {},
-      supplier4: {},
-    };
-    globalDict.regions.forEach((r) => {
-      initialPrices.supplier1[r] = "";
-      initialPrices.supplier2[r] = "";
-      initialPrices.supplier3[r] = "";
-      initialPrices.supplier4[r] = "";
+    const allSuppliers = Array.from(new Set(["supplier1", ...availableSupplierKeys]));
+    const initialPrices: Record<string, Record<string, string>> = {};
+    allSuppliers.forEach((s) => {
+      initialPrices[s] = {};
+      globalDict.regions.forEach((r) => {
+        initialPrices[s][r] = "";
+      });
     });
+    setFormSelectedSupplier(availableSupplierKeys[0] || "supplier2");
 
     setManualForm({
       name: "",
@@ -2227,48 +2613,32 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
     const initialSupplier = selectedSupplier || "supplier1";
 
-    const loadedPrices: Record<
-      "supplier1" | "supplier2" | "supplier3" | "supplier4",
-      Record<string, string>
-    > = {
-      supplier1: {},
-      supplier2: {},
-      supplier3: {},
-      supplier4: {},
-    };
-    globalDict.regions.forEach((r) => {
-      loadedPrices.supplier1[r] = "";
-      loadedPrices.supplier2[r] = "";
-      loadedPrices.supplier3[r] = "";
-      loadedPrices.supplier4[r] = "";
+    const allSuppliers = Array.from(new Set([
+      "supplier1",
+      ...availableSupplierKeys,
+      ...(product.prices ? Object.keys(product.prices) : []),
+    ]));
+    const loadedPrices: Record<string, Record<string, string>> = {};
+    allSuppliers.forEach((s) => {
+      loadedPrices[s] = {};
+      globalDict.regions.forEach((r) => {
+        loadedPrices[s][r] = "";
+      });
     });
 
     if (product.prices) {
-      if (product.prices.supplier1) {
-        Object.entries(product.prices.supplier1).forEach(([reg, val]) => {
-          if (val !== undefined && val !== null)
-            loadedPrices.supplier1[reg] = val.toString();
-        });
-      }
-      if (product.prices.supplier2) {
-        Object.entries(product.prices.supplier2).forEach(([reg, val]) => {
-          if (val !== undefined && val !== null)
-            loadedPrices.supplier2[reg] = val.toString();
-        });
-      }
-      if (product.prices.supplier3) {
-        Object.entries(product.prices.supplier3).forEach(([reg, val]) => {
-          if (val !== undefined && val !== null)
-            loadedPrices.supplier3[reg] = val.toString();
-        });
-      }
-      if (product.prices.supplier4) {
-        Object.entries(product.prices.supplier4).forEach(([reg, val]) => {
-          if (val !== undefined && val !== null)
-            loadedPrices.supplier4[reg] = val.toString();
-        });
-      }
+      Object.entries(product.prices).forEach(([supKey, regMap]) => {
+        if (!loadedPrices[supKey]) loadedPrices[supKey] = {};
+        if (regMap && typeof regMap === "object") {
+          Object.entries(regMap).forEach(([reg, val]) => {
+            if (val !== undefined && val !== null) {
+              loadedPrices[supKey][reg] = val.toString();
+            }
+          });
+        }
+      });
     }
+    setFormSelectedSupplier(availableSupplierKeys[0] || "supplier2");
 
     setManualForm({
       name: product.name || "",
@@ -2336,11 +2706,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     reader.readAsDataURL(file);
   };
 
-  const handleSaveDictionaries = async (updatedDict: any) => {
+  const handleSaveDictionaries = async (updatedDict: any, shouldClose = true) => {
     try {
       await setDoc(doc(db, "settings", "dictionaries"), updatedDict);
       setGlobalDict(updatedDict);
-      setIsDictModalOpen(false);
+      logAuditEvent({
+        actionType: "UPDATE_DICTIONARY",
+        actorName: "Администратор",
+        actorRole: "admin",
+        details: `Обновлены системные справочники проекта (регионов: ${updatedDict.regions?.length || 0}, сфер: ${updatedDict.spheres?.length || 0}, фасилитаторов: ${updatedDict.facilitators?.length || 0})`,
+      }).catch((err) => console.warn("Audit error:", err));
+      if (shouldClose) {
+        setIsDictModalOpen(false);
+      }
     } catch (e) {
       console.error(e);
       alert("Ошибка при сохранении справочников");
@@ -2366,30 +2744,23 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     const basePrice = manualForm.price ? parseFloat(manualForm.price) : 0;
 
     // Build the final overridden prices dictionary to save
-    const pricesData: Record<string, Record<string, number>> = {
-      supplier1: {},
-      supplier2: {},
-      supplier3: {},
-      supplier4: {},
-    };
-
-    globalDict.regions.forEach((reg) => {
-      const p1Val = manualForm.prices.supplier1?.[reg];
-      if (p1Val && p1Val.trim() !== "") {
-        pricesData.supplier1[reg] = parseFloat(p1Val);
-      }
-      const p2Val = manualForm.prices.supplier2?.[reg];
-      if (p2Val && p2Val.trim() !== "") {
-        pricesData.supplier2[reg] = parseFloat(p2Val);
-      }
-      const p3Val = manualForm.prices.supplier3?.[reg];
-      if (p3Val && p3Val.trim() !== "") {
-        pricesData.supplier3[reg] = parseFloat(p3Val);
-      }
-      const p4Val = manualForm.prices.supplier4?.[reg];
-      if (p4Val && p4Val.trim() !== "") {
-        pricesData.supplier4[reg] = parseFloat(p4Val);
-      }
+    const pricesData: Record<string, Record<string, number>> = {};
+    const allSuppliersToSave = Array.from(new Set([
+      "supplier1",
+      ...availableSupplierKeys,
+      ...Object.keys(manualForm.prices || {}),
+    ]));
+    allSuppliersToSave.forEach((supKey) => {
+      pricesData[supKey] = {};
+      globalDict.regions.forEach((reg) => {
+        const val = manualForm.prices[supKey]?.[reg];
+        if (val && val.trim() !== "") {
+          const parsed = parseFloat(val);
+          if (!isNaN(parsed)) {
+            pricesData[supKey][reg] = parsed;
+          }
+        }
+      });
     });
 
     // Populate legacy fallback values just in case
@@ -2514,6 +2885,32 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     return a.localeCompare(b);
   });
 
+  const activeSupplierSpheres = useMemo(() => {
+    if (
+      selectedSupplier &&
+      selectedSupplier !== "all" &&
+      globalDict.supplierSpheres?.[selectedSupplier] &&
+      globalDict.supplierSpheres[selectedSupplier].length > 0
+    ) {
+      return globalDict.supplierSpheres[selectedSupplier];
+    }
+    return uniqueSpheres;
+  }, [selectedSupplier, globalDict.supplierSpheres, uniqueSpheres]);
+
+  useEffect(() => {
+    if (
+      selectedSupplier &&
+      selectedSupplier !== "all" &&
+      globalDict.supplierSpheres?.[selectedSupplier] &&
+      globalDict.supplierSpheres[selectedSupplier].length > 0
+    ) {
+      const allowed = globalDict.supplierSpheres[selectedSupplier];
+      if (selectedSphere && !allowed.includes(selectedSphere)) {
+        setSelectedSphere("");
+      }
+    }
+  }, [selectedSupplier, globalDict.supplierSpheres, selectedSphere]);
+
   const handleOpenGenerateIdsModal = () => {
     setDeleteAllCode("");
     setGenerateIdsSuccess(null);
@@ -2594,6 +2991,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
           const isMatch = prodSpheres.some(s => s === selectedSphere || s.includes(selectedSphere) || selectedSphere.includes(s));
           if (!isMatch) return false;
+      } else if (!selectedSphere && selectedSupplier && selectedSupplier !== "all" && globalDict.supplierSpheres?.[selectedSupplier] && globalDict.supplierSpheres[selectedSupplier].length > 0) {
+          const allowed = globalDict.supplierSpheres[selectedSupplier];
+          const prodSpheres = p.spheres && p.spheres.length > 0 ? p.spheres : (p.sphere ? [p.sphere] : []);
+          const isMatch = prodSpheres.some(s => allowed.some(as => as === s || as.includes(s) || s.includes(as)));
+          if (!isMatch) return false;
       }
       if (showOnlyNew) {
         if (!p.createdAt || Date.now() - p.createdAt >= 24 * 60 * 60 * 1000) {
@@ -2616,30 +3018,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const hasGkPrice = displayProducts.some((p) => p.price !== undefined && p.price > 0);
 
-  const hasSupplier2Price = displayProducts.some((p) => {
-    const activeReg = selectedRegion || "Душанбе";
-    const pr = getProductPriceForSupplierAndRegion(p, "supplier2", activeReg);
-    return pr !== undefined && pr > 0;
-  });
-
-  const hasSupplier3Price = displayProducts.some((p) => {
-    const activeReg = selectedRegion || "Душанбе";
-    const pr = getProductPriceForSupplierAndRegion(p, "supplier3", activeReg);
-    return pr !== undefined && pr > 0;
-  });
-
-  const hasSupplier4Price = displayProducts.some((p) => {
-    const activeReg = selectedRegion || "Душанбе";
-    const pr = getProductPriceForSupplierAndRegion(p, "supplier4", activeReg);
-    return pr !== undefined && pr > 0;
-  });
+  const visibleTableSupplierKeys = useMemo(() => {
+    if (selectedSupplier && selectedSupplier !== "all") {
+      return [selectedSupplier];
+    }
+    return availableSupplierKeys;
+  }, [selectedSupplier, availableSupplierKeys]);
 
   const totalTableColumnsCount =
     7 +
     (isReallyAdmin && hasGkPrice ? 1 : 0) +
-    (hasSupplier2Price ? 1 : 0) +
-    (hasSupplier3Price ? 1 : 0) +
-    (hasSupplier4Price ? 1 : 0) +
+    visibleTableSupplierKeys.length +
     (showBestPrice ? 1 : 0);
 
   const isUploadBlocked = aiSelectedSpheres.length === 0;
@@ -2665,124 +3054,76 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   if (!portalFacilitator && !isAdminPageAuthenticated) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-900 font-sans">
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 max-w-sm w-full mx-4">
-          <h2 className="text-xl font-bold text-slate-800 mb-2 text-center">Вход Администратора</h2>
-          <p className="text-sm text-slate-500 mb-6 text-center">Введите пароль для доступа к основному каталогу.</p>
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              const expectedPassword = globalDict.adminPassword || "020779";
-              if (adminPageInputCode === expectedPassword) {
-                sessionStorage.setItem("main_admin_auth", "true");
-                setIsAdminPageAuthenticated(true);
-                setIsAdminMode(true);
-                localStorage.setItem("catalog_admin", "true");
-              } else {
-                alert("Неверный пароль!");
-                setAdminPageInputCode("");
-              }
-            }}
-            className="flex flex-col gap-4"
-          >
-            <input 
-              type="password"
-              placeholder="Пароль"
-              value={adminPageInputCode}
-              onChange={(e) => setAdminPageInputCode(e.target.value)}
-              className="w-full text-center tracking-widest border border-slate-300 rounded-md px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            />
-            <button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition-colors shadow-sm"
-            >
-              Войти
-            </button>
-          </form>
-        </div>
-      </div>
+      <AnimatedLoginScreen
+        initialRole="admin"
+        adminPassword={globalDict.adminPassword || "020779"}
+        facilitators={globalDict.facilitators || []}
+        facilitatorCodes={globalDict.facilitatorCodes || {}}
+        facilitatorRegions={globalDict.facilitatorRegions || {}}
+        suppliers={globalDict.suppliers || []}
+        supplierCodes={globalDict.supplierAssignedCodes || {}}
+        supplierLegalNames={globalDict.supplierLegalNames || {}}
+        onAdminSuccess={() => {
+          sessionStorage.setItem("main_admin_auth", "true");
+          setIsAdminPageAuthenticated(true);
+          setIsAdminMode(true);
+          localStorage.setItem("catalog_admin", "true");
+        }}
+        onFacilitatorSuccess={(facKey, region) => {
+          setIsFacilitatorAuthenticated(true);
+          setAuthenticatedFacilitatorKey(facKey);
+          sessionStorage.setItem("auth_facilitator_key", facKey);
+          sessionStorage.setItem(`auth_${facKey}`, "true");
+          sessionStorage.setItem("auth_resolved", "true");
+          if (region) setSelectedRegion(region);
+          setIsAdminPageAuthenticated(true);
+        }}
+        onSupplierSuccess={(supKey) => {
+          setSelectedSupplier(supKey);
+          setIsAdminPageAuthenticated(true);
+        }}
+      />
     );
   }
 
   if (portalFacilitator && !isFacilitatorAuthenticated) {
-    const expectedCode = resolvedFacilitator.code || "";
-    if (!expectedCode) {
-      return (
-        <div className="flex items-center justify-center h-screen bg-slate-950 font-sans text-center">
-          <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 max-w-sm w-full mx-4">
-            <h2 className="text-xl font-bold text-slate-800 mb-2">Доступ не настроен</h2>
-            <p className="text-sm text-slate-500">
-              Код доступа для данного фасилитатора еще не задан администратором в справочнике.
-            </p>
-          </div>
-        </div>
-      );
-    }
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-900 font-sans">
-        <div className="bg-white p-8 rounded-xl shadow-lg border border-slate-200 max-w-sm w-full mx-4">
-          <h2 className="text-xl font-bold text-slate-800 mb-2 text-center">Вход для Фасилитаторов</h2>
-          <p className="text-sm text-slate-500 mb-6 text-center">Введите секретный код для доступа к панели фасилитатора.</p>
-          <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              const inputClean = facilitatorInputCode.trim().toLowerCase();
-              if (!inputClean) return;
-
-              let matchedKey: string | null = null;
-              if (globalDict?.facilitatorCodes) {
-                for (const [key, codeVal] of Object.entries(globalDict.facilitatorCodes)) {
-                  if (String(codeVal).trim().toLowerCase() === inputClean) {
-                    matchedKey = key;
-                    break;
-                  }
-                }
-              }
-
-              if (matchedKey) {
-                setIsFacilitatorAuthenticated(true);
-                setAuthenticatedFacilitatorKey(matchedKey);
-                sessionStorage.setItem("auth_facilitator_key", matchedKey);
-                sessionStorage.setItem(`auth_${portalFacilitator || matchedKey}`, "true");
-                sessionStorage.setItem("auth_resolved", "true");
-
-                const matchedRegion = globalDict?.facilitatorRegions?.[matchedKey];
-                if (matchedRegion) {
-                  setSelectedRegion(matchedRegion);
-                  if (portalFacilitator) {
-                    setDoc(doc(db, "facilitator_states", portalFacilitator), { region: matchedRegion }, { merge: true }).catch(console.error);
-                  }
-                }
-              } else if (expectedCode && inputClean === expectedCode.trim().toLowerCase()) {
-                setIsFacilitatorAuthenticated(true);
-                sessionStorage.setItem(`auth_${portalFacilitator}`, "true");
-                sessionStorage.setItem("auth_resolved", "true");
-                if (facilitatorRegion) {
-                  setSelectedRegion(facilitatorRegion);
-                }
-              } else {
-                alert("Неверный код доступа");
-              }
-            }}
-            className="flex flex-col gap-4"
-          >
-            <input 
-              type="password" 
-              value={facilitatorInputCode} 
-              onChange={e => setFacilitatorInputCode(e.target.value)}
-              placeholder="Секретный код..." 
-              className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              autoFocus
-            />
-            <button 
-              type="submit" 
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition-colors text-sm"
-            >
-              Войти
-            </button>
-          </form>
-        </div>
-      </div>
+      <AnimatedLoginScreen
+        initialRole="facilitator"
+        adminPassword={globalDict.adminPassword || "020779"}
+        facilitators={globalDict.facilitators || []}
+        facilitatorCodes={globalDict.facilitatorCodes || {}}
+        facilitatorRegions={globalDict.facilitatorRegions || {}}
+        suppliers={globalDict.suppliers || []}
+        supplierCodes={globalDict.supplierAssignedCodes || {}}
+        supplierLegalNames={globalDict.supplierLegalNames || {}}
+        onAdminSuccess={() => {
+          sessionStorage.setItem("main_admin_auth", "true");
+          setIsAdminPageAuthenticated(true);
+          setIsAdminMode(true);
+          localStorage.setItem("catalog_admin", "true");
+          setIsFacilitatorAuthenticated(true);
+        }}
+        onFacilitatorSuccess={(matchedKey, matchedRegion) => {
+          setIsFacilitatorAuthenticated(true);
+          setAuthenticatedFacilitatorKey(matchedKey);
+          sessionStorage.setItem("auth_facilitator_key", matchedKey);
+          sessionStorage.setItem(`auth_${portalFacilitator || matchedKey}`, "true");
+          sessionStorage.setItem("auth_resolved", "true");
+          if (matchedRegion) {
+            setSelectedRegion(matchedRegion);
+            if (portalFacilitator) {
+              setDoc(doc(db, "facilitator_states", portalFacilitator), { region: matchedRegion }, { merge: true }).catch(console.error);
+            }
+          } else if (facilitatorRegion) {
+            setSelectedRegion(facilitatorRegion);
+          }
+        }}
+        onSupplierSuccess={(supKey) => {
+          setSelectedSupplier(supKey);
+          setIsFacilitatorAuthenticated(true);
+        }}
+      />
     );
   }
 
@@ -2974,10 +3315,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               </span>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => updateServiceWorker(true)}
-                  className="bg-white text-indigo-700 hover:bg-indigo-50 px-3 py-1 rounded text-xs font-bold transition-colors"
+                  disabled={isSwReloading}
+                  onClick={handleSwUpdate}
+                  className="bg-white text-indigo-700 hover:bg-indigo-50 px-3 py-1 rounded text-xs font-bold transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  Обновить
+                  {isSwReloading ? "ОБНОВЛЕНИЕ..." : "Обновить"}
                 </button>
                 <button
                   onClick={() => setNeedRefresh(false)}
@@ -3079,6 +3421,26 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   <span className="sm:hidden">Аналитика</span>
                 </button>
               )}
+              <button
+                onClick={() => {
+                  if (isReallyAdmin) {
+                    setIsAuditModalOpen(true);
+                  } else {
+                    const pass = prompt("Введите пароль доступа к Центру аудита и расследований:");
+                    if (pass === (globalDict.adminPassword || "020779")) {
+                      setIsAuditModalOpen(true);
+                    } else if (pass) {
+                      alert("Неверный пароль доступа!");
+                    }
+                  }
+                }}
+                className="flex items-center gap-1.5 text-xs bg-indigo-700 hover:bg-indigo-800 text-white px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm cursor-pointer"
+                title="Журнал аудита и расследований (GDPR / Логи действий)"
+              >
+                <ShieldAlert className="w-3.5 h-3.5 text-indigo-200" />
+                <span className="hidden sm:inline">Аудит</span>
+                <span className="sm:hidden">Аудит</span>
+              </button>
               {isTabletMode && (
                 <button
                   onClick={() => setIsCartOpen(true)}
@@ -3093,9 +3455,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   )}
                 </button>
               )}
-              <span className="text-xs text-slate-500 font-medium px-2.5 py-1 bg-slate-100 rounded-full border border-slate-200 hidden md:inline-block">
-                Публичный доступ
-              </span>
+              <button
+                onClick={() => setIsSwitchLoginOpen(true)}
+                className="flex items-center gap-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all border border-slate-300 shadow-sm cursor-pointer"
+                title="Войти или сменить профиль (Администратор / Фасилитатор / Поставщик)"
+              >
+                <LogIn className="w-3.5 h-3.5 text-slate-600" />
+                <span className="hidden md:inline">
+                  {isReallyAdmin ? "Администратор" : portalFacilitator ? "Фасилитатор" : "Вход в систему"}
+                </span>
+                <span className="md:hidden">Вход</span>
+              </button>
             </div>
           </header>
 
@@ -3221,21 +3591,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 )}
               </div>
 
-              {!isTabletMode && !portalFacilitator && (
+              {!isTabletMode && (
                 <select
                   value={selectedSupplier}
-                  onChange={(e) => setSelectedSupplier(e.target.value as any)}
-                  className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-44 font-semibold text-indigo-700"
+                  onChange={(e) => setSelectedSupplier(e.target.value)}
+                  className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-52 font-semibold text-indigo-700"
+                  title="Выберите поставщика или весь список"
                 >
-                  <option value="supplier2">
-                    {getSupplierLabel("supplier2")}
-                  </option>
-                  <option value="supplier3">
-                    {getSupplierLabel("supplier3")}
-                  </option>
-                  <option value="supplier4">
-                    {getSupplierLabel("supplier4")}
-                  </option>
+                  <option value="all">Все поставщики (весь каталог)</option>
+                  {availableSupplierKeys.map((supKey) => (
+                    <option key={supKey} value={supKey}>
+                      {getSupplierLabel(supKey)}
+                    </option>
+                  ))}
                 </select>
               )}
 
@@ -3256,10 +3624,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               <select
                 value={selectedSphere}
                 onChange={(e) => setSelectedSphere(e.target.value)}
-                className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-44"
+                className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-44 font-medium"
               >
-                <option value="">Все сферы</option>
-                {uniqueSpheres.map((s) => (
+                <option value="">
+                  {selectedSupplier && selectedSupplier !== "all" && globalDict.supplierSpheres?.[selectedSupplier]?.length
+                    ? `Все сферы (${getSupplierLabel(selectedSupplier)})`
+                    : "Все сферы"}
+                </option>
+                {activeSupplierSpheres.map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -3325,11 +3697,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       const s3Price = getProductPriceForSupplierAndRegion(p, "supplier3", activeReg);
                       const s4Price = getProductPriceForSupplierAndRegion(p, "supplier4", activeReg);
 
-                      const priceVals = [
-                        s2Price > 0 ? s2Price : null,
-                        s3Price > 0 ? s3Price : null,
-                        s4Price > 0 ? s4Price : null,
-                      ].filter((v): v is number => v !== null);
+                      const priceVals = visibleTableSupplierKeys
+                        .map((supKey) => getProductPriceForSupplierAndRegion(p, supKey as any, activeReg))
+                        .filter((v): v is number => v > 0);
 
                       const minPrice = priceVals.length > 0 ? Math.min(...priceVals) : null;
 
@@ -3411,26 +3781,31 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               )}
                             </div>
 
-                            {/* Supplier 1 (supplier2) */}
-                            {hasSupplier2Price && (() => {
-                              const isMin = s2Price > 0 && minPrice === s2Price;
+                            {visibleTableSupplierKeys.map((supKey) => {
+                              const sPrice = getProductPriceForSupplierAndRegion(p, supKey as any, activeReg);
+                              if (sPrice <= 0) return null;
+                              const isMin = sPrice > 0 && minPrice === sPrice;
+
                               return (
-                                <div className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
-                                  isMin ? "bg-emerald-50/80 border-emerald-300 shadow-sm" : "bg-white border-slate-200 hover:border-indigo-300"
-                                }`}>
+                                <div
+                                  key={supKey}
+                                  className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
+                                    isMin ? "bg-emerald-50/80 border-emerald-300 shadow-sm" : "bg-white border-slate-200 hover:border-indigo-300"
+                                  }`}
+                                >
                                   <div className="flex flex-col min-w-0 pr-2">
                                     <span className="text-[11px] font-semibold text-slate-600 truncate">
-                                      {getSupplierLabel("supplier2")}
+                                      {getSupplierLabel(supKey)}
                                     </span>
                                     <span className={`font-mono font-extrabold text-xs ${isMin ? "text-emerald-800" : "text-slate-900"}`}>
-                                      {s2Price > 0 ? `${s2Price.toFixed(2)} с.` : "—"}
+                                      {sPrice > 0 ? `${sPrice.toFixed(2)} с.` : "—"}
                                     </span>
                                   </div>
-                                  {s2Price > 0 && (
+                                  {sPrice > 0 && (
                                     <button
-                                      onClick={() => handleAddToCart(p, "supplier2", s2Price)}
+                                      onClick={() => handleAddToCart(p, supKey as any, sPrice)}
                                       className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-lg shadow-sm transition-all shrink-0"
-                                      title={`Выбрать ${getSupplierLabel("supplier2")}`}
+                                      title={`Выбрать ${getSupplierLabel(supKey)}`}
                                     >
                                       <ShoppingCart className="w-3.5 h-3.5" />
                                       <span>Выбрать</span>
@@ -3438,67 +3813,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                                   )}
                                 </div>
                               );
-                            })()}
+                            })}
 
-                            {/* Supplier 2 (supplier3) */}
-                            {hasSupplier3Price && (() => {
-                              const isMin = s3Price > 0 && minPrice === s3Price;
-                              return (
-                                <div className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
-                                  isMin ? "bg-emerald-50/80 border-emerald-300 shadow-sm" : "bg-white border-slate-200 hover:border-indigo-300"
-                                }`}>
-                                  <div className="flex flex-col min-w-0 pr-2">
-                                    <span className="text-[11px] font-semibold text-slate-600 truncate">
-                                      {getSupplierLabel("supplier3")}
-                                    </span>
-                                    <span className={`font-mono font-extrabold text-xs ${isMin ? "text-emerald-800" : "text-slate-900"}`}>
-                                      {s3Price > 0 ? `${s3Price.toFixed(2)} с.` : "—"}
-                                    </span>
-                                  </div>
-                                  {s3Price > 0 && (
-                                    <button
-                                      onClick={() => handleAddToCart(p, "supplier3", s3Price)}
-                                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-lg shadow-sm transition-all shrink-0"
-                                      title={`Выбрать ${getSupplierLabel("supplier3")}`}
-                                    >
-                                      <ShoppingCart className="w-3.5 h-3.5" />
-                                      <span>Выбрать</span>
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })()}
-
-                            {/* Supplier 3 (supplier4) */}
-                            {hasSupplier4Price && (() => {
-                              const isMin = s4Price > 0 && minPrice === s4Price;
-                              return (
-                                <div className={`flex items-center justify-between p-2 rounded-xl border transition-all ${
-                                  isMin ? "bg-emerald-50/80 border-emerald-300 shadow-sm" : "bg-white border-slate-200 hover:border-indigo-300"
-                                }`}>
-                                  <div className="flex flex-col min-w-0 pr-2">
-                                    <span className="text-[11px] font-semibold text-slate-600 truncate">
-                                      {getSupplierLabel("supplier4")}
-                                    </span>
-                                    <span className={`font-mono font-extrabold text-xs ${isMin ? "text-emerald-800" : "text-slate-900"}`}>
-                                      {s4Price > 0 ? `${s4Price.toFixed(2)} с.` : "—"}
-                                    </span>
-                                  </div>
-                                  {s4Price > 0 && (
-                                    <button
-                                      onClick={() => handleAddToCart(p, "supplier4", s4Price)}
-                                      className="flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:scale-95 rounded-lg shadow-sm transition-all shrink-0"
-                                      title={`Выбрать ${getSupplierLabel("supplier4")}`}
-                                    >
-                                      <ShoppingCart className="w-3.5 h-3.5" />
-                                      <span>Выбрать</span>
-                                    </button>
-                                  )}
-                                </div>
-                              );
-                            })()}
-
-                            {!hasSupplier2Price && !hasSupplier3Price && !hasSupplier4Price && (
+                            {!visibleTableSupplierKeys.some(
+                              (supKey) => getProductPriceForSupplierAndRegion(p, supKey as any, activeReg) > 0
+                            ) && (
                               <div className="p-2 text-center text-xs text-slate-400 italic">
                                 Цены уточняются
                               </div>
@@ -3607,21 +3926,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           ГК
                         </th>
                       )}
-                      {hasSupplier2Price && (
-                        <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
-                          {getSupplierLabel("supplier2")}
+                      {visibleTableSupplierKeys.map((supKey) => (
+                        <th
+                          key={supKey}
+                          className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40"
+                        >
+                          {getSupplierLabel(supKey)}
                         </th>
-                      )}
-                      {hasSupplier3Price && (
-                        <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
-                          {getSupplierLabel("supplier3")}
-                        </th>
-                      )}
-                      {hasSupplier4Price && (
-                        <th className="px-4 py-3 align-middle w-40 text-left text-indigo-700 font-bold bg-indigo-50/40">
-                          {getSupplierLabel("supplier4")}
-                        </th>
-                      )}
+                      ))}
                       {showBestPrice && (
                         <th className="px-4 py-3 align-middle w-40 text-left text-emerald-700 font-bold bg-emerald-50/40">
                           Лучшая цена
@@ -3844,141 +4156,55 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                               )}
                             </td>
                           )}
-                          {hasSupplier2Price && (
-                            <td
-                              className="px-4 py-4 bg-indigo-50/10"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {s2Price !== undefined && s2Price > 0 ? (
-                                <div className="flex items-center gap-1.5 justify-start">
-                                  <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                    {s2Price.toFixed(2)} с.
-                                    {isS2Auto && (
-                                      <span
-                                        className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
-                                        title={`Автоматическая наценка ${s2Markup >= 0 ? "+" : ""}${s2Markup}%`}
+                          {visibleTableSupplierKeys.map((supKey) => {
+                            const supPrice = getProductPriceForSupplierAndRegion(
+                              p,
+                              supKey as any,
+                              activeReg,
+                            );
+                            const supMarkup =
+                              (activeReg && globalDict?.pricingRules?.[supKey]?.[activeReg]) ?? 0;
+                            const isAuto = supMarkup !== 0;
+
+                            return (
+                              <td
+                                key={supKey}
+                                className="px-4 py-4 bg-indigo-50/10"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {supPrice !== undefined && supPrice > 0 ? (
+                                  <div className="flex items-center gap-1.5 justify-start">
+                                    <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
+                                      {supPrice.toFixed(2)} с.
+                                      {isAuto && (
+                                        <span
+                                          className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
+                                          title={`Автоматическая наценка ${supMarkup >= 0 ? "+" : ""}${supMarkup}%`}
+                                        >
+                                          %
+                                        </span>
+                                      )}
+                                    </span>
+                                    {!showBestPrice && (
+                                      <button
+                                        onClick={() =>
+                                          handleAddToCart(p, supKey as any, supPrice)
+                                        }
+                                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
+                                        title={`В выборку (${getSupplierLabel(supKey)})`}
                                       >
-                                        %
-                                      </span>
+                                        <ShoppingCart className="w-3.5 h-3.5" />
+                                      </button>
                                     )}
-                                    {isS2Override && (
-                                      <span
-                                        className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
-                                        title="Индивидуальная цена региона"
-                                      >
-                                        ручн.
-                                      </span>
-                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300 italic text-[11px]">
+                                    Нет цены
                                   </span>
-                                  {!showBestPrice && s2Price !== undefined && s2Price > 0 && (
-                                    <button
-                                      onClick={() =>
-                                        handleAddToCart(p, "supplier2", s2Price)
-                                      }
-                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                      title={`В выборку (${getSupplierLabel("supplier2")})`}
-                                    >
-                                      <ShoppingCart className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-slate-300 italic text-[11px]">
-                                  Нет цены
-                                </span>
-                              )}
-                            </td>
-                          )}
-                          {hasSupplier3Price && (
-                            <td
-                              className="px-4 py-4 bg-indigo-50/10"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {s3Price !== undefined && s3Price > 0 ? (
-                                <div className="flex items-center gap-1.5 justify-start">
-                                  <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                    {s3Price.toFixed(2)} с.
-                                    {isS3Auto && (
-                                      <span
-                                        className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
-                                        title={`Автоматическая наценка ${s3Markup >= 0 ? "+" : ""}${s3Markup}%`}
-                                      >
-                                        %
-                                      </span>
-                                    )}
-                                    {isS3Override && (
-                                      <span
-                                        className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
-                                        title="Индивидуальная цена региона"
-                                      >
-                                        ручн.
-                                      </span>
-                                    )}
-                                  </span>
-                                  {!showBestPrice && s3Price !== undefined && s3Price > 0 && (
-                                    <button
-                                      onClick={() =>
-                                        handleAddToCart(p, "supplier3", s3Price)
-                                      }
-                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                      title={`В выборку (${getSupplierLabel("supplier3")})`}
-                                    >
-                                      <ShoppingCart className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-slate-300 italic text-[11px]">
-                                  Нет цены
-                                </span>
-                              )}
-                            </td>
-                          )}
-                          {hasSupplier4Price && (
-                            <td
-                              className="px-4 py-4 bg-indigo-50/10"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {s4Price !== undefined && s4Price > 0 ? (
-                                <div className="flex items-center gap-1.5 justify-start">
-                                  <span className="font-mono font-bold text-xs text-slate-900 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded shadow-sm flex items-center gap-1">
-                                    {s4Price.toFixed(2)} с.
-                                    {isS4Auto && (
-                                      <span
-                                        className="text-[9px] bg-indigo-50 border border-indigo-100 text-indigo-600 px-0.5 py-0 rounded font-bold"
-                                        title={`Автоматическая наценка ${s4Markup >= 0 ? "+" : ""}${s4Markup}%`}
-                                      >
-                                        %
-                                      </span>
-                                    )}
-                                    {isS4Override && (
-                                      <span
-                                        className="text-[9px] bg-emerald-50 border border-emerald-100 text-emerald-600 px-0.5 py-0 rounded font-bold"
-                                        title="Индивидуальная цена региона"
-                                      >
-                                        ручн.
-                                      </span>
-                                    )}
-                                  </span>
-                                  {!showBestPrice && s4Price !== undefined && s4Price > 0 && (
-                                    <button
-                                      onClick={() =>
-                                        handleAddToCart(p, "supplier4", s4Price)
-                                      }
-                                      className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                      title={`В выборку (${getSupplierLabel("supplier4")})`}
-                                    >
-                                      <ShoppingCart className="w-3.5 h-3.5" />
-                                    </button>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-slate-300 italic text-[11px]">
-                                  Нет цены
-                                </span>
-                              )}
-                            </td>
-                          )}
+                                )}
+                              </td>
+                            );
+                          })}
                           {showBestPrice && (
                             <td
                               className="px-4 py-4 bg-emerald-50/10"
@@ -4672,7 +4898,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                             </span>
                           </span>
                           <span className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                            Печать всего ассортимента. На обложке выводится заголовок <strong>«ПОЛНЫЙ КАТАЛОГ ТОВАРОВ»</strong> и подпись <em>«В каталоге представлены цены всех трех поставщиков»</em>.
+                            Печать всего ассортимента. На обложке выводится заголовок <strong>«ПОЛНЫЙ КАТАЛОГ ТОВАРОВ»</strong> и статус Проекта при МТМЗН РТ.
                           </span>
                         </div>
                       </label>
@@ -4753,9 +4979,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                         >
                           <option value="">Все поставщики</option>
-                          <option value="supplier2">{globalDict.suppliers?.[0] || "Поставщик 1"}</option>
-                          <option value="supplier3">{globalDict.suppliers?.[1] || "Поставщик 2"}</option>
-                          <option value="supplier4">{globalDict.suppliers?.[2] || "Поставщик 3"}</option>
+                          {availableSupplierKeys.map((supKey) => (
+                            <option key={supKey} value={supKey}>
+                              {getSupplierLabel(supKey)}
+                            </option>
+                          ))}
                         </select>
                       </div>
                     )}
@@ -4824,24 +5052,25 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 {/* Live Cover Preview Box */}
                 {(() => {
                   const getSupName = (supKey: string) => {
-                    if (supKey === "supplier2") return globalDict.suppliers?.[0] || "Поставщик 1";
-                    if (supKey === "supplier3") return globalDict.suppliers?.[1] || "Поставщик 2";
-                    if (supKey === "supplier4") return globalDict.suppliers?.[2] || "Поставщик 3";
+                    if (supKey === "supplier2" || supKey === "supplier3" || supKey === "supplier4") {
+                      return getSupplierLabel(supKey);
+                    }
                     return "Поставщик";
                   };
 
                   let pTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
-                  let pSub = "В каталоге представлены цены всех трех поставщиков";
-                  let pStamp = `ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ (${getSupName("supplier2")} • ${getSupName("supplier3")} • ${getSupName("supplier4")})`;
+                  let pSub = "";
+                  const PROJECT_LABEL = "ПРОЕКТА МОДЕРНИЗАЦИИ СОЦИАЛЬНОЙ ЗАЩИТЫ И ЭКОНОМИЧЕСКОЙ ИНТЕГРАЦИИ ПРИ МТМЗН РТ";
+                  let pStamp = PROJECT_LABEL;
 
                   if (portalFacilitator) {
                     pTitle = "КАТАЛОГ ТОВАРОВ";
-                    pSub = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
-                    pStamp = printSelectedRegion ? printSelectedRegion.toUpperCase() : "РЕГИОНАЛЬНЫЙ КАТАЛОГ";
+                    pSub = "";
+                    pStamp = printSelectedRegion ? `${PROJECT_LABEL} • ${printSelectedRegion.toUpperCase()}` : PROJECT_LABEL;
                   } else if (printCatalogType === "full") {
                     pTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
-                    pSub = "В каталоге представлены цены всех трех поставщиков";
-                    pStamp = `ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ (${getSupName("supplier2")} • ${getSupName("supplier3")} • ${getSupName("supplier4")})`;
+                    pSub = "";
+                    pStamp = PROJECT_LABEL;
                   } else {
                     const rText = printSelectedRegion ? printSelectedRegion.toUpperCase() : "";
                     const sText = printSelectedSupplier ? getSupName(printSelectedSupplier).toUpperCase() : "";
@@ -4849,19 +5078,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     if (printSelectedRegion && printSelectedSupplier) {
                       pTitle = `КАТАЛОГ ${rText}`;
                       pSub = `ПОСТАВЩИК: ${sText}`;
-                      pStamp = `КАТАЛОГ: ${rText} • ${sText}`;
+                      pStamp = `${PROJECT_LABEL} • ${rText} • ${sText}`;
                     } else if (printSelectedRegion) {
                       pTitle = `КАТАЛОГ ${rText}`;
-                      pSub = "В каталоге представлены цены всех трех поставщиков";
-                      pStamp = `РЕГИОН: ${rText} • ВСЕ ПОСТАВЩИКИ`;
+                      pSub = "";
+                      pStamp = `${PROJECT_LABEL} • ${rText}`;
                     } else if (printSelectedSupplier) {
                       pTitle = `КАТАЛОГ: ${sText}`;
-                      pSub = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
-                      pStamp = `ПОСТАВЩИК: ${sText} • ВСЕ РЕГИОНЫ`;
+                      pSub = "";
+                      pStamp = `${PROJECT_LABEL} • ${sText}`;
                     } else {
                       pTitle = "КАТАЛОГ ТОВАРОВ";
-                      pSub = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
-                      pStamp = "ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ";
+                      pSub = "";
+                      pStamp = PROJECT_LABEL;
                     }
                   }
 
@@ -4878,9 +5107,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       <div className="text-base sm:text-lg font-black tracking-wide text-white uppercase mt-1">
                         {pTitle}
                       </div>
-                      <div className="text-xs text-indigo-200 font-medium italic">
-                        {pSub}
-                      </div>
+                      {pSub ? (
+                        <div className="text-xs text-indigo-200 font-medium italic">
+                          {pSub}
+                        </div>
+                      ) : null}
                       <div className="text-[10px] text-slate-300 font-mono uppercase tracking-wider bg-slate-800/80 px-2.5 py-1 rounded mt-2 border border-slate-700/60 inline-block">
                         {pStamp}
                       </div>
@@ -5038,17 +5269,29 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
         {/* Manual Entry Modal */}
         {isManualModalOpen && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b border-slate-100">
-                <h2 className="text-lg font-bold text-slate-800">
-                  {editingProductId
-                    ? "Редактировать товар"
-                    : "Добавить товар вручную"}
-                </h2>
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-2xs">
+                    <Package className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">
+                      {editingProductId
+                        ? "Редактировать товар"
+                        : "Добавить товар вручную"}
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {editingProductId
+                        ? "Управление характеристиками товара и региональными ценами поставщиков"
+                        : "Создание карточки товара и настройка цен по всем поставщикам и регионам"}
+                    </p>
+                  </div>
+                </div>
                 <button
                   onClick={() => setIsManualModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 rounded-lg transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -5056,323 +5299,393 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
               <form
                 onSubmit={handleManualSubmit}
-                className="flex flex-col p-6 gap-4 overflow-y-auto max-h-[85vh]"
+                className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col justify-between"
               >
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Сфера *
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomSphere(!isCustomSphere)}
-                      className="text-xs text-indigo-600 hover:underline"
-                    >
-                      {isCustomSphere ? "Выбрать из списка" : "+ Добавить"}
-                    </button>
-                  </div>
-                  {isCustomSphere ? (
-                    <input
-                      type="text"
-                      value={manualForm.spheres.join(", ")}
-                      onChange={(e) =>
-                        setManualForm((prev) => ({
-                          ...prev,
-                          spheres: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
-                        }))
-                      }
-                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                      placeholder="Введите сферы через запятую..."
-                    />
-                  ) : (
-                    <div className="flex flex-col gap-2 max-h-40 overflow-y-auto border border-slate-300 rounded-md p-2 bg-white shadow-sm">
-                      {uniqueSpheres.map((s) => (
-                        <label key={s} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
-                          <input
-                            type="checkbox"
-                            checked={manualForm.spheres.includes(s)}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setManualForm((prev) => {
-                                const newSpheres = checked
-                                  ? [...prev.spheres, s]
-                                  : prev.spheres.filter((sphere) => sphere !== s);
-                                return { ...prev, spheres: newSpheres };
-                              });
-                            }}
-                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                          />
-                          {s}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Left Column: Основные параметры товара (5 cols) */}
+                  <div className="lg:col-span-5 flex flex-col gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Сфера применения *
                         </label>
-                      ))}
-                      {uniqueSpheres.length === 0 && (
-                        <span className="text-slate-400 p-2 text-xs text-center">Нет доступных сфер</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Название *
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleSearchImagesClick}
-                      className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-medium bg-indigo-50 px-2 py-1 rounded-md transition-colors"
-                    >
-                      <Search className="w-3.5 h-3.5" />
-                      Найти фото в сети
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    value={manualForm.name}
-                    onChange={(e) =>
-                      setManualForm((prev) => ({
-                        ...prev,
-                        name: e.target.value,
-                      }))
-                    }
-                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Например, Стол из нержавеющей стали"
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Описание
-                  </label>
-                  <textarea
-                    value={manualForm.description}
-                    onChange={(e) =>
-                      setManualForm((prev) => ({
-                        ...prev,
-                        description: e.target.value,
-                      }))
-                    }
-                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none h-24"
-                    placeholder="Краткое описание товара..."
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Базовая цена товара (Главный каталог) *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={manualForm.price}
-                      onChange={(e) =>
-                        setManualForm((prev) => ({
-                          ...prev,
-                          price: e.target.value,
-                        }))
-                      }
-                      className="w-full border border-slate-300 rounded-md pl-3 pr-12 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-semibold"
-                      placeholder="0.00"
-                      required
-                    />
-                    <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold">
-                      с.
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 p-4 bg-slate-50 rounded-xl border border-slate-200 mt-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                      Цены по поставщикам и регионам:
-                    </span>
-                    <div className="flex gap-1.5 p-0.5 bg-slate-200/60 rounded-lg">
-                      {(["supplier2", "supplier3", "supplier4"] as const).map(
-                        (sup) => {
-                          const label = getSupplierFormTabName(sup);
-                          return (
-                            <button
-                              key={sup}
-                              type="button"
-                              onClick={() => setFormSelectedSupplier(sup)}
-                              className={`text-[10px] px-2 py-1 rounded-md font-bold transition-all ${formSelectedSupplier === sup ? "bg-white shadow-xs text-indigo-700" : "text-slate-500 hover:text-slate-800"}`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        },
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 mt-1">
-                    {globalDict.regions.map((reg) => {
-                      const currentOverride =
-                        manualForm.prices[formSelectedSupplier]?.[reg] ?? "";
-
-                      // Live auto price calculation based on the current base price input
-                      const basePriceVal = parseFloat(manualForm.price) || 0;
-                      const regionMarkup =
-                        globalDict.pricingRules?.[formSelectedSupplier]?.[
-                          reg
-                        ] ?? 0;
-                      const autoPrice = basePriceVal * (1 + regionMarkup / 105); // calculate nicely
-
-                      return (
-                        <div
-                          key={reg}
-                          className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 gap-4"
+                        <button
+                          type="button"
+                          onClick={() => setIsCustomSphere(!isCustomSphere)}
+                          className="text-xs text-indigo-600 hover:underline font-medium cursor-pointer"
                         >
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-xs font-semibold text-slate-700 truncate">
-                              {reg}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-medium font-mono leading-none mt-0.5">
-                              Авто:{" "}
-                              {basePriceVal > 0
-                                ? `${(basePriceVal * (1 + regionMarkup / 100)).toFixed(2)} с. `
-                                : "—"}
-                              {regionMarkup !== 0
-                                ? `(${regionMarkup >= 0 ? "+" : ""}${regionMarkup}%)`
-                                : ""}
-                            </span>
-                          </div>
-                          <div className="relative shrink-0 w-28">
-                            <input
-                              type="number"
-                              step="0.01;any"
-                              min="0"
-                              value={currentOverride}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setManualForm((prev) => {
-                                  const nextPrices = { ...prev.prices };
-                                  if (!nextPrices[formSelectedSupplier]) {
-                                    nextPrices[formSelectedSupplier] = {};
-                                  }
-                                  nextPrices[formSelectedSupplier][reg] = val;
-                                  return { ...prev, prices: nextPrices };
-                                });
-                              }}
-                              className="w-full border border-slate-300 rounded-md pl-2 pr-6 py-1 text-xs text-right font-mono font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              placeholder="Авто"
-                            />
-                            <span className="absolute right-1.5 top-1 px-0.5 text-[10px] text-slate-400 font-bold select-none">
-                              с.
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex justify-between items-center">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Ед. измерения *
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomUnit(!isCustomUnit)}
-                      className="text-xs text-indigo-600 hover:underline"
-                    >
-                      {isCustomUnit ? "Выбрать из списка" : "+ Своя"}
-                    </button>
-                  </div>
-                  {isCustomUnit ? (
-                    <input
-                      type="text"
-                      value={manualForm.unit}
-                      onChange={(e) =>
-                        setManualForm((prev) => ({
-                          ...prev,
-                          unit: e.target.value,
-                        }))
-                      }
-                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                      placeholder="Например: литр, метр, мм..."
-                    />
-                  ) : (
-                    <select
-                      value={manualForm.unit}
-                      onChange={(e) =>
-                        setManualForm((prev) => ({
-                          ...prev,
-                          unit: e.target.value,
-                        }))
-                      }
-                      className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      required
-                    >
-                      <option value="шт.">шт. (Штука)</option>
-                      <option value="кг">кг (Килограмм)</option>
-                      <option value="г">г (Грамм)</option>
-                      <option value="т">т (Тонна)</option>
-                      <option value="метр">метр (Метр)</option>
-                      <option value="мм">мм (Миллиметр)</option>
-                      <option value="см">см (Сантиметр)</option>
-                      <option value="литр">литр (Литр)</option>
-                      <option value="мл">мл (Миллиметр)</option>
-                      <option value="упак.">упак. (Упаковка)</option>
-                      <option value="короб.">короб. (Коробка)</option>
-                      <option value="компл.">компл. (Комплект)</option>
-                    </select>
-                  )}
-                </div>
-
-                <div className="flex gap-4">
-                  <div className="flex flex-col gap-1.5 flex-1">
-                    <label className="text-sm font-semibold text-slate-700">
-                      Фото
-                    </label>
-                    <label className="w-full h-24 border-2 border-dashed border-slate-300 rounded-md flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-colors">
-                      {manualForm.imageBase64 ? (
-                        <img
-                          src={manualForm.imageBase64}
-                          alt="Preview"
-                          className="h-full object-contain p-1"
+                          {isCustomSphere ? "Выбрать из списка" : "+ Добавить"}
+                        </button>
+                      </div>
+                      {isCustomSphere ? (
+                        <input
+                          type="text"
+                          value={manualForm.spheres.join(", ")}
+                          onChange={(e) =>
+                            setManualForm((prev) => ({
+                              ...prev,
+                              spheres: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
+                            }))
+                          }
+                          className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                          required
+                          placeholder="Введите сферы через запятую..."
                         />
                       ) : (
-                        <div className="flex flex-col items-center gap-1 text-slate-400">
-                          <Camera className="w-6 h-6" />
-                          <span className="text-xs">
-                            Загрузить фото (из файла или Ctrl+V)
-                          </span>
+                        <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto border border-slate-300 rounded-lg p-2 bg-white shadow-2xs">
+                          {uniqueSpheres.map((s) => (
+                            <label key={s} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded-md">
+                              <input
+                                type="checkbox"
+                                checked={manualForm.spheres.includes(s)}
+                                onChange={(e) => {
+                                  const checked = e.target.checked;
+                                  setManualForm((prev) => {
+                                    const newSpheres = checked
+                                      ? [...prev.spheres, s]
+                                      : prev.spheres.filter((sphere) => sphere !== s);
+                                    return { ...prev, spheres: newSpheres };
+                                  });
+                                }}
+                                className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                              />
+                              <span className="truncate">{s}</span>
+                            </label>
+                          ))}
+                          {uniqueSpheres.length === 0 && (
+                            <span className="text-slate-400 p-2 text-xs text-center">Нет доступных сфер</span>
+                          )}
                         </div>
                       )}
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Название товара *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleSearchImagesClick}
+                          className="text-xs text-indigo-600 hover:text-indigo-800 flex items-center gap-1 font-semibold bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                        >
+                          <Search className="w-3.5 h-3.5" />
+                          Найти фото в сети
+                        </button>
+                      </div>
                       <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleManualImageUpload}
-                        className="hidden"
+                        type="text"
+                        value={manualForm.name}
+                        onChange={(e) =>
+                          setManualForm((prev) => ({
+                            ...prev,
+                            name: e.target.value,
+                          }))
+                        }
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                        placeholder="Например, Стол из нержавеющей стали"
+                        required
                       />
-                    </label>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Описание
+                      </label>
+                      <textarea
+                        value={manualForm.description}
+                        onChange={(e) =>
+                          setManualForm((prev) => ({
+                            ...prev,
+                            description: e.target.value,
+                          }))
+                        }
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none h-20 shadow-2xs"
+                        placeholder="Краткое описание товара..."
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          Базовая цена (ГК) *
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={manualForm.price}
+                            onChange={(e) =>
+                              setManualForm((prev) => ({
+                                ...prev,
+                                price: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-slate-300 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold shadow-2xs"
+                            placeholder="0.00"
+                            required
+                          />
+                          <span className="absolute right-3 top-2.5 text-xs text-slate-400 font-bold select-none">
+                            с.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <div className="flex justify-between items-center">
+                          <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                            Ед. изм. *
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => setIsCustomUnit(!isCustomUnit)}
+                            className="text-xs text-indigo-600 hover:underline font-medium cursor-pointer"
+                          >
+                            {isCustomUnit ? "Из списка" : "+ Своя"}
+                          </button>
+                        </div>
+                        {isCustomUnit ? (
+                          <input
+                            type="text"
+                            value={manualForm.unit}
+                            onChange={(e) =>
+                              setManualForm((prev) => ({
+                                ...prev,
+                                unit: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            required
+                            placeholder="литр, метр..."
+                          />
+                        ) : (
+                          <select
+                            value={manualForm.unit}
+                            onChange={(e) =>
+                              setManualForm((prev) => ({
+                                ...prev,
+                                unit: e.target.value,
+                              }))
+                            }
+                            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            required
+                          >
+                            <option value="шт.">шт. (Штука)</option>
+                            <option value="кг">кг (Килограмм)</option>
+                            <option value="г">г (Грамм)</option>
+                            <option value="т">т (Тонна)</option>
+                            <option value="метр">метр (Метр)</option>
+                            <option value="мм">мм (Миллиметр)</option>
+                            <option value="см">см (Сантиметр)</option>
+                            <option value="литр">литр (Литр)</option>
+                            <option value="мл">мл (Миллиметр)</option>
+                            <option value="упак.">упак. (Упаковка)</option>
+                            <option value="короб.">короб. (Коробка)</option>
+                            <option value="компл.">компл. (Комплект)</option>
+                          </select>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                        Фото товара
+                      </label>
+                      <label className="w-full h-24 border-2 border-dashed border-slate-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 transition-colors">
+                        {manualForm.imageBase64 ? (
+                          <img
+                            src={manualForm.imageBase64}
+                            alt="Preview"
+                            className="h-full object-contain p-1 rounded-lg"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-slate-400">
+                            <Camera className="w-6 h-6" />
+                            <span className="text-xs font-medium">
+                              Загрузить фото (из файла или Ctrl+V)
+                            </span>
+                          </div>
+                        )}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleManualImageUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Right Column: Цены по поставщикам и регионам (7 cols) */}
+                  <div className="lg:col-span-7 flex flex-col gap-3 p-4 bg-slate-50/80 rounded-2xl border border-slate-200">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                      <div>
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                          <Truck className="w-4 h-4 text-indigo-600" />
+                          Цены по поставщикам и регионам:
+                        </span>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Коды поставщиков SPMEI. Задайте ручные цены или оставьте для авто-расчета.
+                        </p>
+                      </div>
+                      <span className="text-[11px] bg-indigo-50 border border-indigo-200 text-indigo-700 px-2 py-0.5 rounded-full font-bold self-start sm:self-auto">
+                        Поставщиков: {availableSupplierKeys.length}
+                      </span>
+                    </div>
+
+                    {/* Dynamic Suppliers Tabs / Chips */}
+                    <div className="flex flex-wrap gap-1.5 p-1 bg-slate-200/60 rounded-xl">
+                      {availableSupplierKeys.map((sup) => {
+                        const label = getSupplierLabel(sup);
+                        const isSelected = formSelectedSupplier === sup;
+                        const overrideCount = Object.values(manualForm.prices[sup] || {}).filter(
+                          (v) => typeof v === "string" && v.trim() !== ""
+                        ).length;
+
+                        return (
+                          <button
+                            key={sup}
+                            type="button"
+                            onClick={() => setFormSelectedSupplier(sup)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-white text-indigo-700 shadow-sm ring-1 ring-indigo-200"
+                                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+                            }`}
+                          >
+                            <span>{label}</span>
+                            {overrideCount > 0 && (
+                              <span
+                                className={`text-[9px] px-1.5 py-0.2 rounded-full font-black ${
+                                  isSelected
+                                    ? "bg-indigo-100 text-indigo-700"
+                                    : "bg-slate-300 text-slate-700"
+                                }`}
+                                title={`Задано ${overrideCount} ручных цен`}
+                              >
+                                {overrideCount}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Header for Active Supplier */}
+                    <div className="flex items-center justify-between text-xs px-1">
+                      <span className="font-semibold text-slate-700">
+                        Региональные цены для: <span className="font-bold text-indigo-700">{getSupplierLabel(formSelectedSupplier)}</span>
+                      </span>
+                      {(() => {
+                        const hasOverrides = Object.values(manualForm.prices[formSelectedSupplier] || {}).some(
+                          (v) => typeof v === "string" && v.trim() !== ""
+                        );
+                        if (!hasOverrides) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setManualForm((prev) => {
+                                const nextPrices = { ...prev.prices };
+                                nextPrices[formSelectedSupplier] = {};
+                                return { ...prev, prices: nextPrices };
+                              });
+                            }}
+                            className="text-[11px] text-red-600 hover:text-red-700 font-semibold hover:underline cursor-pointer"
+                          >
+                            Сбросить цены на Авто
+                          </button>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Regions Grid (2 columns on sm+) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[44vh] overflow-y-auto pr-1">
+                      {globalDict.regions.map((reg) => {
+                        const currentOverride =
+                          manualForm.prices[formSelectedSupplier]?.[reg] ?? "";
+
+                        const basePriceVal = parseFloat(manualForm.price) || 0;
+                        const regionMarkup =
+                          globalDict.pricingRules?.[formSelectedSupplier]?.[reg] ?? 0;
+                        const autoPrice = basePriceVal * (1 + regionMarkup / 100);
+                        const isCustom = currentOverride && currentOverride.trim() !== "";
+
+                        return (
+                          <div
+                            key={reg}
+                            className={`flex flex-col justify-between p-2.5 rounded-xl border transition-all ${
+                              isCustom
+                                ? "bg-indigo-50/50 border-indigo-200 shadow-2xs"
+                                : "bg-white border-slate-200"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 mb-1.5">
+                              <span className="text-xs font-bold text-slate-800 truncate" title={reg}>
+                                {reg}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono font-medium shrink-0">
+                                Авто: {basePriceVal > 0 ? `${autoPrice.toFixed(2)} с.` : "—"}
+                                {regionMarkup !== 0 && (
+                                  <span className={regionMarkup > 0 ? "text-emerald-600" : "text-amber-600"}>
+                                    {" "}({regionMarkup > 0 ? "+" : ""}{regionMarkup}%)
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="relative w-full">
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={currentOverride}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setManualForm((prev) => {
+                                    const nextPrices = { ...prev.prices };
+                                    if (!nextPrices[formSelectedSupplier]) {
+                                      nextPrices[formSelectedSupplier] = {};
+                                    }
+                                    nextPrices[formSelectedSupplier][reg] = val;
+                                    return { ...prev, prices: nextPrices };
+                                  });
+                                }}
+                                className={`w-full border rounded-lg pl-3 pr-7 py-1.5 text-xs font-mono font-semibold text-right focus:outline-none focus:ring-2 transition-all ${
+                                  isCustom
+                                    ? "border-indigo-400 bg-white text-indigo-900 focus:ring-indigo-500"
+                                    : "border-slate-300 bg-slate-50/50 text-slate-700 focus:ring-indigo-500"
+                                }`}
+                                placeholder="Авто"
+                              />
+                              <span className="absolute right-2 top-1.5 text-[10px] text-slate-400 font-bold select-none pointer-events-none">
+                                с.
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
 
-                <div className="mt-4 flex gap-3 justify-end pt-4 border-t border-slate-100">
+                <div className="mt-6 flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
                   <button
                     type="button"
                     onClick={() => setIsManualModalOpen(false)}
-                    className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-100 rounded-md transition-colors text-sm"
+                    className="px-4 py-2 font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors text-sm cursor-pointer"
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
                     disabled={isSavingManual}
-                    className="px-4 py-2 font-medium text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed rounded-md transition-colors shadow-sm text-sm flex items-center gap-1.5"
+                    className="px-5 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 disabled:cursor-not-allowed rounded-lg transition-colors shadow-sm text-sm flex items-center gap-2 cursor-pointer"
                   >
                     {isSavingManual && (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     )}
-                    {isSavingManual ? "Сохранение..." : "Сохранить"}
+                    {isSavingManual ? "Сохранение..." : "Сохранить товар"}
                   </button>
                 </div>
               </form>
@@ -5476,37 +5789,54 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                         )}
                     </div>
                     <div className="flex flex-col gap-1.5 mt-1 font-mono">
-                      <div className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
-                        <span className="text-slate-600">
-                          {getSupplierLabel("supplier2")}:
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-950">
-                            {(() => {
-                              const activeReg = selectedRegion || "Душанбе";
-                              const val = getProductPriceForSupplierAndRegion(
-                                viewingProduct,
-                                "supplier2",
-                                activeReg,
-                              );
-                              return val > 0 ? `${val.toFixed(2)} с.` : "—";
-                            })()}
-                          </span>
-                          {(() => {
-                            const activeReg = selectedRegion || "Душанбе";
+                      {(() => {
+                        const activeReg = selectedRegion || "Душанбе";
+                        const targetKeys =
+                          selectedSupplier && selectedSupplier !== "all"
+                            ? [selectedSupplier]
+                            : availableSupplierKeys;
+
+                        const validOffers = targetKeys
+                          .map((sKey) => {
                             const val = getProductPriceForSupplierAndRegion(
                               viewingProduct,
-                              "supplier2",
+                              sKey as any,
                               activeReg,
                             );
-                            if (val > 0) {
-                              const qty = cart.find(
-                                (item) =>
-                                  item.product.id === viewingProduct.id &&
-                                  item.selectedSupplier === "supplier2"
-                              )?.quantity || 0;
+                            return { sKey, val };
+                          })
+                          .filter((item) => item.val > 0);
 
-                              return (
+                        if (validOffers.length === 0) {
+                          return (
+                            <div className="py-2 text-center text-xs text-slate-400 italic">
+                              {selectedSupplier && selectedSupplier !== "all"
+                                ? `У ${getSupplierLabel(selectedSupplier)} нет действующей цены в регионе (${activeReg})`
+                                : `Нет действующих предложений от поставщиков в регионе (${activeReg})`}
+                            </div>
+                          );
+                        }
+
+                        return validOffers.map(({ sKey, val }) => {
+                          const qty =
+                            cart.find(
+                              (item) =>
+                                item.product.id === viewingProduct.id &&
+                                item.selectedSupplier === sKey,
+                            )?.quantity || 0;
+
+                          return (
+                            <div
+                              key={sKey}
+                              className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0"
+                            >
+                              <span className="text-slate-600 font-medium">
+                                {getSupplierLabel(sKey)}:
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-950">
+                                  {val.toFixed(2)} с.
+                                </span>
                                 <div className="flex items-center gap-1">
                                   {qty > 0 && (
                                     <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full shrink-0">
@@ -5515,126 +5845,19 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                                   )}
                                   <button
                                     onClick={() => {
-                                      handleAddToCart(viewingProduct, "supplier2", val);
+                                      handleAddToCart(viewingProduct, sKey as any, val);
                                     }}
                                     className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                    title={`Добавить в выборку (${getSupplierLabel("supplier2")})`}
+                                    title={`Добавить в выборку (${getSupplierLabel(sKey)})`}
                                   >
                                     <ShoppingCart className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
-                        <span className="text-slate-600">
-                          {getSupplierLabel("supplier3")}:
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-950">
-                            {(() => {
-                              const activeReg = selectedRegion || "Душанбе";
-                              const val = getProductPriceForSupplierAndRegion(
-                                viewingProduct,
-                                "supplier3",
-                                activeReg,
-                              );
-                              return val > 0 ? `${val.toFixed(2)} с.` : "—";
-                            })()}
-                          </span>
-                          {(() => {
-                            const activeReg = selectedRegion || "Душанбе";
-                            const val = getProductPriceForSupplierAndRegion(
-                              viewingProduct,
-                              "supplier3",
-                              activeReg,
-                            );
-                            if (val > 0) {
-                              const qty = cart.find(
-                                (item) =>
-                                  item.product.id === viewingProduct.id &&
-                                  item.selectedSupplier === "supplier3"
-                              )?.quantity || 0;
-
-                              return (
-                                <div className="flex items-center gap-1">
-                                  {qty > 0 && (
-                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full shrink-0">
-                                      {qty} {viewingProduct.unit || "шт"}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      handleAddToCart(viewingProduct, "supplier3", val);
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                    title={`Добавить в выборку (${getSupplierLabel("supplier3")})`}
-                                  >
-                                    <ShoppingCart className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                      </div>
-                      <div className="flex justify-between items-center text-sm py-1 border-b border-slate-100 last:border-0">
-                        <span className="text-slate-600">
-                          {getSupplierLabel("supplier4")}:
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-950">
-                            {(() => {
-                              const activeReg = selectedRegion || "Душанбе";
-                              const val = getProductPriceForSupplierAndRegion(
-                                viewingProduct,
-                                "supplier4",
-                                activeReg,
-                              );
-                              return val > 0 ? `${val.toFixed(2)} с.` : "—";
-                            })()}
-                          </span>
-                          {(() => {
-                            const activeReg = selectedRegion || "Душанбе";
-                            const val = getProductPriceForSupplierAndRegion(
-                              viewingProduct,
-                              "supplier4",
-                              activeReg,
-                            );
-                            if (val > 0) {
-                              const qty = cart.find(
-                                (item) =>
-                                  item.product.id === viewingProduct.id &&
-                                  item.selectedSupplier === "supplier4"
-                              )?.quantity || 0;
-
-                              return (
-                                <div className="flex items-center gap-1">
-                                  {qty > 0 && (
-                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-full shrink-0">
-                                      {qty} {viewingProduct.unit || "шт"}
-                                    </span>
-                                  )}
-                                  <button
-                                    onClick={() => {
-                                      handleAddToCart(viewingProduct, "supplier4", val);
-                                    }}
-                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-slate-200 rounded transition-colors"
-                                    title={`Добавить в выборку (${getSupplierLabel("supplier4")})`}
-                                  >
-                                    <ShoppingCart className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              );
-                            }
-                            return null;
-                          })()}
-                        </div>
-                      </div>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
 
@@ -5811,15 +6034,42 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         cart={cart}
         updateQuantity={handleUpdateCartQuantity}
         onPrint={handleCartPrint}
-        onPrintWithMeta={(clientName, facilitatorName, note, quoteId) => {
-          setCartPrintMetadata({ clientName, facilitatorName, note, quoteId });
-          handleCartPrint({ clientName, facilitatorName, note, quoteId });
+        onPrintWithMeta={(clientName, facilitatorName, note, quoteId, district, specialistName, facilitatorLegalName, facilitatorRep, facilitatorPhone, facilitatorEmail, beneficiaryId) => {
+          setCartPrintMetadata({
+            clientName,
+            beneficiaryId,
+            facilitatorName,
+            facilitatorLegalName: facilitatorLegalName || resolvedFacilitator.legalName,
+            facilitatorRep: facilitatorRep || resolvedFacilitator.representative,
+            facilitatorPhone: facilitatorPhone || resolvedFacilitator.phone,
+            facilitatorEmail: facilitatorEmail || resolvedFacilitator.email,
+            specialistName,
+            note,
+            quoteId,
+            selectedDistrict: district || selectedDistrict,
+          });
+          handleCartPrint({
+            clientName,
+            beneficiaryId,
+            facilitatorName,
+            facilitatorLegalName: facilitatorLegalName || resolvedFacilitator.legalName,
+            facilitatorRep: facilitatorRep || resolvedFacilitator.representative,
+            facilitatorPhone: facilitatorPhone || resolvedFacilitator.phone,
+            facilitatorEmail: facilitatorEmail || resolvedFacilitator.email,
+            specialistName,
+            note,
+            quoteId,
+            selectedDistrict: district || selectedDistrict,
+          });
         }}
         onOpenQuotesHistory={() => setIsQuotesHistoryOpen(true)}
         suppliers={globalDict.suppliers || []}
         products={products}
         onAddToCart={handleAddToCart}
         selectedRegion={selectedRegion}
+        selectedDistrict={selectedDistrict}
+        onDistrictChange={setSelectedDistrict}
+        districtsByRegion={globalDict.districtsByRegion || DISTRICTS_BY_REGION}
         getProductPrice={getProductPriceForSupplierAndRegion}
         onUpdateSupplier={handleUpdateCartSupplier}
         regions={uniqueRegions}
@@ -5830,9 +6080,20 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         showBestPrice={showBestPrice}
         supplierPhones={globalDict.supplierPhones}
         supplierLegalNames={globalDict.supplierLegalNames}
+        supplierAssignedCodes={globalDict.supplierAssignedCodes}
         selectedSphere={selectedSphere}
         onClearCart={handleClearCart}
         defaultFacilitatorName={getFacilitatorName()}
+        facilitatorLegalName={resolvedFacilitator.legalName}
+        facilitatorRep={resolvedFacilitator.representative}
+        facilitatorPhone={resolvedFacilitator.phone}
+        facilitatorEmail={resolvedFacilitator.email}
+        facilitators={globalDict.facilitators}
+        facilitatorLegalNames={globalDict.facilitatorLegalNames}
+        facilitatorRepresentatives={globalDict.facilitatorRepresentatives}
+        facilitatorPhones={globalDict.facilitatorPhones}
+        facilitatorEmails={globalDict.facilitatorEmails}
+        facilitatorRegions={globalDict.facilitatorRegions}
         restoredMetadata={restoredCartMeta}
       />
 
@@ -5869,6 +6130,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
             }
 
             const productRegion = (printCatalogType === "filtered" ? printSelectedRegion : "") || selectedRegion || "Душанбе";
+
+            if (printCatalogType === "filtered" && printSelectedSupplier) {
+              filtered = filtered.filter((p) => {
+                const pr = getProductPriceForSupplierAndRegion(p, printSelectedSupplier, productRegion);
+                return pr !== undefined && pr !== null && pr > 0;
+              });
+            }
 
             return filtered.map((p) => {
               return {
@@ -6200,11 +6468,25 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
               : (selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0)
           }
           selectedRegion={cartPrintMetadata.selectedRegion ?? selectedRegion}
+          selectedDistrict={cartPrintMetadata.selectedDistrict ?? selectedDistrict}
           selectedSphere={cartPrintMetadata.selectedSphere ?? selectedSphere}
           supplierPhones={globalDict.supplierPhones}
           supplierLegalNames={globalDict.supplierLegalNames}
+          supplierAssignedCodes={globalDict.supplierAssignedCodes}
           clientName={cartPrintMetadata.clientName}
-          facilitatorName={cartPrintMetadata.facilitatorName}
+          beneficiaryId={cartPrintMetadata.beneficiaryId}
+          facilitatorName={cartPrintMetadata.facilitatorName || getFacilitatorName()}
+          facilitatorLegalName={cartPrintMetadata.facilitatorLegalName || resolvedFacilitator.legalName}
+          facilitatorRep={cartPrintMetadata.facilitatorRep || resolvedFacilitator.representative}
+          facilitatorPhone={cartPrintMetadata.facilitatorPhone || resolvedFacilitator.phone}
+          facilitatorEmail={cartPrintMetadata.facilitatorEmail || resolvedFacilitator.email}
+          facilitatorLegalNames={globalDict.facilitatorLegalNames}
+          facilitatorRepresentatives={globalDict.facilitatorRepresentatives}
+          facilitatorPhones={globalDict.facilitatorPhones}
+          facilitatorEmails={globalDict.facilitatorEmails}
+          facilitatorRegions={globalDict.facilitatorRegions}
+          facilitators={globalDict.facilitators}
+          specialistName={cartPrintMetadata.specialistName}
           note={cartPrintMetadata.note}
           createdAt={cartPrintMetadata.createdAt}
           quoteId={cartPrintMetadata.quoteId}
@@ -6219,6 +6501,50 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         onEditProduct={(product) => handleEditProduct(product)}
         onViewProduct={(product) => setViewingProduct(product)}
       />
+
+      <AuditConsoleModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        facilitators={globalDict.facilitators || []}
+        regions={uniqueRegions}
+        districtsByRegion={globalDict.districtsByRegion || DISTRICTS_BY_REGION}
+        currentFacilitatorName={getFacilitatorName()}
+      />
+
+      {isSwitchLoginOpen && (
+        <AnimatedLoginScreen
+          isModal={true}
+          initialRole={isReallyAdmin ? "admin" : portalFacilitator ? "facilitator" : "admin"}
+          adminPassword={globalDict.adminPassword || "020779"}
+          facilitators={globalDict.facilitators || []}
+          facilitatorCodes={globalDict.facilitatorCodes || {}}
+          facilitatorRegions={globalDict.facilitatorRegions || {}}
+          suppliers={globalDict.suppliers || []}
+          supplierCodes={globalDict.supplierAssignedCodes || {}}
+          supplierLegalNames={globalDict.supplierLegalNames || {}}
+          onCancel={() => setIsSwitchLoginOpen(false)}
+          onAdminSuccess={() => {
+            sessionStorage.setItem("main_admin_auth", "true");
+            setIsAdminPageAuthenticated(true);
+            setIsAdminMode(true);
+            localStorage.setItem("catalog_admin", "true");
+            setIsSwitchLoginOpen(false);
+          }}
+          onFacilitatorSuccess={(facKey, region) => {
+            setIsFacilitatorAuthenticated(true);
+            setAuthenticatedFacilitatorKey(facKey);
+            sessionStorage.setItem("auth_facilitator_key", facKey);
+            sessionStorage.setItem(`auth_${facKey}`, "true");
+            sessionStorage.setItem("auth_resolved", "true");
+            if (region) setSelectedRegion(region);
+            setIsSwitchLoginOpen(false);
+          }}
+          onSupplierSuccess={(supKey) => {
+            setSelectedSupplier(supKey);
+            setIsSwitchLoginOpen(false);
+          }}
+        />
+      )}
     </>
   );
 }

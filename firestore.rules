@@ -62,5 +62,9 @@ service cloud.firestore {
     match /facilitator_states/{docId} {
       allow read, write: if true;
     }
+
+    match /audit_logs/{logId} {
+      allow read, write: if true;
+    }
   }
 }

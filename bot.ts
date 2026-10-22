@@ -314,7 +314,7 @@ interface UserState {
   state: BotState;
   tempProductData?: any;
 }
-import { generateNextProductCode } from "./src/lib/generateNextCode";
+import { generateNextProductCode } from "./src/lib/generateNextCode.ts";
 
 const userStates = new Map<number, UserState>();
 const adminUsers = new Set<number>();

@@ -1,6 +1,7 @@
 import React from "react";
 import { Product } from "./types";
 import { Package, BookOpen } from "lucide-react";
+import { formatSupplierCode } from "./lib/supplierUtils";
 
 export const PrintCatalogView = ({
   products,
@@ -26,23 +27,23 @@ export const PrintCatalogView = ({
   ) => {
     if (sup === "supplier1") return "Логистика";
     const list = suppliers || [];
-    if (sup === "supplier2") return list[0] || "Поставщик 1";
-    if (sup === "supplier3") return list[1] || "Поставщик 2";
-    return list[2] || "Поставщик 3";
+    const idx = sup === "supplier2" ? 0 : sup === "supplier3" ? 1 : sup === "supplier4" ? 2 : -1;
+    return formatSupplierCode(sup, idx >= 0 ? list[idx] : undefined, idx >= 0 ? idx : undefined);
   };
 
   let coverTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
-  let coverSubtext = "В каталоге представлены цены всех трех поставщиков";
-  let coverBottomLabel = "";
+  let coverSubtext = "";
+  const PROJECT_LABEL = "ПРОЕКТА МОДЕРНИЗАЦИИ СОЦИАЛЬНОЙ ЗАЩИТЫ И ЭКОНОМИЧЕСКОЙ ИНТЕГРАЦИИ ПРИ МТМЗН РТ";
+  let coverBottomLabel = PROJECT_LABEL;
 
   if (isFacilitator) {
     coverTitle = "КАТАЛОГ ТОВАРОВ";
-    coverSubtext = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
-    coverBottomLabel = selectedRegion ? selectedRegion.toUpperCase() : "РЕГИОНАЛЬНЫЙ КАТАЛОГ";
+    coverSubtext = "";
+    coverBottomLabel = selectedRegion ? `${PROJECT_LABEL} • ${selectedRegion.toUpperCase()}` : PROJECT_LABEL;
   } else if (catalogType === "full" || (!selectedRegion && !selectedSupplier)) {
     coverTitle = "ПОЛНЫЙ КАТАЛОГ ТОВАРОВ";
-    coverSubtext = "В каталоге представлены цены всех трех поставщиков";
-    coverBottomLabel = `ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ (${getSupLabel("supplier2")} • ${getSupLabel("supplier3")} • ${getSupLabel("supplier4")})`;
+    coverSubtext = "";
+    coverBottomLabel = PROJECT_LABEL;
   } else {
     const regText = selectedRegion ? selectedRegion.toUpperCase() : "";
     const supText = selectedSupplier ? getSupLabel(selectedSupplier).toUpperCase() : "";
@@ -50,19 +51,19 @@ export const PrintCatalogView = ({
     if (selectedRegion && selectedSupplier) {
       coverTitle = `КАТАЛОГ ${regText}`;
       coverSubtext = `ПОСТАВЩИК: ${supText}`;
-      coverBottomLabel = `КАТАЛОГ: ${regText} • ${supText}`;
+      coverBottomLabel = `${PROJECT_LABEL} • ${regText} • ${supText}`;
     } else if (selectedRegion) {
       coverTitle = `КАТАЛОГ ${regText}`;
-      coverSubtext = "В каталоге представлены цены всех трех поставщиков";
-      coverBottomLabel = `РЕГИОН: ${regText} • ВСЕ ПОСТАВЩИКИ`;
+      coverSubtext = "";
+      coverBottomLabel = `${PROJECT_LABEL} • ${regText}`;
     } else if (selectedSupplier) {
       coverTitle = `КАТАЛОГ: ${supText}`;
-      coverSubtext = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
-      coverBottomLabel = `ПОСТАВЩИК: ${supText} • ВСЕ РЕГИОНЫ`;
+      coverSubtext = "";
+      coverBottomLabel = `${PROJECT_LABEL} • ${supText}`;
     } else {
       coverTitle = "КАТАЛОГ ТОВАРОВ";
-      coverSubtext = "B2B СИСТЕМА ДИСТРИБЬЮЦИИ";
-      coverBottomLabel = "ВСЕ РЕГИОНЫ • ВСЕ ПОСТАВЩИКИ";
+      coverSubtext = "";
+      coverBottomLabel = PROJECT_LABEL;
     }
   }
 
@@ -162,9 +163,11 @@ export const PrintCatalogView = ({
             {coverTitle}
           </h1>
           <div className="h-1 bg-slate-900 w-28 mx-auto mt-6 mb-3"></div>
-          <p className="text-xs text-slate-600 font-medium tracking-wide mt-2">
-            {coverSubtext}
-          </p>
+          {coverSubtext ? (
+            <p className="text-xs text-slate-600 font-medium tracking-wide mt-2">
+              {coverSubtext}
+            </p>
+          ) : null}
         </div>
 
         {/* Central Logo */}
@@ -191,7 +194,7 @@ export const PrintCatalogView = ({
         </div>
 
         <div className="text-center w-full mb-8">
-          <div className="text-slate-800 text-xs font-bold uppercase tracking-[0.2em] leading-relaxed max-w-lg mx-auto bg-slate-50 py-2.5 px-4 rounded-md border border-slate-200">
+          <div className="text-slate-800 text-xs font-bold uppercase tracking-[0.14em] leading-relaxed max-w-2xl mx-auto bg-slate-50 py-3 px-5 rounded-md border border-slate-200">
             {coverBottomLabel}
           </div>
           <div className="border-t border-slate-200 pt-6 mt-8 max-w-sm mx-auto flex justify-between text-[11px] text-slate-400 font-mono tracking-wider">
@@ -297,36 +300,49 @@ export const PrintCatalogView = ({
                           <span className="font-extrabold text-indigo-700 text-[12px]">
                             {(() => {
                               const val = selectedSupplier === "supplier2" ? p.priceSupplier2 : selectedSupplier === "supplier3" ? p.priceSupplier3 : p.priceSupplier4;
-                              return val !== undefined && val > 0 ? `${val} с.` : "—";
+                              return val !== undefined && val !== null && val > 0 ? `${val} с.` : "Нет цены";
                             })()}
                           </span>
                         </div>
                       ) : printMode === 'all' ? (
                         <div className="w-full flex flex-col gap-1">
-                          <div className="flex justify-between items-center text-[8.5px] pb-1 border-b border-slate-200/40">
-                            <span className="text-slate-400 font-medium truncate max-w-[124px]">{getSupLabel("supplier2")}:</span>
-                            <span className="font-bold text-slate-900">
-                              {p.priceSupplier2 !== undefined && p.priceSupplier2 > 0
-                                ? `${p.priceSupplier2} с.`
-                                : "—"}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-[8.5px] pb-1 border-b border-slate-200/40">
-                            <span className="text-slate-400 font-medium truncate max-w-[124px]">{getSupLabel("supplier3")}:</span>
-                            <span className="font-bold text-slate-900">
-                              {p.priceSupplier3 !== undefined && p.priceSupplier3 > 0
-                                ? `${p.priceSupplier3} с.`
-                                : "—"}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-[8.5px]">
-                            <span className="text-slate-400 font-medium truncate max-w-[124px]">{getSupLabel("supplier4")}:</span>
-                            <span className="font-bold text-slate-900">
-                              {p.priceSupplier4 !== undefined && p.priceSupplier4 > 0
-                                ? `${p.priceSupplier4} с.`
-                                : "—"}
-                            </span>
-                          </div>
+                          {(() => {
+                            const activeSuppliers = (
+                              [
+                                { key: "supplier2" as const, price: p.priceSupplier2 },
+                                { key: "supplier3" as const, price: p.priceSupplier3 },
+                                { key: "supplier4" as const, price: p.priceSupplier4 },
+                              ]
+                            ).filter(
+                              (s): s is { key: "supplier2" | "supplier3" | "supplier4"; price: number } =>
+                                s.price !== undefined && s.price !== null && s.price > 0
+                            );
+
+                            if (activeSuppliers.length === 0) {
+                              return (
+                                <div className="flex justify-between items-center text-[8.5px] py-0.5 text-slate-400 italic">
+                                  <span>Поставщики:</span>
+                                  <span>Нет цены</span>
+                                </div>
+                              );
+                            }
+
+                            return activeSuppliers.map((s, idx) => (
+                              <div
+                                key={s.key}
+                                className={`flex justify-between items-center text-[8.5px] ${
+                                  idx < activeSuppliers.length - 1 ? "pb-1 border-b border-slate-200/40" : ""
+                                }`}
+                              >
+                                <span className="text-slate-600 font-medium truncate max-w-[124px]">
+                                  {getSupLabel(s.key)}:
+                                </span>
+                                <span className="font-bold text-slate-900">
+                                  {s.price} с.
+                                </span>
+                              </div>
+                            ));
+                          })()}
                         </div>
                       ) : (
                         <div className="flex justify-between items-center text-[10px] py-1">
@@ -334,7 +350,7 @@ export const PrintCatalogView = ({
                           <span className="font-bold text-indigo-700 text-[12px]">
                             {(() => {
                               const prices = [p.priceSupplier2, p.priceSupplier3, p.priceSupplier4]
-                                .filter((val): val is number => val !== undefined && val > 0);
+                                .filter((val): val is number => val !== undefined && val !== null && val > 0);
                               if (prices.length === 0) return "—";
                               const minPrice = Math.min(...prices);
                               return `${minPrice} с.`;

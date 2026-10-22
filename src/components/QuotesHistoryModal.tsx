@@ -21,7 +21,11 @@ import {
   Eye,
   EyeOff,
   AlertTriangle,
-  Loader2
+  Loader2,
+  Edit3,
+  History,
+  Layers,
+  Building2,
 } from 'lucide-react';
 import { QuoteRecord, fetchQuotesHistory, deleteQuoteFromHistory, deleteAllQuotesFromHistory } from '../lib/quotesHistory';
 import { downloadCartExcel, downloadQuotesRegistryExcel } from '../lib/excelExport';
@@ -39,15 +43,30 @@ interface QuotesHistoryModalProps {
     sphere?: string,
     clientName?: string,
     facilitatorName?: string,
-    note?: string
+    note?: string,
+    district?: string,
+    specialistName?: string,
+    facilitatorLegalName?: string,
+    facilitatorRep?: string,
+    facilitatorPhone?: string,
+    facilitatorEmail?: string,
+    quoteId?: string,
+    beneficiaryId?: string
   ) => void;
   onTriggerPdfPrint: (data: {
     cart: any[];
     logisticsCost: number;
     selectedRegion: string;
+    selectedDistrict?: string;
     selectedSphere?: string;
     clientName: string;
+    beneficiaryId?: string;
     facilitatorName: string;
+    facilitatorLegalName?: string;
+    facilitatorRep?: string;
+    facilitatorPhone?: string;
+    facilitatorEmail?: string;
+    specialistName?: string;
     note?: string;
     createdAt?: string;
     quoteId?: string;
@@ -71,6 +90,8 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
   const [expandedQuoteId, setExpandedQuoteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [cardTab, setCardTab] = useState<Record<string, "items" | "revisions">>({});
+  const [expandedRevisionId, setExpandedRevisionId] = useState<string | null>(null);
 
   // States for Delete All with Admin Password confirmation
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState<boolean>(false);
@@ -164,7 +185,9 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
         quote.selectedSphere,
         quote.clientName,
         quote.facilitatorName,
-        quote.note
+        quote.note,
+        quote.selectedDistrict,
+        quote.specialistName
       );
       showToast("Excel файл с запечатанными ценами успешно сформирован");
     } catch (err) {
@@ -179,9 +202,16 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
       cart: quote.items,
       logisticsCost: quote.logisticsCost,
       selectedRegion: quote.selectedRegion,
+      selectedDistrict: quote.selectedDistrict,
       selectedSphere: quote.selectedSphere,
       clientName: quote.clientName,
+      beneficiaryId: quote.beneficiaryId,
       facilitatorName: quote.facilitatorName,
+      facilitatorLegalName: quote.facilitatorLegalName,
+      facilitatorRep: quote.facilitatorRep,
+      facilitatorPhone: quote.facilitatorPhone,
+      facilitatorEmail: quote.facilitatorEmail,
+      specialistName: quote.specialistName,
       note: quote.note,
       createdAt: quote.createdAt,
       quoteId: quote.id,
@@ -197,9 +227,17 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
       quote.selectedSphere,
       quote.clientName,
       quote.facilitatorName,
-      quote.note
+      quote.note,
+      quote.selectedDistrict,
+      quote.specialistName,
+      quote.facilitatorLegalName,
+      quote.facilitatorRep,
+      quote.facilitatorPhone,
+      quote.facilitatorEmail,
+      quote.id,
+      quote.beneficiaryId
     );
-    showToast(`Товары подборки для "${quote.clientName}" загружены в корзину`);
+    showToast(`Купон #${quote.id} открыт в корзине для изменения`);
     onClose();
   };
 
@@ -251,6 +289,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
     const qTerm = searchQuery.toLowerCase().trim();
     if (!qTerm) return true;
     const idMatch = (q.id || '').toLowerCase().includes(qTerm);
+    const benIdMatch = (q.beneficiaryId || '').toLowerCase().includes(qTerm);
     const clientMatch = (q.clientName || '').toLowerCase().includes(qTerm);
     const facMatch = (q.facilitatorName || '').toLowerCase().includes(qTerm);
     const noteMatch = (q.note || '').toLowerCase().includes(qTerm);
@@ -263,7 +302,7 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
         (i.product?.code && String(i.product.code).toLowerCase().includes(qTerm)) ||
         (i.product?.id && String(i.product.id).toLowerCase().includes(qTerm))
     );
-    return idMatch || clientMatch || facMatch || noteMatch || dateMatch || regionMatch || sphereMatch || itemMatch;
+    return idMatch || benIdMatch || clientMatch || facMatch || noteMatch || dateMatch || regionMatch || sphereMatch || itemMatch;
   });
 
   if (!isOpen) return null;
@@ -445,6 +484,11 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                     {/* Left Details */}
                     <div className="space-y-2 min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
+                        {quote.beneficiaryId && (
+                          <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-md bg-slate-900 text-white shadow-2xs tracking-wider">
+                            ID: {quote.beneficiaryId}
+                          </span>
+                        )}
                         <span className="font-bold text-base sm:text-lg text-slate-900 truncate">
                           {quote.clientName}
                         </span>
@@ -455,6 +499,25 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                           <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                           Снимок цен зафиксирован
                         </span>
+                        {quote.revisions && quote.revisions.length > 0 && (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedQuoteId(quote.id);
+                              setCardTab((prev) => ({ ...prev, [quote.id]: "revisions" }));
+                            }}
+                            className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                            title="Нажмите, чтобы посмотреть историю изменений купона"
+                          >
+                            <History className="w-3 h-3 text-amber-600 shrink-0" />
+                            <span>История правок ({quote.revisions.length})</span>
+                            {quote.updatedAt && (
+                              <span className="text-amber-700 font-normal hidden sm:inline">
+                                • изм. {quote.updatedAt}
+                              </span>
+                            )}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-slate-600">
@@ -462,13 +525,20 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                           <User className="w-3.5 h-3.5 text-slate-400" />
                           <span>Фасилитатор: <strong className="text-slate-800">{quote.facilitatorName}</strong></span>
                         </div>
+                        {quote.specialistName && (
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <span className="text-[10px] uppercase font-bold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                              Специалист: {quote.specialistName}
+                            </span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-1.5 text-slate-500">
                           <Clock className="w-3.5 h-3.5 text-slate-400" />
                           <span>{quote.createdAt}</span>
                         </div>
                         <div className="flex items-center gap-1 text-slate-600">
                           <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{quote.selectedRegion}</span>
+                          <span>{quote.selectedRegion}{quote.selectedDistrict ? ` / ${quote.selectedDistrict}` : ''}</span>
                         </div>
                         {quote.selectedSphere && quote.selectedSphere !== "Все сферы" && (
                           <div className="flex items-center gap-1 text-indigo-700 font-medium">
@@ -517,11 +587,11 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
 
                         <button
                           onClick={(e) => handleRestoreToCart(quote, e)}
-                          title="Загрузить товары в активную корзину"
-                          className="p-2 text-blue-700 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all flex items-center gap-1.5 text-xs font-semibold"
+                          title="Изменить купон в корзине (после изменения корзина очистится и запишется история)"
+                          className="p-2 text-indigo-700 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold shadow-2xs"
                         >
-                          <ShoppingCart className="w-4 h-4 shrink-0" />
-                          <span className="hidden lg:inline">В корзину</span>
+                          <Edit3 className="w-4 h-4 shrink-0 text-indigo-600" />
+                          <span className="hidden sm:inline">Изменить</span>
                         </button>
 
                         <button
@@ -547,75 +617,310 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Expanded Items Drawer */}
+                  {/* Expanded Items & Revisions Drawer */}
                   {isExpanded && (
                     <div className="border-t border-slate-200 p-4 sm:p-5 bg-slate-50/70 space-y-3 animate-in slide-in-from-top-2 duration-150">
-                      <div className="flex items-center justify-between text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                        <span>Зафиксированный состав товаров ({quote.items.length})</span>
-                        <span className="text-slate-500 font-normal normal-case">
-                          Цены зафиксированы на момент сохранения: {quote.createdAt}
+                      {/* Sub-tabs: Items vs Visual Change History */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setCardTab((prev) => ({ ...prev, [quote.id]: "items" }))}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                              (cardTab[quote.id] || "items") === "items"
+                                ? "bg-indigo-600 text-white shadow-xs"
+                                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                            }`}
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            <span>Состав товаров ({quote.items.length})</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setCardTab((prev) => ({ ...prev, [quote.id]: "revisions" }))}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                              cardTab[quote.id] === "revisions"
+                                ? "bg-indigo-600 text-white shadow-xs"
+                                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                            }`}
+                          >
+                            <History className="w-3.5 h-3.5" />
+                            <span>История изменений ({(quote.revisions || []).length})</span>
+                            {quote.revisions && quote.revisions.length > 0 && (
+                              <span className="bg-amber-100 text-amber-900 text-[10px] font-bold px-1.5 py-0.2 rounded-full border border-amber-300">
+                                {quote.revisions.length}
+                              </span>
+                            )}
+                          </button>
+                        </div>
+
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          {(cardTab[quote.id] || "items") === "items"
+                            ? `Цены зафиксированы на момент сохранения: ${quote.createdAt}`
+                            : `Полная хронология правок купона #${quote.id}`}
                         </span>
                       </div>
 
-                      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
-                              <th className="p-2.5 w-12 text-center">№</th>
-                              <th className="p-2.5">Код / ID</th>
-                              <th className="p-2.5">Наименование товара</th>
-                              <th className="p-2.5 text-center">Кол-во</th>
-                              <th className="p-2.5 text-right">Зафиксированная цена</th>
-                              <th className="p-2.5 text-right">Сумма</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {quote.items.map((item, idx) => {
-                              const itemSum = (item.selectedPrice || 0) * item.quantity;
-                              return (
-                                <tr key={`${item.product.id}-${idx}`} className="hover:bg-slate-50">
-                                  <td className="p-2.5 text-center text-slate-400 font-medium">{idx + 1}</td>
-                                  <td className="p-2.5 font-mono text-slate-500 font-semibold">
-                                    {item.product.code || item.product.id?.substring(0, 8)}
+                      {/* Tab 1: Items Table */}
+                      {(cardTab[quote.id] || "items") === "items" && (
+                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
+                                <th className="p-2.5 w-12 text-center">№</th>
+                                <th className="p-2.5">Код / ID</th>
+                                <th className="p-2.5">Наименование товара</th>
+                                <th className="p-2.5 text-center">Кол-во</th>
+                                <th className="p-2.5 text-right">Зафиксированная цена</th>
+                                <th className="p-2.5 text-right">Сумма</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {quote.items.map((item, idx) => {
+                                const itemSum = (item.selectedPrice || 0) * item.quantity;
+                                return (
+                                  <tr key={`${item.product.id}-${idx}`} className="hover:bg-slate-50">
+                                    <td className="p-2.5 text-center text-slate-400 font-medium">{idx + 1}</td>
+                                    <td className="p-2.5 font-mono text-slate-500 font-semibold">
+                                      {item.product.code || item.product.id?.substring(0, 8)}
+                                    </td>
+                                    <td className="p-2.5 font-medium text-slate-900">
+                                      {item.product.name}
+                                    </td>
+                                    <td className="p-2.5 text-center font-mono font-semibold text-slate-700">
+                                      {item.quantity} {item.product.unit || 'шт.'}
+                                    </td>
+                                    <td className="p-2.5 text-right font-mono font-medium text-slate-900">
+                                      {item.selectedPrice ? `${item.selectedPrice.toFixed(2)} с.` : '—'}
+                                    </td>
+                                    <td className="p-2.5 text-right font-mono font-bold text-slate-900">
+                                      {itemSum ? `${itemSum.toFixed(2)} с.` : '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+
+                              {quote.logisticsCost > 0 && (
+                                <tr className="bg-indigo-50/40 font-semibold text-indigo-950">
+                                  <td colSpan={5} className="p-2.5 text-right">
+                                    Логистика ({quote.selectedRegion}):
                                   </td>
-                                  <td className="p-2.5 font-medium text-slate-900">
-                                    {item.product.name}
-                                  </td>
-                                  <td className="p-2.5 text-center font-mono font-semibold text-slate-700">
-                                    {item.quantity} {item.product.unit || 'шт.'}
-                                  </td>
-                                  <td className="p-2.5 text-right font-mono font-medium text-slate-900">
-                                    {item.selectedPrice ? `${item.selectedPrice.toFixed(2)} с.` : '—'}
-                                  </td>
-                                  <td className="p-2.5 text-right font-mono font-bold text-slate-900">
-                                    {itemSum ? `${itemSum.toFixed(2)} с.` : '—'}
+                                  <td className="p-2.5 text-right font-mono font-bold">
+                                    {quote.logisticsCost.toFixed(2)} с.
                                   </td>
                                 </tr>
-                              );
-                            })}
+                              )}
 
-                            {quote.logisticsCost > 0 && (
-                              <tr className="bg-indigo-50/40 font-semibold text-indigo-950">
-                                <td colSpan={5} className="p-2.5 text-right">
-                                  Логистика ({quote.selectedRegion}):
+                              <tr className="bg-slate-100/90 font-bold text-slate-900 border-t border-slate-300">
+                                <td colSpan={5} className="p-3 text-right uppercase text-[11px]">
+                                  Итого зафиксировано к оплате:
                                 </td>
-                                <td className="p-2.5 text-right font-mono font-bold">
-                                  {quote.logisticsCost.toFixed(2)} с.
+                                <td className="p-3 text-right font-mono text-sm text-indigo-900">
+                                  {quote.totalAmount.toFixed(2)} с.
                                 </td>
                               </tr>
-                            )}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
 
-                            <tr className="bg-slate-100/90 font-bold text-slate-900 border-t border-slate-300">
-                              <td colSpan={5} className="p-3 text-right uppercase text-[11px]">
-                                Итого зафиксировано к оплате:
-                              </td>
-                              <td className="p-3 text-right font-mono text-sm text-indigo-900">
-                                {quote.totalAmount.toFixed(2)} с.
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
+                      {/* Tab 2: Visual Change History Timeline */}
+                      {cardTab[quote.id] === "revisions" && (
+                        <div className="py-2">
+                          {quote.revisions && quote.revisions.length > 0 ? (
+                            <div className="relative pl-6 space-y-4 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-indigo-200">
+                              {quote.revisions.map((rev, revIdx) => (
+                                <div key={rev.id || revIdx} className="relative">
+                                  {/* Timeline Node Badge */}
+                                  <div className={`absolute -left-6 top-1.5 w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold ${
+                                    revIdx === 0
+                                      ? "bg-indigo-600 border-indigo-200 text-white shadow-sm ring-4 ring-indigo-50"
+                                      : "bg-white border-indigo-400 text-indigo-700"
+                                  }`}>
+                                    {revIdx === 0 ? "★" : (quote.revisions!.length - revIdx)}
+                                  </div>
+
+                                  {/* Revision Card */}
+                                  <div className={`p-4 rounded-xl border transition-all ${
+                                    revIdx === 0
+                                      ? "bg-white border-indigo-200 shadow-sm ring-1 ring-indigo-50"
+                                      : "bg-white/80 border-slate-200"
+                                  }`}>
+                                    {(() => {
+                                      const priceDiff = rev.previousTotalAmount !== undefined 
+                                        ? Number((rev.totalAmount - rev.previousTotalAmount).toFixed(2)) 
+                                        : null;
+                                      const isInitial = revIdx === (quote.revisions!.length - 1) && quote.revisions!.length > 1;
+
+                                      return (
+                                        <>
+                                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                            <div className="flex items-center gap-2">
+                                              <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                                                revIdx === 0
+                                                  ? "bg-indigo-100 text-indigo-900 border border-indigo-200"
+                                                  : isInitial
+                                                  ? "bg-slate-100 text-slate-700 border border-slate-200"
+                                                  : "bg-amber-100 text-amber-900 border border-amber-200"
+                                              }`}>
+                                                {revIdx === 0 
+                                                  ? "Текущая редакция (Последняя)" 
+                                                  : isInitial 
+                                                  ? "Исходная редакция (#1)" 
+                                                  : `Редакция #${quote.revisions!.length - revIdx}`}
+                                              </span>
+                                              <span className="text-xs font-semibold text-slate-800 flex items-center gap-1">
+                                                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                                                {rev.dateFormatted}
+                                              </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                              {priceDiff !== null && priceDiff !== 0 && (
+                                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md ${
+                                                  priceDiff > 0
+                                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                                    : "bg-rose-100 text-rose-800 border border-rose-300"
+                                                }`}>
+                                                  {priceDiff > 0 ? `+${priceDiff.toFixed(2)}` : priceDiff.toFixed(2)} с.
+                                                </span>
+                                              )}
+                                              <div className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
+                                                Итого: {rev.totalAmount.toFixed(2)} с.
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="text-xs font-medium text-slate-800 bg-slate-50 p-2.5 rounded-lg border border-slate-100 mb-2.5">
+                                            {rev.changeSummary}
+                                          </div>
+
+                                          {/* Detailed Visual Diff Tags */}
+                                          {((rev.addedItems && rev.addedItems.length > 0) ||
+                                            (rev.removedItems && rev.removedItems.length > 0) ||
+                                            (rev.modifiedItems && rev.modifiedItems.length > 0)) && (
+                                            <div className="space-y-1.5 mb-2.5 bg-white/60 p-2.5 rounded-lg border border-slate-200/80">
+                                              {rev.addedItems && rev.addedItems.length > 0 && (
+                                                <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                                  <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 shrink-0">
+                                                    + Добавлено ({rev.addedItems.length}):
+                                                  </span>
+                                                  {rev.addedItems.map((item, i) => (
+                                                    <span key={i} className="text-emerald-800 bg-emerald-50/70 px-2 py-0.5 rounded-md border border-emerald-200/60 font-medium">
+                                                      {item}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              {rev.removedItems && rev.removedItems.length > 0 && (
+                                                <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                                  <span className="font-bold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 shrink-0">
+                                                    - Удалено ({rev.removedItems.length}):
+                                                  </span>
+                                                  {rev.removedItems.map((item, i) => (
+                                                    <span key={i} className="text-rose-800 bg-rose-50/70 px-2 py-0.5 rounded-md border border-rose-200/60 font-medium">
+                                                      {item}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              {rev.modifiedItems && rev.modifiedItems.length > 0 && (
+                                                <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                                  <span className="font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
+                                                    ~ Изменено ({rev.modifiedItems.length}):
+                                                  </span>
+                                                  {rev.modifiedItems.map((item, i) => (
+                                                    <span key={i} className="text-amber-800 bg-amber-50/70 px-2 py-0.5 rounded-md border border-amber-200/60 font-medium">
+                                                      {item}
+                                                    </span>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+
+                                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                                            {rev.specialistName && (
+                                              <span className="flex items-center gap-1 font-medium">
+                                                <User className="w-3 h-3 text-slate-400" />
+                                                Кто изменил: <strong className="text-slate-800">{rev.specialistName}</strong>
+                                              </span>
+                                            )}
+                                            {rev.facilitatorName && (
+                                              <span className="flex items-center gap-1 font-medium">
+                                                <Building2 className="w-3 h-3 text-slate-400" />
+                                                Организация: <strong className="text-slate-800">{rev.facilitatorName}</strong>
+                                              </span>
+                                            )}
+                                            <span className="text-slate-500">
+                                              Позиций в корзине: <strong className="text-slate-700">{rev.itemsCount}</strong>
+                                            </span>
+                                          </div>
+
+                                          {/* Items Snapshot Preview in Revision */}
+                                          {rev.items && rev.items.length > 0 && (
+                                            <div className="mt-2.5 pt-2 border-t border-slate-100">
+                                              <button
+                                                type="button"
+                                                onClick={() => setExpandedRevisionId(expandedRevisionId === rev.id ? null : rev.id)}
+                                                className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition-colors cursor-pointer"
+                                              >
+                                                {expandedRevisionId === rev.id ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                <span>
+                                                  {expandedRevisionId === rev.id 
+                                                    ? "Скрыть товары этой редакции" 
+                                                    : `Показать список товаров в этой редакции (${rev.items.length})`}
+                                                </span>
+                                              </button>
+                                              {expandedRevisionId === rev.id && (
+                                                <div className="mt-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50/70 p-2 animate-in fade-in duration-100">
+                                                  <table className="w-full text-left text-[11px]">
+                                                    <thead>
+                                                      <tr className="text-slate-500 font-bold border-b border-slate-200">
+                                                        <th className="p-1.5">Товар</th>
+                                                        <th className="p-1.5 text-center">Кол-во</th>
+                                                        <th className="p-1.5 text-right">Поставщик</th>
+                                                        <th className="p-1.5 text-right">Цена</th>
+                                                        <th className="p-1.5 text-right">Сумма</th>
+                                                      </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                      {rev.items.map((it, idx) => (
+                                                        <tr key={idx} className="border-b border-slate-100 last:border-none hover:bg-white/80">
+                                                          <td className="p-1.5 font-medium text-slate-800">{it.product?.name}</td>
+                                                          <td className="p-1.5 text-center text-slate-600 font-mono font-semibold">{it.quantity} {it.product?.unit || "шт."}</td>
+                                                          <td className="p-1.5 text-right text-slate-500 font-medium">{it.selectedSupplier}</td>
+                                                          <td className="p-1.5 text-right text-slate-600 font-mono">{it.selectedPrice.toFixed(2)} с.</td>
+                                                          <td className="p-1.5 text-right font-bold text-slate-900 font-mono">{(it.selectedPrice * it.quantity).toFixed(2)} с.</td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              )}
+                                            </div>
+                                          )}
+                                        </>
+                                      );
+                                    })()}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-white rounded-xl border border-slate-200 text-xs text-slate-500 flex items-center gap-3">
+                              <History className="w-6 h-6 text-indigo-500 shrink-0" />
+                              <div>
+                                <div className="font-bold text-slate-800">Первоначальная версия от {quote.createdAt}</div>
+                                <div className="text-slate-500 mt-0.5">
+                                  Купон находится в исходной редакции. Нажмите кнопку <strong>«Изменить»</strong>, чтобы отредактировать состав товаров в корзине. При сохранении корзина автоматически очистится, а здесь появится пошаговая хронология всех изменений.
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

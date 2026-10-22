@@ -9,6 +9,7 @@ import { QuotesHistoryModal } from './components/QuotesHistoryModal';
 import { downloadCartExcel } from './lib/excelExport';
 import { saveQuoteToHistory } from './lib/quotesHistory';
 import { UpdateNotifier } from './components/UpdateNotifier';
+import { formatSupplierCode } from './lib/supplierUtils';
 
 export default function MiniApp({ portalFacilitator: initialPortalFacilitator }: { portalFacilitator?: string }) {
   const params = new URLSearchParams(window.location.search);
@@ -161,18 +162,31 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   const supplierList = useMemo(() => {
     const list = (globalDict?.suppliers && Array.isArray(globalDict.suppliers) && globalDict.suppliers.length > 0)
       ? globalDict.suppliers
-      : ["Поставщик 1", "Поставщик 2", "Поставщик 3"];
-    return list.map((name: string, idx: number) => ({
-      key: `supplier${idx + 2}`,
-      label: name || `Поставщик ${idx + 1}`,
-      index: idx,
-    }));
-  }, [globalDict?.suppliers]);
+      : ["supplier2", "supplier3", "supplier4"];
+    return list.map((name: string, idx: number) => {
+      const key = `supplier${idx + 2}`;
+      const assigned = globalDict?.supplierAssignedCodes?.[key];
+      return {
+        key,
+        label: formatSupplierCode(key, assigned || name, idx),
+        index: idx,
+      };
+    });
+  }, [globalDict?.suppliers, globalDict?.supplierAssignedCodes]);
 
   const resolvedFacilitator = useMemo(() => {
     let targetKey = portalFacilitator || authenticatedFacilitatorKey || "";
     if (!targetKey) {
-      return { key: "", code: "", name: "Фасилитатор", region: "" };
+      return {
+        key: "",
+        code: "",
+        name: "Фасилитатор",
+        legalName: "Фасилитатор",
+        representative: "",
+        phone: "",
+        email: "",
+        region: "",
+      };
     }
 
     if (targetKey.startsWith("facilitator")) {
@@ -180,10 +194,18 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
       const name = (idx >= 0 && globalDict?.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
       const region = globalDict?.facilitatorRegions?.[targetKey] || "";
       const code = String(globalDict?.facilitatorCodes?.[targetKey] || "");
+      const legalName = globalDict?.facilitatorLegalNames?.[targetKey] || name;
+      const representative = globalDict?.facilitatorRepresentatives?.[targetKey] || "";
+      const phone = globalDict?.facilitatorPhones?.[targetKey] || "";
+      const email = globalDict?.facilitatorEmails?.[targetKey] || "";
       return {
         key: targetKey,
         code,
         name,
+        legalName,
+        representative,
+        phone,
+        email,
         region,
       };
     }
@@ -194,17 +216,34 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
           const idx = parseInt(key.replace("facilitator", ""), 10) - 2;
           const name = (idx >= 0 && globalDict?.facilitators?.[idx]) ? globalDict.facilitators[idx] : "Фасилитатор";
           const region = globalDict?.facilitatorRegions?.[key] || "";
+          const legalName = globalDict?.facilitatorLegalNames?.[key] || name;
+          const representative = globalDict?.facilitatorRepresentatives?.[key] || "";
+          const phone = globalDict?.facilitatorPhones?.[key] || "";
+          const email = globalDict?.facilitatorEmails?.[key] || "";
           return {
             key,
             code: String(codeVal),
             name,
+            legalName,
+            representative,
+            phone,
+            email,
             region,
           };
         }
       }
     }
 
-    return { key: targetKey, code: "", name: "Фасилитатор", region: "" };
+    return {
+      key: targetKey,
+      code: "",
+      name: "Фасилитатор",
+      legalName: "Фасилитатор",
+      representative: "",
+      phone: "",
+      email: "",
+      region: "",
+    };
   }, [portalFacilitator, authenticatedFacilitatorKey, globalDict]);
 
   // Set facilitator's assigned region once loaded or authenticated, or default to first region
@@ -830,7 +869,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
                 <div className="flex items-center gap-2">
                   <User className="w-4 h-4 text-indigo-400 shrink-0" />
                   <span className="font-bold text-xs text-white uppercase tracking-wider">
-                    Карточка клиента / Метаданные выборки
+                    Карточка клиента / Метаданные купона
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1265,7 +1304,20 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         selectedRegion={historyPrintData?.selectedRegion ?? region}
         selectedSphere={historyPrintData?.selectedSphere ?? sphere}
         clientName={historyPrintData?.clientName ?? clientName}
-        facilitatorName={historyPrintData?.facilitatorName ?? facilitatorName}
+        facilitatorName={historyPrintData?.facilitatorName ?? facilitatorName ?? resolvedFacilitator.name}
+        facilitatorLegalName={historyPrintData?.facilitatorLegalName ?? resolvedFacilitator.legalName}
+        facilitatorRep={historyPrintData?.facilitatorRep ?? resolvedFacilitator.representative}
+        facilitatorPhone={historyPrintData?.facilitatorPhone ?? resolvedFacilitator.phone}
+        facilitatorEmail={historyPrintData?.facilitatorEmail ?? resolvedFacilitator.email}
+        facilitatorLegalNames={globalDict?.facilitatorLegalNames}
+        facilitatorRepresentatives={globalDict?.facilitatorRepresentatives}
+        facilitatorPhones={globalDict?.facilitatorPhones}
+        facilitatorEmails={globalDict?.facilitatorEmails}
+        facilitators={globalDict?.facilitators}
+        supplierPhones={globalDict?.supplierPhones}
+        supplierLegalNames={globalDict?.supplierLegalNames}
+        selectedDistrict={historyPrintData?.selectedDistrict}
+        specialistName={historyPrintData?.specialistName}
         note={historyPrintData?.note ?? note}
         createdAt={historyPrintData?.createdAt}
         quoteId={historyPrintData?.quoteId || savedArchiveId || undefined}

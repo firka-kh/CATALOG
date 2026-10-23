@@ -8,6 +8,7 @@ import { PrintCartView } from './PrintCartView';
 import { QuotesHistoryModal } from './components/QuotesHistoryModal';
 import { downloadCartExcel } from './lib/excelExport';
 import { saveQuoteToHistory } from './lib/quotesHistory';
+import { logAuditEvent } from './lib/auditLogger';
 import { UpdateNotifier } from './components/UpdateNotifier';
 import { formatSupplierCode } from './lib/supplierUtils';
 
@@ -93,6 +94,20 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     const qCode = data?.quoteId || data?.id ? `_${data.quoteId || data.id}` : "";
     const originalTitle = document.title;
     document.title = `${datePart}${qCode}`;
+
+    const historyTotal = (data.cart || []).reduce((acc: number, it: any) => acc + (it.selectedPrice || 0) * (it.quantity || 1), 0) + (data.logisticsCost || 0);
+    logAuditEvent({
+      actionType: "PRINT_CART",
+      actorName: data.specialistName || data.facilitatorRep || data.facilitatorName || "Фасилитатор (MiniApp)",
+      actorRole: "facilitator",
+      facilitatorName: data.facilitatorName || resolvedFacilitator?.name,
+      region: data.selectedRegion || region,
+      beneficiaryName: data.clientName,
+      quoteId: data.quoteId || data.id,
+      totalAmount: historyTotal,
+      itemsCount: data.cart?.length || 0,
+      details: `Печать спецификации КП № ${data.quoteId || data.id || "б/н"} из архива (MiniApp) (Бенефициар: ${data.clientName})`,
+    }).catch((err) => console.warn("Audit error:", err));
 
     setIsCartPrinting(true);
     const afterPrint = () => {
@@ -519,6 +534,15 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
 
   const handlePrintCatalog = () => {
     if (!validateCanExportOrPrint()) return;
+    logAuditEvent({
+      actionType: "PRINT_CATALOG",
+      actorName: facilitatorName.trim() || resolvedFacilitator.name || "Фасилитатор (MiniApp)",
+      actorRole: "facilitator",
+      facilitatorName: facilitatorName.trim() || resolvedFacilitator.name,
+      region: region || "Все регионы",
+      details: `Печать каталога цен (Telegram MiniApp) (Регион: ${region || "Все регионы"})`,
+    }).catch((err) => console.warn("Audit error:", err));
+
     setShowPrintAlert(true);
     setTimeout(() => {
       window.print();
@@ -536,6 +560,21 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     const qCode = savedArchiveId ? `_${savedArchiveId}` : "";
     const originalTitle = document.title;
     document.title = `${datePart}${qCode}`;
+
+    const logCost = globalDict?.logisticsCosts?.[region] || 0;
+    const invoiceTotal = totalSum + logCost;
+    logAuditEvent({
+      actionType: "PRINT_CART",
+      actorName: facilitatorName.trim() || resolvedFacilitator.name || "Фасилитатор (MiniApp)",
+      actorRole: "facilitator",
+      facilitatorName: facilitatorName.trim() || resolvedFacilitator.name,
+      region,
+      beneficiaryName: clientName.trim(),
+      quoteId: savedArchiveId || undefined,
+      totalAmount: invoiceTotal,
+      itemsCount: cartArray.length,
+      details: `Печать бланка спецификации / купона (Telegram MiniApp) (Бенефициар: ${clientName.trim() || "Не указан"}, сумма: ${invoiceTotal.toFixed(2)} сомони)`,
+    }).catch((err) => console.warn("Audit error:", err));
 
     setIsCartPrinting(true);
     const afterPrint = () => {
@@ -564,6 +603,20 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
         selectedPrice: getProductPriceForSupplierAndRegion(i.prod!, i.selectedSupplier, region),
       }));
     const logCost = globalDict?.logisticsCosts?.[region] || 0;
+
+    logAuditEvent({
+      actionType: "EXPORT_EXCEL",
+      actorName: facilitatorName.trim() || resolvedFacilitator.name || "Фасилитатор (MiniApp)",
+      actorRole: "facilitator",
+      facilitatorName: facilitatorName.trim() || resolvedFacilitator.name,
+      region,
+      beneficiaryName: clientName.trim(),
+      quoteId: savedArchiveId || undefined,
+      totalAmount: totalSum + logCost,
+      itemsCount: cartArray.length,
+      details: `Экспорт спецификации КП в Excel (Telegram MiniApp) (Бенефициар: ${clientName.trim() || "Не указан"}, сумма: ${(totalSum + logCost).toFixed(2)} сомони)`,
+    }).catch((err) => console.warn("Audit error:", err));
+
     await downloadCartExcel(
       formattedCart,
       logCost,

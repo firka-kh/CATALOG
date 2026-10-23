@@ -26,6 +26,8 @@ import {
   History,
   Layers,
   Building2,
+  QrCode,
+  ShieldCheck,
 } from 'lucide-react';
 import { QuoteRecord, fetchQuotesHistory, deleteQuoteFromHistory, deleteAllQuotesFromHistory } from '../lib/quotesHistory';
 import { downloadCartExcel, downloadQuotesRegistryExcel } from '../lib/excelExport';
@@ -583,6 +585,20 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                         >
                           <Printer className="w-4 h-4 shrink-0" />
                           <span className="hidden sm:inline">PDF</span>
+                        </button>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rawOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+                            const origin = rawOrigin.includes('ais-dev-') ? rawOrigin.replace('ais-dev-', 'ais-pre-') : rawOrigin;
+                            window.open(`${origin}/?verify=${encodeURIComponent(quote.id)}`, '_blank');
+                          }}
+                          title="Проверить QR-код и открыть официальную страницу государственной верификации"
+                          className="p-2 text-emerald-800 hover:text-emerald-900 bg-emerald-100/70 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold"
+                        >
+                          <QrCode className="w-4 h-4 shrink-0 text-emerald-700" />
+                          <span className="hidden sm:inline">QR Проверка</span>
                         </button>
 
                         <button

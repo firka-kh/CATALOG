@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   Search,
@@ -21,12 +21,23 @@ import {
   ArrowUpDown,
   History,
   FileSpreadsheet,
+  Trash2,
+  CheckSquare,
+  Square,
+  KeyRound,
+  AlertOctagon,
+  Eye,
+  EyeOff,
+  Lock,
 } from "lucide-react";
 import {
   AuditLogEntry,
   AuditActionType,
   getAuditLogs,
+  subscribeToAuditLogs,
   syncHistoricalQuotesToAudit,
+  deleteAuditLog,
+  deleteBulkAuditLogs,
 } from "../lib/auditLogger";
 import { PrintAuditProtocolView } from "./PrintAuditProtocolView";
 
@@ -37,6 +48,7 @@ interface AuditConsoleModalProps {
   regions?: string[];
   districtsByRegion?: Record<string, string[]>;
   currentFacilitatorName?: string;
+  adminPassword?: string;
 }
 
 export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
@@ -46,6 +58,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   regions = [],
   districtsByRegion = {},
   currentFacilitatorName,
+  adminPassword = "020779",
 }) => {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -72,7 +85,22 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   // Active tab
   const [activeTab, setActiveTab] = useState<"table" | "timeline">("table");
 
-  // Fetch logs on open
+  // Selection & Deletion state
+  const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
+  const [deleteModalState, setDeleteModalState] = useState<{
+    isOpen: boolean;
+    targetType: "single" | "bulk" | "all";
+    targetIds: string[];
+    targetLabel: string;
+  } | null>(null);
+  const [enteredPassword, setEnteredPassword] = useState<string>("");
+  const [showPassword, setShowPassword] = useState<boolean>(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch logs on open and subscribe to real-time updates
   const loadLogs = async () => {
     setLoading(true);
     try {
@@ -86,9 +114,18 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
-      loadLogs();
-    }
+    if (!isOpen) return;
+
+    // Set up real-time listener so events appear instantly
+    setLoading(true);
+    const unsubscribe = subscribeToAuditLogs((liveLogs) => {
+      setLogs(liveLogs);
+      setLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [isOpen]);
 
   const handleSyncHistorical = async () => {
@@ -264,6 +301,100 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     selectedActionType ||
     datePreset !== "all";
 
+  // Checkbox Selection state
+  const isAllSelected = filteredLogs.length > 0 && selectedLogIds.length === filteredLogs.length;
+  const isSomeSelected = selectedLogIds.length > 0 && selectedLogIds.length < filteredLogs.length;
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedLogIds([]);
+    } else {
+      setSelectedLogIds(filteredLogs.map((l) => l.id));
+    }
+  };
+
+  const toggleSelectRow = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedLogIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handlePromptDeleteSingle = (log: AuditLogEntry, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setDeleteModalState({
+      isOpen: true,
+      targetType: "single",
+      targetIds: [log.id],
+      targetLabel: `Запись #${log.id} (${log.dateFormatted} | ${log.beneficiaryName || log.actorName || log.actionType})`,
+    });
+    setEnteredPassword("");
+    setPasswordError(null);
+    setShowPassword(false);
+    setTimeout(() => passwordInputRef.current?.focus(), 150);
+  };
+
+  const handlePromptDeleteSelected = () => {
+    if (selectedLogIds.length === 0) return;
+    setDeleteModalState({
+      isOpen: true,
+      targetType: "bulk",
+      targetIds: [...selectedLogIds],
+      targetLabel: `Выбранные записи: ${selectedLogIds.length} шт.`,
+    });
+    setEnteredPassword("");
+    setPasswordError(null);
+    setShowPassword(false);
+    setTimeout(() => passwordInputRef.current?.focus(), 150);
+  };
+
+  const handlePromptDeleteFiltered = () => {
+    if (filteredLogs.length === 0) return;
+    setDeleteModalState({
+      isOpen: true,
+      targetType: "all",
+      targetIds: filteredLogs.map((l) => l.id),
+      targetLabel: `Все записи текущей выборки: ${filteredLogs.length} шт.`,
+    });
+    setEnteredPassword("");
+    setPasswordError(null);
+    setShowPassword(false);
+    setTimeout(() => passwordInputRef.current?.focus(), 150);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteModalState) return;
+    const requiredPassword = (adminPassword || "020779").trim();
+    if (enteredPassword.trim() !== requiredPassword) {
+      setPasswordError("Неверный пароль администратора! Доступ запрещен.");
+      return;
+    }
+
+    setIsDeleting(true);
+    setPasswordError(null);
+    try {
+      const idsToDelete = deleteModalState.targetIds;
+      if (idsToDelete.length === 1) {
+        await deleteAuditLog(idsToDelete[0]);
+        setDeleteFeedback(`Запись #${idsToDelete[0]} успешно удалена`);
+      } else {
+        const count = await deleteBulkAuditLogs(idsToDelete);
+        setDeleteFeedback(`Успешно удалено ${count} записей из журнала аудита`);
+      }
+
+      setSelectedLogIds((prev) => prev.filter((id) => !idsToDelete.includes(id)));
+      if (expandedLogId && idsToDelete.includes(expandedLogId)) {
+        setExpandedLogId(null);
+      }
+      setDeleteModalState(null);
+      setTimeout(() => setDeleteFeedback(null), 4500);
+    } catch (err: any) {
+      setPasswordError(`Ошибка при удалении: ${err?.message || "Сбой соединения с сервером"}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Action Badge Helper
   const renderActionBadge = (type: AuditActionType) => {
     switch (type) {
@@ -322,6 +453,13 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-800 border border-teal-200">
             <FileSpreadsheet className="w-3 h-3 text-teal-600" />
             Импорт Excel цен
+          </span>
+        );
+      case "EXPORT_EXCEL":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <Download className="w-3 h-3 text-emerald-600" />
+            Экспорт в Excel
           </span>
         );
       default:
@@ -403,6 +541,10 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
                     Неизменяемый журнал
                   </span>
+                  <span className="inline-flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live
+                  </span>
                 </div>
                 <p className="text-xs text-slate-400 mt-0.5">
                   Сплошной мониторинг действий фасилитаторов, сессий, изменений спецификаций и фактов печати
@@ -411,6 +553,27 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {selectedLogIds.length > 0 && (
+                <button
+                  onClick={handlePromptDeleteSelected}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer animate-in fade-in"
+                  title="Удалить выбранные записи по паролю администратора"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Удалить ({selectedLogIds.length})</span>
+                </button>
+              )}
+
+              <button
+                onClick={handlePromptDeleteFiltered}
+                disabled={filteredLogs.length === 0}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-rose-950/70 hover:border-rose-700/50 hover:text-rose-300 disabled:opacity-40 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition-colors"
+                title="Очистить записи текущей выборки по паролю администратора"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                <span className="hidden xl:inline">Очистить выборку</span>
+              </button>
+
               <button
                 onClick={() => setIsPrintingProtocol(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
@@ -448,6 +611,19 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Delete feedback banner */}
+          {deleteFeedback && (
+            <div className="bg-emerald-600/15 border-b border-emerald-500/30 text-emerald-800 px-6 py-2.5 text-xs flex items-center justify-between animate-in fade-in">
+              <span className="font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                {deleteFeedback}
+              </span>
+              <button onClick={() => setDeleteFeedback(null)} className="text-emerald-500 hover:text-emerald-700">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Sync notification */}
           {syncResult && (
@@ -501,6 +677,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   <option value="PRINT_ALL">Факты печати (акты и каталоги)</option>
                   <option value="PRINT_CART">Печать Актов приема / КП</option>
                   <option value="PRINT_CATALOG">Печать Каталога цен</option>
+                  <option value="EXPORT_EXCEL">Экспорт в Excel</option>
                   <option value="SECURITY_ALL">Безопасность (входы, смены паролей, справочники)</option>
                   <option value="ADMIN_LOGIN">Вход Администратора</option>
                   <option value="UPDATE_PRICE_EXCEL">Импорт Excel-прайсов</option>
@@ -746,27 +923,67 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
+                        <th className="p-3 w-10 text-center">
+                          <button
+                            type="button"
+                            onClick={toggleSelectAll}
+                            className="p-1 hover:text-indigo-600 transition-colors cursor-pointer"
+                            title={isAllSelected ? "Снять выбор со всех" : "Выбрать все записи в таблице"}
+                          >
+                            {isAllSelected ? (
+                              <CheckSquare className="w-4 h-4 text-indigo-600" />
+                            ) : isSomeSelected ? (
+                              <div className="w-4 h-4 rounded border-2 border-indigo-600 flex items-center justify-center bg-indigo-50">
+                                <div className="w-2 h-0.5 bg-indigo-600" />
+                              </div>
+                            ) : (
+                              <Square className="w-4 h-4 text-slate-400" />
+                            )}
+                          </button>
+                        </th>
                         <th className="p-3 w-10 text-center">#</th>
                         <th className="p-3 w-32">Время (TJT)</th>
-                        <th className="p-3 w-40">Действие</th>
+                        <th className="p-3 w-36">Действие</th>
                         <th className="p-3 w-48">Фасилитатор / Район</th>
                         <th className="p-3 w-52">Бенефициар / КП</th>
                         <th className="p-3">Описание операции</th>
                         <th className="p-3 w-28 text-right">Сумма (TJS)</th>
-                        <th className="p-3 w-12 text-center">Детали</th>
+                        <th className="p-3 w-10 text-center">Инфо</th>
+                        <th className="p-3 w-10 text-center">Удалить</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {filteredLogs.map((log, idx) => {
                         const isExpanded = expandedLogId === log.id;
+                        const isSelected = selectedLogIds.includes(log.id);
                         return (
                           <React.Fragment key={log.id}>
                             <tr
                               onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
                               className={`hover:bg-indigo-50/40 transition-colors cursor-pointer ${
-                                isExpanded ? "bg-indigo-50/50" : idx % 2 === 1 ? "bg-slate-50/40" : "bg-white"
+                                isSelected
+                                  ? "bg-indigo-50/70"
+                                  : isExpanded
+                                  ? "bg-indigo-50/50"
+                                  : idx % 2 === 1
+                                  ? "bg-slate-50/40"
+                                  : "bg-white"
                               }`}
                             >
+                              <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => toggleSelectRow(log.id, e)}
+                                  className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                                  title={isSelected ? "Снять выбор" : "Выбрать запись"}
+                                >
+                                  {isSelected ? (
+                                    <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                  ) : (
+                                    <Square className="w-4 h-4 text-slate-300 hover:text-slate-400" />
+                                  )}
+                                </button>
+                              </td>
                               <td className="p-3 text-center text-slate-400 font-mono text-[11px]">
                                 {idx + 1}
                               </td>
@@ -817,12 +1034,22 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                   <ChevronDown className="w-4 h-4 text-slate-400 inline" />
                                 )}
                               </td>
+                              <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handlePromptDeleteSingle(log, e)}
+                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Удалить запись по паролю администратора"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
                             </tr>
 
                             {/* Expanded Details Row */}
                             {isExpanded && (
                               <tr className="bg-indigo-50/20 border-b border-indigo-100">
-                                <td colSpan={8} className="p-4 pl-12">
+                                <td colSpan={10} className="p-4 pl-12">
                                   <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm space-y-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 text-xs">
                                       <div className="flex items-center gap-3">
@@ -890,6 +1117,21 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                         </div>
                                       </div>
                                     )}
+
+                                    {/* Actions in expanded row */}
+                                    <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                                      <span className="text-[11px] text-slate-400">
+                                        Запись зафиксирована в неизменяемом журнале
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePromptDeleteSingle(log)}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Удалить запись (по паролю админа)</span>
+                                      </button>
+                                    </div>
                                   </div>
                                 </td>
                               </tr>
@@ -934,9 +1176,19 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                 </span>
                                 {renderActionBadge(log.actionType)}
                               </div>
-                              <span className="text-[10px] font-mono text-slate-400">
-                                ID: {log.id}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  ID: {log.id}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePromptDeleteSingle(log)}
+                                  className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                  title="Удалить запись по паролю администратора"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
 
                             <p className="font-semibold text-slate-800 mt-1">{log.details}</p>
@@ -976,8 +1228,22 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
             <div className="text-slate-400">
               Показано <strong>{filteredLogs.length}</strong> из <strong>{logs.length}</strong> событий в журнале
               {selectedFacilitator && <span> • Фильтр: <strong>{selectedFacilitator}</strong></span>}
+              {selectedLogIds.length > 0 && (
+                <span className="ml-2 font-bold text-indigo-400">
+                  (Выбрано: {selectedLogIds.length})
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
+              {selectedLogIds.length > 0 && (
+                <button
+                  onClick={handlePromptDeleteSelected}
+                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Удалить выбранные ({selectedLogIds.length})</span>
+                </button>
+              )}
               <button
                 onClick={() => setIsPrintingProtocol(true)}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow transition-colors flex items-center gap-2 cursor-pointer"
@@ -987,7 +1253,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
               </button>
               <button
                 onClick={onClose}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors"
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors cursor-pointer"
               >
                 Закрыть
               </button>
@@ -995,6 +1261,121 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Admin Password Confirmation Modal */}
+      {deleteModalState && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 text-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden p-6 relative">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-white">
+                  {deleteModalState.targetType === "single"
+                    ? "Удаление записи из протокола"
+                    : deleteModalState.targetType === "bulk"
+                    ? "Массовое удаление записей"
+                    : "Очистка журнала протокола"}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Требуется авторизация Администратора
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-800/80 border border-slate-700/60 rounded-xl p-3 mb-4 text-xs">
+              <div className="text-slate-400 text-[11px] mb-1 font-semibold uppercase tracking-wider">
+                Объект удаления:
+              </div>
+              <div className="text-rose-300 font-mono font-medium line-clamp-2">
+                {deleteModalState.targetLabel}
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-300 mb-4 leading-relaxed">
+              Внимание: Данные будут безвозвратно удалены из базы Firestore. Это действие необратимо.
+            </p>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
+                  Пароль Администратора
+                </label>
+                <div className="relative">
+                  <input
+                    ref={passwordInputRef}
+                    type={showPassword ? "text" : "password"}
+                    value={enteredPassword}
+                    onChange={(e) => {
+                      setEnteredPassword(e.target.value);
+                      if (passwordError) setPasswordError(null);
+                    }}
+                    placeholder="Введите пароль администратора..."
+                    className={`w-full px-3.5 py-2.5 rounded-xl bg-slate-950/70 border text-white text-sm outline-none transition-all placeholder:text-slate-500 ${
+                      passwordError
+                        ? "border-rose-500 focus:ring-2 focus:ring-rose-500/40"
+                        : "border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {passwordError && (
+                  <p className="text-rose-400 text-xs font-semibold mt-1.5 flex items-center gap-1 animate-in fade-in">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    {passwordError}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteModalState(null);
+                    setEnteredPassword("");
+                    setPasswordError(null);
+                  }}
+                  disabled={isDeleting}
+                  className="px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-800 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDeleting || !enteredPassword}
+                  className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/30 transition-all active:scale-95 cursor-pointer"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Удаление...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Подтвердить удаление</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Printable Protocol Modal View */}
       {isPrintingProtocol && (

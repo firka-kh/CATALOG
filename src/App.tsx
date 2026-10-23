@@ -32,6 +32,9 @@ import {
   TrendingUp,
   ShieldAlert,
   LogIn,
+  LogOut,
+  Shield,
+  UserCheck,
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
@@ -465,22 +468,41 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     }
   }, [isDictLoaded, isProductsLoaded]);
 
+  const [activePortalFacilitator, setActivePortalFacilitator] = useState<string | undefined>(() => {
+    const savedRole = sessionStorage.getItem("current_role");
+    const isAdmin = savedRole === "admin" || sessionStorage.getItem("main_admin_auth") === "true";
+    if (isAdmin) return undefined;
+    return portalFacilitator;
+  });
+
+  const [currentRole, setCurrentRole] = useState<'admin' | 'facilitator' | 'supplier' | null>(() => {
+    const saved = sessionStorage.getItem("current_role");
+    if (saved === 'admin' || saved === 'facilitator' || saved === 'supplier') return saved;
+    if (sessionStorage.getItem("main_admin_auth") === "true") return 'admin';
+    if (sessionStorage.getItem("auth_facilitator_key") || sessionStorage.getItem("auth_resolved") === "true") return 'facilitator';
+    if (localStorage.getItem("catalog_admin") === "true") return 'admin';
+    if (portalFacilitator) return 'facilitator';
+    return null;
+  });
+
   const [authenticatedFacilitatorKey, setAuthenticatedFacilitatorKey] = useState(() => {
     return sessionStorage.getItem("auth_facilitator_key") || "";
   });
 
   const [isFacilitatorAuthenticated, setIsFacilitatorAuthenticated] = useState(() => {
+    const savedRole = sessionStorage.getItem("current_role");
+    if (savedRole === 'admin' || sessionStorage.getItem("main_admin_auth") === "true") return false;
     if (portalFacilitator) {
       const savedKey = sessionStorage.getItem("auth_facilitator_key");
       if (savedKey && savedKey === portalFacilitator) return true;
       return sessionStorage.getItem(`auth_${portalFacilitator}`) === "true";
     }
-    return sessionStorage.getItem("auth_resolved") === "true" || !!sessionStorage.getItem("auth_facilitator_key");
+    return savedRole === 'facilitator' || sessionStorage.getItem("auth_resolved") === "true" || !!sessionStorage.getItem("auth_facilitator_key");
   });
   const [facilitatorInputCode, setFacilitatorInputCode] = useState("");
 
   const [isAdminPageAuthenticated, setIsAdminPageAuthenticated] = useState(() => {
-    return sessionStorage.getItem("main_admin_auth") === "true";
+    return currentRole === 'admin' || sessionStorage.getItem("main_admin_auth") === "true";
   });
   const [adminPageInputCode, setAdminPageInputCode] = useState("");
 
@@ -574,7 +596,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   // Robust facilitator lookup that directly resolves keys without wrong fallbacks
   const getResolvedFacilitator = () => {
-    let activeKey = portalFacilitator || authenticatedFacilitatorKey || "";
+    let activeKey = activePortalFacilitator || portalFacilitator || authenticatedFacilitatorKey || "";
     if (!activeKey) {
       // 1. Look up if any facilitator is assigned to selectedRegion
       if (selectedRegion && globalDict.facilitatorRegions) {
@@ -1317,22 +1339,73 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   }, []);
 
   useEffect(() => {
-    // If pending print and we actually have products loaded (prevent printing empty skeleton immediately on load)
+    // If pending print and we have products loaded
     if (pendingPrintMode && products.length > 0) {
       const mode = pendingPrintMode;
       setPendingPrintMode(null);
       const originalTitle = document.title;
+
       if (mode === "cart") {
+        let savedMeta: any = null;
+        try {
+          const raw = localStorage.getItem("spmei_pending_print_meta");
+          if (raw) {
+            savedMeta = JSON.parse(raw);
+            if (savedMeta?.cartPrintMetadata) {
+              setCartPrintMetadata(savedMeta.cartPrintMetadata);
+            }
+            if (savedMeta?.cart && savedMeta.cart.length > 0) {
+              setCart(savedMeta.cart);
+            }
+            if (savedMeta?.selectedRegion) {
+              setSelectedRegion(savedMeta.selectedRegion);
+            }
+            if (savedMeta?.selectedDistrict) {
+              setSelectedDistrict(savedMeta.selectedDistrict);
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to parse spmei_pending_print_meta:", e);
+        }
+
+        const effectiveMeta = savedMeta?.cartPrintMetadata || cartPrintMetadata;
         const now = new Date();
         const datePart = now.toLocaleDateString("ru-RU", {
           day: "2-digit",
           month: "2-digit",
           year: "numeric",
         });
-        const qCode = cartPrintMetadata.quoteId ? `_${cartPrintMetadata.quoteId}` : "";
+        const qCode = effectiveMeta?.quoteId ? `_${effectiveMeta.quoteId}` : "";
         document.title = `${datePart}${qCode}`;
         setIsCartPrinting(true);
+
+        const printCartItems = (savedMeta?.cart && savedMeta.cart.length > 0) ? savedMeta.cart : cart;
+        const total = printCartItems.reduce((acc: number, it: any) => acc + (it.selectedPrice || 0) * it.quantity, 0) + (savedMeta?.logisticsCost || 0);
+        logAuditEvent({
+          actionType: "PRINT_CART",
+          actorName: effectiveMeta?.specialistName || effectiveMeta?.facilitatorRep || effectiveMeta?.facilitatorName || getFacilitatorName(),
+          actorRole: isReallyAdmin ? "admin" : "facilitator",
+          facilitatorName: effectiveMeta?.facilitatorName || getFacilitatorName(),
+          region: effectiveMeta?.selectedRegion || savedMeta?.selectedRegion || selectedRegion,
+          district: effectiveMeta?.selectedDistrict || savedMeta?.selectedDistrict || selectedDistrict,
+          beneficiaryName: effectiveMeta?.clientName,
+          beneficiaryId: effectiveMeta?.beneficiaryId,
+          quoteId: effectiveMeta?.quoteId,
+          totalAmount: total,
+          itemsCount: printCartItems.length,
+          details: `Печать официального бланка Спецификации / Акта приема-передачи (в новой вкладке) (Бенефициар: ${effectiveMeta?.clientName || "Не указан"}, сумма: ${total.toLocaleString("ru-RU")} сомони)`,
+        }).catch((err) => console.warn("Audit error:", err));
+      } else if (mode === "catalog") {
+        logAuditEvent({
+          actionType: "PRINT_CATALOG",
+          actorName: getFacilitatorName(),
+          actorRole: isReallyAdmin ? "admin" : "facilitator",
+          facilitatorName: getFacilitatorName(),
+          region: selectedRegion || "Все регионы",
+          details: "Печать каталога цен (в новой вкладке)",
+        }).catch((err) => console.warn("Audit error in catalog print:", err));
       }
+
       setTimeout(() => {
         window.print();
         if (mode === "cart") {
@@ -1351,7 +1424,112 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isAdminMode, setIsAdminMode] = useState(
     () => localStorage.getItem("catalog_admin") === "true",
   );
-  const isReallyAdmin = !portalFacilitator && (isAdminMode || isAdminPageAuthenticated);
+  const isReallyAdmin = !activePortalFacilitator && currentRole === 'admin';
+
+  const handleFullLogout = useCallback(() => {
+    try {
+      localStorage.removeItem("catalog_admin");
+      sessionStorage.removeItem("main_admin_auth");
+      sessionStorage.removeItem("current_role");
+      sessionStorage.removeItem("auth_facilitator_key");
+      sessionStorage.removeItem("auth_resolved");
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith("auth_") || k.includes("admin") || k.includes("facilitator")) {
+          sessionStorage.removeItem(k);
+        }
+      });
+    } catch (e) {
+      console.error("Logout error:", e);
+    }
+
+    setActivePortalFacilitator(undefined);
+    setCurrentRole(null);
+    setIsAdminMode(false);
+    setIsAdminPageAuthenticated(false);
+    setIsFacilitatorAuthenticated(false);
+    setAuthenticatedFacilitatorKey("");
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("portal") || url.searchParams.has("verify") || url.searchParams.has("miniapp")) {
+      url.searchParams.delete("portal");
+      url.searchParams.delete("verify");
+      url.searchParams.delete("miniapp");
+      window.history.replaceState({}, "", url.pathname);
+    }
+
+    setIsSwitchLoginOpen(false);
+  }, []);
+
+  const handleAdminLoginSuccess = useCallback(() => {
+    // Purge facilitator state completely
+    sessionStorage.removeItem("auth_facilitator_key");
+    sessionStorage.removeItem("auth_resolved");
+    Object.keys(sessionStorage).forEach((k) => {
+      if (k.startsWith("auth_") && !k.includes("admin")) sessionStorage.removeItem(k);
+    });
+
+    setActivePortalFacilitator(undefined);
+
+    // Set admin
+    sessionStorage.setItem("main_admin_auth", "true");
+    sessionStorage.setItem("current_role", "admin");
+    localStorage.setItem("catalog_admin", "true");
+    setCurrentRole("admin");
+    setIsAdminMode(true);
+    setIsAdminPageAuthenticated(true);
+    setIsFacilitatorAuthenticated(false);
+    setAuthenticatedFacilitatorKey("");
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("portal")) {
+      url.searchParams.delete("portal");
+      window.history.replaceState({}, "", url.pathname);
+    }
+
+    setIsSwitchLoginOpen(false);
+  }, []);
+
+  const handleFacilitatorLoginSuccess = useCallback((facKey: string, region?: string) => {
+    // Purge admin state completely
+    sessionStorage.removeItem("main_admin_auth");
+    localStorage.removeItem("catalog_admin");
+    setIsAdminMode(false);
+    setIsAdminPageAuthenticated(false);
+
+    // Set facilitator
+    sessionStorage.setItem("current_role", "facilitator");
+    sessionStorage.setItem("auth_facilitator_key", facKey);
+    sessionStorage.setItem(`auth_${facKey}`, "true");
+    sessionStorage.setItem("auth_resolved", "true");
+    setActivePortalFacilitator(facKey);
+    setCurrentRole("facilitator");
+    setIsFacilitatorAuthenticated(true);
+    setAuthenticatedFacilitatorKey(facKey);
+    if (region) setSelectedRegion(region);
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("portal")) {
+      url.searchParams.delete("portal");
+      window.history.replaceState({}, "", url.pathname);
+    }
+
+    setIsSwitchLoginOpen(false);
+  }, []);
+
+  const handleSupplierLoginSuccess = useCallback((supKey: string, _supName?: string) => {
+    // Purge admin and facilitator
+    sessionStorage.removeItem("main_admin_auth");
+    localStorage.removeItem("catalog_admin");
+    sessionStorage.removeItem("auth_facilitator_key");
+    sessionStorage.removeItem("auth_resolved");
+    sessionStorage.setItem("current_role", "supplier");
+    setIsAdminMode(false);
+    setIsAdminPageAuthenticated(false);
+    setIsFacilitatorAuthenticated(false);
+
+    window.location.href = `${window.location.origin}/?portal=${supKey}`;
+  }, []);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const priceExcelInputRef = useRef<HTMLInputElement>(null);
   const [isImportingPrices, setIsImportingPrices] = useState(false);
@@ -3033,7 +3211,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
 
   const isUploadBlocked = aiSelectedSpheres.length === 0;
 
-  if (portalFacilitator && !isInitialLoadDone) {
+  if (activePortalFacilitator && !isInitialLoadDone) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-50 font-sans">
         <div className="max-w-xs w-full px-6 flex flex-col items-center">
@@ -3052,7 +3230,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     );
   }
 
-  if (!portalFacilitator && !isAdminPageAuthenticated) {
+  if (!activePortalFacilitator && !currentRole) {
     return (
       <AnimatedLoginScreen
         initialRole="admin"
@@ -3063,30 +3241,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         suppliers={globalDict.suppliers || []}
         supplierCodes={globalDict.supplierAssignedCodes || {}}
         supplierLegalNames={globalDict.supplierLegalNames || {}}
-        onAdminSuccess={() => {
-          sessionStorage.setItem("main_admin_auth", "true");
-          setIsAdminPageAuthenticated(true);
-          setIsAdminMode(true);
-          localStorage.setItem("catalog_admin", "true");
-        }}
-        onFacilitatorSuccess={(facKey, region) => {
-          setIsFacilitatorAuthenticated(true);
-          setAuthenticatedFacilitatorKey(facKey);
-          sessionStorage.setItem("auth_facilitator_key", facKey);
-          sessionStorage.setItem(`auth_${facKey}`, "true");
-          sessionStorage.setItem("auth_resolved", "true");
-          if (region) setSelectedRegion(region);
-          setIsAdminPageAuthenticated(true);
-        }}
-        onSupplierSuccess={(supKey) => {
-          setSelectedSupplier(supKey);
-          setIsAdminPageAuthenticated(true);
-        }}
+        onAdminSuccess={handleAdminLoginSuccess}
+        onFacilitatorSuccess={handleFacilitatorLoginSuccess}
+        onSupplierSuccess={handleSupplierLoginSuccess}
       />
     );
   }
 
-  if (portalFacilitator && !isFacilitatorAuthenticated) {
+  if (activePortalFacilitator && !isFacilitatorAuthenticated) {
     return (
       <AnimatedLoginScreen
         initialRole="facilitator"
@@ -3097,32 +3259,14 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         suppliers={globalDict.suppliers || []}
         supplierCodes={globalDict.supplierAssignedCodes || {}}
         supplierLegalNames={globalDict.supplierLegalNames || {}}
-        onAdminSuccess={() => {
-          sessionStorage.setItem("main_admin_auth", "true");
-          setIsAdminPageAuthenticated(true);
-          setIsAdminMode(true);
-          localStorage.setItem("catalog_admin", "true");
-          setIsFacilitatorAuthenticated(true);
-        }}
+        onAdminSuccess={handleAdminLoginSuccess}
         onFacilitatorSuccess={(matchedKey, matchedRegion) => {
-          setIsFacilitatorAuthenticated(true);
-          setAuthenticatedFacilitatorKey(matchedKey);
-          sessionStorage.setItem("auth_facilitator_key", matchedKey);
-          sessionStorage.setItem(`auth_${portalFacilitator || matchedKey}`, "true");
-          sessionStorage.setItem("auth_resolved", "true");
-          if (matchedRegion) {
-            setSelectedRegion(matchedRegion);
-            if (portalFacilitator) {
-              setDoc(doc(db, "facilitator_states", portalFacilitator), { region: matchedRegion }, { merge: true }).catch(console.error);
-            }
-          } else if (facilitatorRegion) {
-            setSelectedRegion(facilitatorRegion);
+          handleFacilitatorLoginSuccess(matchedKey, matchedRegion);
+          if (activePortalFacilitator && matchedRegion) {
+            setDoc(doc(db, "facilitator_states", activePortalFacilitator), { region: matchedRegion }, { merge: true }).catch(console.error);
           }
         }}
-        onSupplierSuccess={(supKey) => {
-          setSelectedSupplier(supKey);
-          setIsFacilitatorAuthenticated(true);
-        }}
+        onSupplierSuccess={handleSupplierLoginSuccess}
       />
     );
   }
@@ -3455,17 +3599,57 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   )}
                 </button>
               )}
-              <button
-                onClick={() => setIsSwitchLoginOpen(true)}
-                className="flex items-center gap-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all border border-slate-300 shadow-sm cursor-pointer"
-                title="Войти или сменить профиль (Администратор / Фасилитатор / Поставщик)"
-              >
-                <LogIn className="w-3.5 h-3.5 text-slate-600" />
-                <span className="hidden md:inline">
-                  {isReallyAdmin ? "Администратор" : portalFacilitator ? "Фасилитатор" : "Вход в систему"}
-                </span>
-                <span className="md:hidden">Вход</span>
-              </button>
+              {/* Role Indicator & Actions */}
+              {isReallyAdmin ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setIsSwitchLoginOpen(true)}
+                    className="flex items-center gap-1.5 text-xs bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-200 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-bold transition-all shadow-xs cursor-pointer"
+                    title="Текущая роль: Администратор. Нажмите для смены профиля"
+                  >
+                    <Shield className="w-3.5 h-3.5 text-purple-600" />
+                    <span className="hidden md:inline">Администратор</span>
+                    <span className="md:hidden">Админ</span>
+                  </button>
+                  <button
+                    onClick={handleFullLogout}
+                    className="flex items-center gap-1 text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-bold transition-all shadow-xs cursor-pointer"
+                    title="Выйти из системы (полный выход)"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                    <span className="hidden sm:inline">Выйти</span>
+                  </button>
+                </div>
+              ) : (currentRole === 'facilitator' || portalFacilitator) ? (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setIsSwitchLoginOpen(true)}
+                    className="flex items-center gap-1.5 text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-bold transition-all shadow-xs cursor-pointer"
+                    title={`Текущая роль: Фасилитатор (${getFacilitatorName()}). Нажмите для смены профиля`}
+                  >
+                    <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <span className="hidden md:inline max-w-[130px] truncate">{getFacilitatorName()}</span>
+                    <span className="md:hidden">Фасилитатор</span>
+                  </button>
+                  <button
+                    onClick={handleFullLogout}
+                    className="flex items-center gap-1 text-xs bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-bold transition-all shadow-xs cursor-pointer"
+                    title="Выйти из системы (полный выход)"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-600" />
+                    <span className="hidden sm:inline">Выйти</span>
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setIsSwitchLoginOpen(true)}
+                  className="flex items-center gap-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all border border-slate-300 shadow-sm cursor-pointer"
+                  title="Войти в систему"
+                >
+                  <LogIn className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Вход в систему</span>
+                </button>
+              )}
             </div>
           </header>
 
@@ -5980,6 +6164,23 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       const qCode = cartPrintMetadata.quoteId ? `_${cartPrintMetadata.quoteId}` : "";
                       document.title = `${datePart}${qCode}`;
                       setIsCartPrinting(true);
+
+                      const currentItems = cartPrintMetadata.cart && cartPrintMetadata.cart.length > 0 ? cartPrintMetadata.cart : cart;
+                      const itemsTotal = currentItems.reduce((acc, it) => acc + (it.selectedPrice || 0) * it.quantity, 0) + (selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0);
+                      logAuditEvent({
+                        actionType: "PRINT_CART",
+                        actorName: cartPrintMetadata.specialistName || cartPrintMetadata.facilitatorRep || getFacilitatorName(),
+                        actorRole: isReallyAdmin ? "admin" : "facilitator",
+                        facilitatorName: cartPrintMetadata.facilitatorName || getFacilitatorName(),
+                        region: selectedRegion,
+                        district: cartPrintMetadata.selectedDistrict || selectedDistrict,
+                        beneficiaryName: cartPrintMetadata.clientName,
+                        beneficiaryId: cartPrintMetadata.beneficiaryId,
+                        quoteId: cartPrintMetadata.quoteId,
+                        totalAmount: itemsTotal,
+                        itemsCount: currentItems.length,
+                        details: `Печать официального бланка Спецификации / Акта приема-передачи (в окне) (Бенефициар: ${cartPrintMetadata.clientName || "Не указан"}, сумма: ${itemsTotal.toLocaleString("ru-RU")} сомони)`,
+                      }).catch((err) => console.warn("Audit error:", err));
                     }
                     setTimeout(() => {
                       window.print();
@@ -5998,13 +6199,29 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <button
                   onClick={() => {
                     setShowPrintWarning(false);
+                    const effectiveCart = (cartPrintMetadata.cart && cartPrintMetadata.cart.length > 0) ? cartPrintMetadata.cart : cart;
+                    const logCost = cartPrintMetadata.logisticsCost ?? (selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0);
+                    try {
+                      localStorage.setItem("spmei_pending_print_meta", JSON.stringify({
+                        cartPrintMetadata,
+                        cart: effectiveCart,
+                        selectedRegion: selectedRegion || cartPrintMetadata.selectedRegion || "",
+                        selectedDistrict: cartPrintMetadata.selectedDistrict || selectedDistrict || "",
+                        selectedSphere: cartPrintMetadata.selectedSphere || selectedSphere || "",
+                        logisticsCost: logCost,
+                        timestamp: Date.now(),
+                      }));
+                    } catch (e) {
+                      console.warn("Could not save pending print metadata:", e);
+                    }
+
                     const url = new URL(window.location.href);
                     url.searchParams.set(
                       "print",
                       printWarningType || "catalog",
                     );
-                    if (printWarningType === "cart" && cart.length > 0) {
-                      const cartDataStr = cart
+                    if (printWarningType === "cart" && effectiveCart.length > 0) {
+                      const cartDataStr = effectiveCart
                         .map((item) => `${item.product.id}:${item.quantity}`)
                         .join(",");
                       url.searchParams.set("cartData", cartDataStr);
@@ -6509,12 +6726,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         regions={uniqueRegions}
         districtsByRegion={globalDict.districtsByRegion || DISTRICTS_BY_REGION}
         currentFacilitatorName={getFacilitatorName()}
+        adminPassword={globalDict.adminPassword || "020779"}
       />
 
       {isSwitchLoginOpen && (
         <AnimatedLoginScreen
           isModal={true}
-          initialRole={isReallyAdmin ? "admin" : portalFacilitator ? "facilitator" : "admin"}
+          initialRole={isReallyAdmin ? "admin" : (currentRole === "facilitator" || portalFacilitator) ? "facilitator" : "admin"}
           adminPassword={globalDict.adminPassword || "020779"}
           facilitators={globalDict.facilitators || []}
           facilitatorCodes={globalDict.facilitatorCodes || {}}
@@ -6523,26 +6741,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           supplierCodes={globalDict.supplierAssignedCodes || {}}
           supplierLegalNames={globalDict.supplierLegalNames || {}}
           onCancel={() => setIsSwitchLoginOpen(false)}
-          onAdminSuccess={() => {
-            sessionStorage.setItem("main_admin_auth", "true");
-            setIsAdminPageAuthenticated(true);
-            setIsAdminMode(true);
-            localStorage.setItem("catalog_admin", "true");
-            setIsSwitchLoginOpen(false);
-          }}
-          onFacilitatorSuccess={(facKey, region) => {
-            setIsFacilitatorAuthenticated(true);
-            setAuthenticatedFacilitatorKey(facKey);
-            sessionStorage.setItem("auth_facilitator_key", facKey);
-            sessionStorage.setItem(`auth_${facKey}`, "true");
-            sessionStorage.setItem("auth_resolved", "true");
-            if (region) setSelectedRegion(region);
-            setIsSwitchLoginOpen(false);
-          }}
-          onSupplierSuccess={(supKey) => {
-            setSelectedSupplier(supKey);
-            setIsSwitchLoginOpen(false);
-          }}
+          onAdminSuccess={handleAdminLoginSuccess}
+          onFacilitatorSuccess={handleFacilitatorLoginSuccess}
+          onSupplierSuccess={handleSupplierLoginSuccess}
         />
       )}
     </>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { collection, query, onSnapshot, doc, updateDoc, writeBatch, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { Product, GlobalDictionary } from './types';
-import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package, Clock } from 'lucide-react';
+import { Save, Check, Loader2, ArrowRight, X, Download, Upload, Trash2, AlertCircle, Wifi, WifiOff, Plus, Pencil, Search, Camera, Package, Clock, LogOut } from 'lucide-react';
 import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
 import { UpdateNotifier } from './components/UpdateNotifier';
 import { generateNextProductCode } from './lib/generateNextCode';
@@ -1134,12 +1134,30 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 setInputCode('');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-xs font-bold transition-colors shrink-0"
-              title="Выйти и заблокировать вход"
+              title="Заблокировать портал поставщика"
             >
               <X className="w-3.5 h-3.5" />
-              <span>Выйти</span>
+              <span>Заблокировать</span>
             </button>
           )}
+
+          <button
+            onClick={() => {
+              try {
+                localStorage.removeItem("catalog_admin");
+                sessionStorage.removeItem("main_admin_auth");
+                sessionStorage.removeItem("current_role");
+                sessionStorage.removeItem("auth_facilitator_key");
+                sessionStorage.removeItem("auth_resolved");
+              } catch (e) {}
+              window.location.href = window.location.origin;
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-colors shrink-0 cursor-pointer"
+            title="Выйти в общий каталог / Сменить профиль"
+          >
+            <LogOut className="w-3.5 h-3.5 text-slate-600" />
+            <span>Выйти в каталог</span>
+          </button>
         </div>
       </div>
 

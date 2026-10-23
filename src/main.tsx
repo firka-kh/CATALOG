@@ -25,6 +25,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import SupplierPortal from './SupplierPortal.tsx';
 import MiniApp from './MiniApp.tsx';
+import { DocumentVerificationView } from './components/DocumentVerificationView';
 import './index.css';
 
 // Clean up legacy Service Workers and CacheStorage to prevent Telegram Webview from serving stale cached app versions
@@ -49,6 +50,19 @@ const params = new URLSearchParams(window.location.search);
 const portalSupplier = params.get('portal');
 const pathname = window.location.pathname;
 
+// Check if verification page requested via QR code link
+const verifyParam =
+  params.get('verify') ||
+  params.get('verifyQuote') ||
+  (pathname.startsWith('/verify')
+    ? decodeURIComponent(pathname.replace(/^\/verify\/?/, '').split('?')[0])
+    : null) ||
+  (window.location.hash.includes('verify=')
+    ? decodeURIComponent(window.location.hash.split('verify=')[1]?.split('&')[0] || '')
+    : null);
+
+const verifyQuoteId = verifyParam && verifyParam.trim() ? verifyParam.trim() : null;
+
 // Check if specifically requested mini-app via path, query param, or Telegram WebApp hash
 const isMiniAppPath = pathname.startsWith('/mini-app') || params.get('miniapp') === '1';
 const isTelegramWebAppWithData = typeof window !== 'undefined' && Boolean(
@@ -60,13 +74,26 @@ const isTelegramWebAppWithData = typeof window !== 'undefined' && Boolean(
 // Only route to MiniApp if explicitly requested via /mini-app, miniapp=1, or within Telegram mini-app context
 const isMiniApp = isMiniAppPath || (isTelegramWebAppWithData && isMiniAppPath);
 
+// Check if user is already authenticated as Administrator to prevent getting trapped in portal views
+const isMainAdminAuth = typeof window !== 'undefined' && (
+  sessionStorage.getItem("main_admin_auth") === "true" ||
+  sessionStorage.getItem("current_role") === "admin"
+);
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {portalSupplier && portalSupplier.startsWith('supplier') ? (
+    {verifyQuoteId ? (
+      <DocumentVerificationView
+        quoteId={verifyQuoteId}
+        onNavigateHome={() => {
+          window.location.href = window.location.origin;
+        }}
+      />
+    ) : !isMainAdminAuth && portalSupplier && portalSupplier.startsWith('supplier') ? (
       <SupplierPortal supplierId={portalSupplier as any} />
     ) : isMiniApp ? (
-      <MiniApp portalFacilitator={portalSupplier && portalSupplier.startsWith('facilitator') ? portalSupplier : undefined} />
-    ) : portalSupplier && portalSupplier.startsWith('facilitator') ? (
+      <MiniApp portalFacilitator={!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator') ? portalSupplier : undefined} />
+    ) : !isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator') ? (
       <App portalFacilitator={portalSupplier} />
     ) : (
       <App />

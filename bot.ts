@@ -26,37 +26,47 @@ const fontPath = path.join(os.tmpdir(), "Roboto-Regular.ttf");
 const fontBoldPath = path.join(os.tmpdir(), "Roboto-Medium.ttf");
 let fontDownloadPromise: Promise<unknown> | null = null;
 async function ensureFont() {
-  if (!fs.existsSync(fontPath) || !fs.existsSync(fontBoldPath)) {
-    if (!fontDownloadPromise) {
-      fontDownloadPromise = (async () => {
-        const res = await axios({
-          method: "get",
-          url: "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf",
-          responseType: "stream",
-        });
-        const writer = fs.createWriteStream(fontPath);
-        res.data.pipe(writer);
+  try {
+    if (!fs.existsSync(fontPath) || !fs.existsSync(fontBoldPath)) {
+      if (!fontDownloadPromise) {
+        fontDownloadPromise = (async () => {
+          try {
+            const res = await axios({
+              method: "get",
+              url: "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf",
+              responseType: "stream",
+              timeout: 6000,
+            });
+            const writer = fs.createWriteStream(fontPath);
+            res.data.pipe(writer);
 
-        const resBold = await axios({
-          method: "get",
-          url: "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Medium.ttf",
-          responseType: "stream",
-        });
-        const writerBold = fs.createWriteStream(fontBoldPath);
-        resBold.data.pipe(writerBold);
+            const resBold = await axios({
+              method: "get",
+              url: "https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Medium.ttf",
+              responseType: "stream",
+              timeout: 6000,
+            });
+            const writerBold = fs.createWriteStream(fontBoldPath);
+            resBold.data.pipe(writerBold);
 
-        return Promise.all([
-          new Promise<void>((resolve) => writer.on("finish", () => resolve())),
-          new Promise<void>((resolve) =>
-            writerBold.on("finish", () => resolve()),
-          ),
-        ]);
-      })();
+            return Promise.all([
+              new Promise<void>((resolve) => writer.on("finish", () => resolve())),
+              new Promise<void>((resolve) =>
+                writerBold.on("finish", () => resolve()),
+              ),
+            ]);
+          } catch (dlErr) {
+            console.warn("Font download warning (non-fatal):", dlErr);
+          }
+        })();
+      }
+      await fontDownloadPromise;
     }
-    await fontDownloadPromise;
+  } catch (e) {
+    console.warn("ensureFont warning (non-fatal):", e);
   }
 }
-ensureFont();
+ensureFont().catch(() => {});
 
 // Firebase init
 const firebaseConfig = (() => {
@@ -305,6 +315,7 @@ type BotState =
   | "IDLE"
   | "WAITING_PASSWORD"
   | "ADMIN_MENU"
+  | "WAITING_SEARCH"
   | "WAITING_REGION"
   | "WAITING_SPHERE"
   | "WAITING_PHOTO_PRODUCT"
@@ -342,18 +353,40 @@ function getMainCatalogUrl() {
   return `${miniAppUrl}${sep}_v=${Date.now()}`;
 }
 
-async function syncTelegramMenuButton() {
+async function syncTelegramMenuButton(chatId?: number) {
   if (!bot) return;
   try {
-    const url = getMainCatalogUrl();
-    await bot.setChatMenuButton({
-      menu_button: JSON.stringify({
-        type: "web_app",
-        text: "🛍 Каталог",
-        web_app: { url },
-      }) as any,
-    });
-    console.log("Telegram Chat Menu Button updated:", url);
+    let url = getMainCatalogUrl();
+    let text = "🛍 Каталог";
+
+    if (chatId) {
+      await ensureUserRoleLoaded(chatId);
+      if (facilitatorUsers.has(chatId)) {
+        const facId = facilitatorUsers.get(chatId) || "";
+        url = getFacilitatorUrl(facId);
+        text = "🛍 Лист выборки";
+      } else if (supplierUsers.has(chatId)) {
+        const supId = supplierUsers.get(chatId) || "supplier2";
+        url = getSupplierPortalUrl(supId);
+        text = "🛍 Портал цен";
+      }
+      await bot.setChatMenuButton({
+        chat_id: chatId,
+        menu_button: JSON.stringify({
+          type: "web_app",
+          text,
+          web_app: { url },
+        }) as any,
+      });
+    } else {
+      await bot.setChatMenuButton({
+        menu_button: JSON.stringify({
+          type: "web_app",
+          text: "🛍 Каталог",
+          web_app: { url },
+        }) as any,
+      });
+    }
   } catch (err: any) {
     console.warn("Could not sync Telegram chat menu button:", err?.message || err);
   }
@@ -399,19 +432,22 @@ async function ensureUserRoleLoaded(chatId: number) {
 // Helper to get Main Menu Keyboard depending on user role
 async function getMainKeyboard(chatId: number) {
   await ensureUserRoleLoaded(chatId);
+  syncTelegramMenuButton(chatId).catch(() => {});
+
   if (facilitatorUsers.has(chatId)) {
     const facilitatorId = facilitatorUsers.get(chatId) || "";
     return {
       keyboard: [
         [
           {
-            text: "🛍 Открыть Каталог (Фасилитатор)",
+            text: "🛍 Открыть Каталог (Выборка)",
             web_app: {
               url: getFacilitatorUrl(facilitatorId),
             },
           },
         ],
-        [{ text: "🛠 Личный кабинет фасилитатора" }, { text: "🚪 Выйти" }],
+        [{ text: "🔍 Поиск оборудования" }, { text: "📜 Мои спецификации (КП)" }],
+        [{ text: "ℹ️ Памятка фасилитатора" }, { text: "🚪 Выйти" }],
       ],
       resize_keyboard: true,
     };
@@ -441,7 +477,9 @@ async function getMainKeyboard(chatId: number) {
             },
           },
         ],
-        [{ text: "➕ Добавить товар" }, { text: "🚪 Выйти" }],
+        [{ text: "➕ Добавить товар" }, { text: "📋 Мои товары / Цены" }],
+        [{ text: "🔍 Поиск оборудования" }, { text: "ℹ️ Инструкция поставщика" }],
+        [{ text: "🚪 Выйти" }],
       ],
       resize_keyboard: true,
     };
@@ -452,13 +490,15 @@ async function getMainKeyboard(chatId: number) {
       keyboard: [
         [
           {
-            text: "🛍 Открыть Каталог",
+            text: "🛍 Открыть Главный Каталог",
             web_app: {
               url: getMainCatalogUrl(),
             },
           },
         ],
-        [{ text: "🛠 Панель администратора" }, { text: "🚪 Выйти" }],
+        [{ text: "➕ Добавить товар" }, { text: "📊 Статистика Каталога" }],
+        [{ text: "📥 Скачать Каталог (Excel)" }, { text: "🔑 Коды доступа" }],
+        [{ text: "🔍 Поиск оборудования" }, { text: "🚪 Выйти" }],
       ],
       resize_keyboard: true,
     };
@@ -468,13 +508,14 @@ async function getMainKeyboard(chatId: number) {
     keyboard: [
       [
         {
-          text: "🛍 Открыть Каталог",
+          text: "🛍 Открыть Каталог (Просмотр)",
           web_app: {
             url: getMainCatalogUrl(),
           },
         },
       ],
-      [{ text: "🔑 Войти (Авторизация)" }],
+      [{ text: "🔍 Поиск оборудования" }, { text: "🔑 Войти (Авторизация)" }],
+      [{ text: "❓ Справка о проекте" }],
     ],
     resize_keyboard: true,
   };
@@ -527,6 +568,253 @@ async function tryAuthenticateCode(rawCodeText: string): Promise<string | null> 
   return null;
 }
 
+// Helper: Generate and send complete Catalog Excel
+async function generateAndSendCatalogExcel(chatId: number) {
+  try {
+    bot?.sendMessage(chatId, "⏳ Формирую полный каталог оборудования в Excel...");
+    const productsSnap = await getDocs(collection(db, "products"));
+    const products: any[] = [];
+    productsSnap.forEach((d) => products.push({ id: d.id, ...d.data() }));
+
+    // Sort by code
+    products.sort((a, b) => {
+      const codeA = parseInt(a.code || a.id, 10) || 0;
+      const codeB = parseInt(b.code || b.id, 10) || 0;
+      return codeA - codeB;
+    });
+
+    const globalDict = await getGlobalDict();
+    const supNames = globalDict.suppliers || ["Поставщик 1", "Поставщик 2", "Поставщик 3"];
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Каталог оборудования");
+
+    ws.columns = [
+      { header: "№", key: "idx", width: 6 },
+      { header: "Код", key: "code", width: 10 },
+      { header: "Наименование", key: "name", width: 38 },
+      { header: "Сфера", key: "sphere", width: 20 },
+      { header: "Ед.", key: "unit", width: 8 },
+      { header: "Мин. цена (с.)", key: "minPrice", width: 16 },
+      { header: supNames[0] || "Поставщик 1", key: "p1", width: 16 },
+      { header: supNames[1] || "Поставщик 2", key: "p2", width: 16 },
+      { header: supNames[2] || "Поставщик 3", key: "p3", width: 16 },
+      { header: "Спецификация", key: "description", width: 50 },
+    ];
+
+    const headerRow = ws.getRow(1);
+    headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF3B82F6" },
+    };
+    headerRow.alignment = { vertical: "middle", horizontal: "center" };
+
+    products.forEach((p, idx) => {
+      const p1 = parseFloat(p.priceSupplier2) || (p.prices?.supplier2?.["Душанбе"]) || 0;
+      const p2 = parseFloat(p.priceSupplier3) || (p.prices?.supplier3?.["Душанбе"]) || 0;
+      const p3 = parseFloat(p.priceSupplier4) || (p.prices?.supplier4?.["Душанбе"]) || 0;
+      const validPrices = [p1, p2, p3].filter((x) => x > 0);
+      const minPrice = validPrices.length > 0 ? Math.min(...validPrices) : (parseFloat(p.price) || 0);
+
+      const r = ws.addRow({
+        idx: idx + 1,
+        code: p.code || p.id,
+        name: p.name || "—",
+        sphere: p.sphere || (p.spheres?.[0] || "Общее"),
+        unit: p.unit || "шт.",
+        minPrice: minPrice > 0 ? minPrice : "—",
+        p1: p1 > 0 ? p1 : "—",
+        p2: p2 > 0 ? p2 : "—",
+        p3: p3 > 0 ? p3 : "—",
+        description: (p.description || "").replace(/\n/g, "; "),
+      });
+
+      r.eachCell((cell, colNum) => {
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: [1, 2, 4, 5].includes(colNum) ? "center" : [6, 7, 8, 9].includes(colNum) ? "right" : "left",
+          wrapText: colNum === 3 || colNum === 10,
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+      });
+    });
+
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    await bot?.sendDocument(
+      chatId,
+      buffer,
+      { caption: `📊 Полный каталог оборудования проекта ГРП\nВсего товаров: ${products.length} шт.` },
+      { filename: "Katalog_Oborudovaniya_GRP.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
+    );
+  } catch (err: any) {
+    console.error("Error generating catalog excel:", err);
+    bot?.sendMessage(chatId, `⚠️ Не удалось сформировать Excel файл: ${err?.message || err}`);
+  }
+}
+
+// Helper: Universal Search across Firestore Catalog
+async function handleSearchQuery(chatId: number, queryText: string) {
+  const normQuery = queryText.toLowerCase().trim();
+  if (!normQuery) return;
+
+  bot?.sendMessage(chatId, `🔍 Ищу «${queryText}» в каталоге...`);
+
+  try {
+    const productsSnap = await getDocs(collection(db, "products"));
+    const matches: any[] = [];
+    productsSnap.forEach((docSnap) => {
+      const data = docSnap.data();
+      const code = String(data.code || docSnap.id || "").toLowerCase();
+      const name = String(data.name || "").toLowerCase();
+      const desc = String(data.description || "").toLowerCase();
+      const sphere = String(data.sphere || (data.spheres?.[0] || "")).toLowerCase();
+      const cat = String(data.category || "").toLowerCase();
+
+      if (
+        code.includes(normQuery) ||
+        name.includes(normQuery) ||
+        desc.includes(normQuery) ||
+        sphere.includes(normQuery) ||
+        cat.includes(normQuery)
+      ) {
+        matches.push({ id: docSnap.id, ...data });
+      }
+    });
+
+    if (matches.length === 0) {
+      const keyboard = await getMainKeyboard(chatId);
+      bot?.sendMessage(
+        chatId,
+        `🔎 По запросу «${queryText}» ничего не найдено.\n\nПопробуйте ввести другое название (например, «перфоратор», «швея», «makita») или откройте каталог:`,
+        { reply_markup: keyboard }
+      );
+      return;
+    }
+
+    const topMatches = matches.slice(0, 5);
+    let resultMsg = `🔎 *Найдено товаров: ${matches.length}*\n\n`;
+
+    topMatches.forEach((p, idx) => {
+      const code = p.code || p.id;
+      const sphere = p.sphere || (p.spheres?.[0] || "Общее");
+      const p1 = parseFloat(p.priceSupplier2) || 0;
+      const p2 = parseFloat(p.priceSupplier3) || 0;
+      const p3 = parseFloat(p.priceSupplier4) || 0;
+      const validPrices = [p1, p2, p3, parseFloat(p.price) || 0].filter((x) => x > 0);
+      const minPrice = validPrices.length > 0 ? Math.min(...validPrices) : 0;
+      const priceText = minPrice > 0 ? `*${minPrice} сомони*` : "_цена по запросу_";
+
+      resultMsg += `${idx + 1}. *#${code}* — ${p.name}\n`;
+      resultMsg += `   📂 Сфера: ${sphere} | Ед: ${p.unit || "шт."}\n`;
+      resultMsg += `   💰 Мин. цена: ${priceText}\n\n`;
+    });
+
+    if (matches.length > 5) {
+      resultMsg += `_Показаны первые 5 из ${matches.length} товаров. Для полного просмотра откройте каталог кнопкой ниже._\n`;
+    }
+
+    const keyboard = await getMainKeyboard(chatId);
+    bot?.sendMessage(chatId, resultMsg, {
+      parse_mode: "Markdown",
+      reply_markup: keyboard,
+    });
+  } catch (err: any) {
+    console.error("Search error:", err);
+    bot?.sendMessage(chatId, `⚠️ Ошибка при поиске: ${err?.message || err}`);
+  }
+}
+
+// Helper: AI Photo Recognition and Product Preparation
+async function handlePhotoAI(chatId: number, photo: TelegramBot.PhotoSize, caption?: string) {
+  try {
+    bot?.sendMessage(chatId, "⏳ Распознаю параметры оборудования через ИИ...");
+
+    const fileLink = await bot?.getFileLink(photo.file_id);
+    if (!fileLink) throw new Error("Could not get photo file link");
+
+    const response = await axios.get(fileLink, { responseType: "arraybuffer" });
+    const imageBuffer = Buffer.from(response.data, "binary");
+    const base64Image = "data:image/jpeg;base64," + imageBuffer.toString("base64");
+
+    const ai = getGenAI();
+    if (!ai) {
+      bot?.sendMessage(chatId, "❌ Ошибка: Gemini API ключ не настроен.");
+      return;
+    }
+
+    const spheresList = await getSpheresList();
+    const prompt = `
+Проанализируй фото оборудования${caption ? ` и комментарий: "${caption}"` : ""}.
+Извлеки следующие данные:
+- name: Название товара с обязательным указанием типа, бренда и модели (например: "Перфоратор - Makita HR2470", "Швейная машина - Jack F4", "Сварочный аппарат - Ресанта САИ 220"). Не обобщай, сохраняй бренд и модель!
+- description: Технические характеристики для тендера (стандарты проекта). Каждый параметр пиши с новой строки (\\n). Используй математические символы: '≤' для максимальных ограничений (вес, габариты, энергопотребление) и '≥' для минимальных возможностей (мощность, обороты, производительность). Исключи рекламные фразы и перечисление содержимого коробки (сумка, инструкция, коробка).
+- unit: Единица измерения ("шт.", "компл.", "м", "кг"). По умолчанию "шт."
+- sphere: Подбери самую точную сферу из списка: [${spheresList.join(", ")}]. Если нет точного соответствия, напиши "Общее".
+
+Ответь строго валидным JSON:
+{"name": "...", "description": "...", "unit": "шт.", "sphere": "..."}
+`;
+
+    const genAIResponse = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: "image/jpeg", data: imageBuffer.toString("base64") } },
+          ],
+        },
+      ],
+      config: {
+        systemInstruction: "You are an expert procurement and tender data extraction engineer. Output strictly raw JSON.",
+        responseMimeType: "application/json",
+      },
+    });
+
+    const parsed = JSON.parse(genAIResponse.text || "{}");
+    const productName = (parsed.name || "Оборудование").trim();
+    const productDesc = (parsed.description || "").trim();
+    const productUnit = (parsed.unit || "шт.").trim();
+    const productSphere = (parsed.sphere || "Общее").trim();
+
+    const supplierId = supplierUsers.get(chatId) || "";
+
+    userStates.set(chatId, {
+      state: "WAITING_PRICE",
+      tempProductData: {
+        supplierId,
+        name: productName,
+        description: productDesc,
+        unit: productUnit,
+        sphere: productSphere,
+        spheres: [productSphere],
+        imageBase64: base64Image,
+      },
+    });
+
+    const previewMsg = `✨ *Оборудование успешно распознано!*\n\n📦 *Наименование:* ${productName}\n📂 *Сфера:* ${productSphere}\n🏷 *Единица:* ${productUnit}\n\n📋 *Спецификация:*\n${productDesc}\n\n💰 *Отправьте цену товара в сомони:*\n_(например: \`1450\` или \`1450.50\`)_`;
+
+    bot?.sendMessage(chatId, previewMsg, {
+      parse_mode: "Markdown",
+      reply_markup: {
+        keyboard: [[{ text: "❌ Отмена" }]],
+        resize_keyboard: true,
+      },
+    });
+  } catch (err: any) {
+    console.error("AI Photo error:", err);
+    bot?.sendMessage(chatId, `⚠️ Не удалось распознать фото: ${err?.message || err}. Попробуйте отправить фото еще раз или нажмите «❌ Отмена».`);
+  }
+}
+
 if (bot) {
   const processedMessageIds = new Set<string>();
   const lastProcessedPayload = new Map<
@@ -534,11 +822,10 @@ if (bot) {
     { text: string; time: number }
   >();
 
-  // Add listener for photos to handle WAITING_PHOTO states and direct photo uploads
+  // Add listener for photos
   bot.on("photo", async (msg) => {
     const chatId = msg.chat.id;
     await ensureUserRoleLoaded(chatId);
-    const userState = userStates.get(chatId) || { state: "IDLE" };
 
     if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) {
       bot?.sendMessage(
@@ -556,120 +843,12 @@ if (bot) {
     }
 
     try {
-      // Get highest resolution photo (last element in array)
+      // Get highest resolution photo
       const photo = msg.photo![msg.photo!.length - 1];
-      const fileLink = await bot?.getFileLink(photo.file_id);
-
-      if (!fileLink) throw new Error("Could not get file link");
-
-      // Case 1: Supplier sends photo directly without being in a sub-state (e.g. from main menu / IDLE)
-      if (
-        userState.state !== "WAITING_PHOTO_PRODUCT" &&
-        userState.state !== "WAITING_PHOTO_SPEC"
-      ) {
-        bot?.sendMessage(chatId, "⏳ Получено фото! Обрабатываю изображение...");
-        const response = await axios.get(fileLink, {
-          responseType: "arraybuffer",
-        });
-        const imageBuffer = Buffer.from(response.data, "binary");
-        const base64Image =
-          "data:image/jpeg;base64," + imageBuffer.toString("base64");
-
-        const supplierId = supplierUsers.get(chatId) || "";
-        userStates.set(chatId, {
-          state: "WAITING_REGION",
-          tempProductData: {
-            supplierId,
-            regions: [],
-            spheres: [],
-            imageBase64: base64Image,
-            productPhotoUrl: fileLink,
-            photos: [fileLink], // Pre-populate photo for quick AI recognition
-          },
-        });
-
-        bot?.sendMessage(
-          chatId,
-          "📸 Фото товара сохранено!\n\nТеперь выберите один или несколько регионов действия цены, либо нажмите «Пропустить регион»:",
-          {
-            reply_markup: {
-              keyboard: [[{ text: "❌ Отмена" }]],
-              resize_keyboard: true,
-            },
-          }
-        );
-
-        getRegionsList().then((regionsProps) => {
-          const text = `*Выбор регионов для товара*\n\nВыбранные регионы: *не выбраны*\n\nВыберите регионы из списка ниже с помощью кнопок-чекбоксов, затем нажмите «📥 Подтвердить выбор».\n\n_Или выберите "Пропустить регион" чтобы внести товар глобально._`;
-          const replyMarkup = buildRegionsKeyboard(regionsProps, []);
-          bot?.sendMessage(chatId, text, {
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          });
-        });
-        return;
-      }
-
-      if (userState.state === "WAITING_PHOTO_PRODUCT") {
-        bot?.sendMessage(chatId, "⏳ Обрабатываю фото товара...");
-        const response = await axios.get(fileLink, {
-          responseType: "arraybuffer",
-        });
-        const imageBuffer = Buffer.from(response.data, "binary");
-        const base64Image =
-          "data:image/jpeg;base64," + imageBuffer.toString("base64");
-
-        userState.tempProductData.imageBase64 = base64Image;
-        userState.tempProductData.productPhotoUrl = fileLink;
-        userState.state = "WAITING_PHOTO_SPEC";
-        userStates.set(chatId, userState);
-
-        bot?.sendMessage(
-          chatId,
-          `✅ Фото товара успешно сохранено.\n\nЕсли на этом фото есть и товар, и спецификация (например, характеристики, коробка или этикетка на одном фото), вы можете нажать кнопку ниже, чтобы распознать товар по этому же фото.\n\nИначе, отправьте фото спецификации отдельно:\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
-                [{ text: "❌ Отмена", callback_data: "cancel" }],
-              ],
-            },
-          },
-        );
-      } else if (userState.state === "WAITING_PHOTO_SPEC") {
-        if (!userState.tempProductData.photos) {
-          userState.tempProductData.photos = [];
-        }
-        userState.tempProductData.photos.push(fileLink);
-
-        if (msg.caption) {
-          if (!userState.tempProductData.textSpecs) {
-            userState.tempProductData.textSpecs = "";
-          }
-          userState.tempProductData.textSpecs += "\n" + msg.caption;
-        }
-
-        userStates.set(chatId, userState);
-
-        bot?.sendMessage(
-          chatId,
-          `📸 Принято фото спецификации (${userState.tempProductData.photos.length} шт.)${msg.caption ? " и текстовое описание" : ""}. Если есть еще, отправляйте. Если всё — жмите «🔍 Распознать»`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "🔍 Распознать", callback_data: "recognize" }],
-                [{ text: "❌ Отмена", callback_data: "cancel" }],
-              ],
-            },
-          },
-        );
-      }
+      await handlePhotoAI(chatId, photo, msg.caption);
     } catch (e: any) {
-      console.error(e);
-      bot?.sendMessage(
-        chatId,
-        "⚠️ Ошибка при загрузке фото. Попробуйте еще раз.",
-      );
+      console.error("Photo processing error:", e);
+      bot?.sendMessage(chatId, "⚠️ Ошибка при обработке фото. Попробуйте еще раз.");
     }
   });
 
@@ -689,278 +868,13 @@ if (bot) {
     const chatId = query.message?.chat.id;
     if (!chatId) return;
 
-    if (query.data === "recognize") {
-      bot?.answerCallbackQuery(query.id);
-      (bot as any)?.emit("message", {
-        chat: { id: chatId },
-        text: "🔍 Распознать",
-        message_id: query.message?.message_id || Date.now(),
-      });
-    } else if (query.data === "recognize_single_photo") {
-      bot?.answerCallbackQuery(query.id);
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_PHOTO_SPEC") {
-        if (userState.tempProductData && userState.tempProductData.productPhotoUrl) {
-          userState.tempProductData.photos = [userState.tempProductData.productPhotoUrl];
-          userStates.set(chatId, userState);
-          (bot as any)?.emit("message", {
-            chat: { id: chatId },
-            text: "🔍 Распознать",
-            message_id: query.message?.message_id || Date.now(),
-          });
-        } else {
-          bot?.sendMessage(chatId, "❌ Ошибка: Не удалось найти сохраненное фото товара.");
-        }
-      }
-    } else if (query.data?.startsWith("toggle_region:")) {
-      bot?.answerCallbackQuery(query.id);
-      const regionName = query.data.split(":")[1];
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_REGION") {
-        if (!userState.tempProductData.regions) {
-          userState.tempProductData.regions = [];
-        }
-        const index = userState.tempProductData.regions.indexOf(regionName);
-        if (index > -1) {
-          userState.tempProductData.regions.splice(index, 1);
-        } else {
-          userState.tempProductData.regions.push(regionName);
-        }
-        userStates.set(chatId, userState);
-
-        // Rebuild and edit message
-        getRegionsList().then((regionsList) => {
-          const selected = userState.tempProductData.regions || [];
-          const text = `*Выбор регионов для товара*\n\nВыбранные регионы: *${selected.join(", ") || "не выбраны"}*\n\nВыберите один или несколько регионов применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или выберите "Пропустить регион" чтобы внести товар глобально._`;
-          const replyMarkup = buildRegionsKeyboard(regionsList, selected);
-          
-          bot?.editMessageText(text, {
-            chat_id: chatId,
-            message_id: query.message?.message_id,
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          }).catch((err) => console.error("Error editing regions keyboard", err));
-        });
-      }
-    } else if (query.data === "done_regions") {
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_REGION") {
-        const selected = userState.tempProductData.regions || [];
-        if (selected.length === 0) {
-          bot?.answerCallbackQuery(query.id, {
-            text: "Пожалуйста, выберите хотя бы один регион или нажмите 'Пропустить регион'",
-            show_alert: true,
-          });
-          return;
-        }
-        bot?.answerCallbackQuery(query.id);
-
-        userState.tempProductData.region = selected[0] || "Душанбе";
-        userState.tempProductData.regions = selected;
-        userState.state = "WAITING_SPHERE";
-        userStates.set(chatId, userState);
-
-        // Update inline keyboard message to show final state
-        bot?.editMessageText(`✅ Выбраны регионы: *${selected.join(", ")}*`, {
-          chat_id: chatId,
-          message_id: query.message?.message_id,
-          parse_mode: "Markdown",
-        }).catch(() => {});
-
-        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
-          reply_markup: {
-            keyboard: [[{ text: "❌ Отмена" }]],
-            resize_keyboard: true,
-          },
-        });
-
-        getSpheresList().then((spheresProps) => {
-          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
-          const replyMarkup = buildSpheresKeyboard(spheresProps, []);
-          
-          bot?.sendMessage(chatId, text, {
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          });
-        });
-      } else {
-        bot?.answerCallbackQuery(query.id);
-      }
-    } else if (query.data === "skip_regions") {
-      bot?.answerCallbackQuery(query.id);
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_REGION") {
-        userState.tempProductData.region = "";
-        userState.tempProductData.regions = [];
-        userState.state = "WAITING_SPHERE";
-        userStates.set(chatId, userState);
-
-        bot?.editMessageText(`✅ Регион: *Пропущен (Глобально)*`, {
-          chat_id: chatId,
-          message_id: query.message?.message_id,
-          parse_mode: "Markdown",
-        }).catch(() => {});
-
-        bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
-          reply_markup: {
-            keyboard: [[{ text: "❌ Отмена" }]],
-            resize_keyboard: true,
-          },
-        });
-
-        getSpheresList().then((spheresProps) => {
-          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
-          const replyMarkup = buildSpheresKeyboard(spheresProps, []);
-          
-          bot?.sendMessage(chatId, text, {
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          });
-        });
-      }
-    } else if (query.data === "cancel") {
+    if (query.data === "cancel") {
       bot?.answerCallbackQuery(query.id);
       (bot as any)?.emit("message", {
         chat: { id: chatId },
         text: "❌ Отмена",
         message_id: query.message?.message_id || Date.now(),
       });
-    } else if (query.data?.startsWith("toggle_sphere:")) {
-      bot?.answerCallbackQuery(query.id);
-      const sphereName = query.data.split(":")[1];
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_SPHERE") {
-        if (!userState.tempProductData.spheres) {
-          userState.tempProductData.spheres = [];
-        }
-        const index = userState.tempProductData.spheres.indexOf(sphereName);
-        if (index > -1) {
-          userState.tempProductData.spheres.splice(index, 1);
-        } else {
-          userState.tempProductData.spheres.push(sphereName);
-        }
-        userStates.set(chatId, userState);
-
-        // Rebuild and edit message
-        getSpheresList().then((spheresList) => {
-          const selected = userState.tempProductData.spheres || [];
-          const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *${selected.join(", ") || "не выбраны"}*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».`;
-          const replyMarkup = buildSpheresKeyboard(spheresList, selected);
-          
-          bot?.editMessageText(text, {
-            chat_id: chatId,
-            message_id: query.message?.message_id,
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          }).catch((err) => console.error("Error editing spheres keyboard", err));
-        });
-      }
-    } else if (query.data === "done_spheres") {
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_SPHERE") {
-        const selected = userState.tempProductData.spheres || [];
-        if (selected.length === 0) {
-          bot?.answerCallbackQuery(query.id, {
-            text: "Пожалуйста, выберите хотя бы одну сферу или нажмите 'Пропустить (Общее)'",
-            show_alert: true,
-          });
-          return;
-        }
-        bot?.answerCallbackQuery(query.id);
-
-        userState.tempProductData.sphere = selected[0] || "Общее";
-        userState.tempProductData.spheres = selected;
-
-        // Update inline keyboard message to show final state
-        bot?.editMessageText(`✅ Выбраны сферы: *${selected.join(", ")}*`, {
-          chat_id: chatId,
-          message_id: query.message?.message_id,
-          parse_mode: "Markdown",
-        }).catch(() => {});
-
-        if (userState.tempProductData.productPhotoUrl) {
-          userState.state = "WAITING_PHOTO_SPEC";
-          userStates.set(chatId, userState);
-          bot?.sendMessage(
-            chatId,
-            `✅ Сферы сохранены! Фото товара уже загружено.\n\nЕсли на этом фото есть характеристики (спецификация), нажмите «✨ Распознать по этому фото». Либо отправьте фото спецификации/этикетки отдельно.`,
-            {
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
-                  [{ text: "❌ Отмена", callback_data: "cancel" }],
-                ],
-              },
-            }
-          );
-        } else {
-          userState.tempProductData.photos = [];
-          userState.state = "WAITING_PHOTO_PRODUCT";
-          userStates.set(chatId, userState);
-          bot?.sendMessage(
-            chatId,
-            `Сферы успешно сохранены.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
-            {
-              reply_markup: {
-                keyboard: [
-                  [{ text: "Пропустить фото товара" }],
-                  [{ text: "❌ Отмена" }],
-                ],
-                resize_keyboard: true,
-              },
-            },
-          );
-        }
-      } else {
-        bot?.answerCallbackQuery(query.id);
-      }
-    } else if (query.data === "skip_spheres") {
-      bot?.answerCallbackQuery(query.id);
-      const userState = userStates.get(chatId);
-      if (userState && userState.state === "WAITING_SPHERE") {
-        userState.tempProductData.sphere = "Общее";
-        userState.tempProductData.spheres = ["Общее"];
-
-        bot?.editMessageText(`✅ Выбрана сфера: *Общее*`, {
-          chat_id: chatId,
-          message_id: query.message?.message_id,
-          parse_mode: "Markdown",
-        }).catch(() => {});
-
-        if (userState.tempProductData.productPhotoUrl) {
-          userState.state = "WAITING_PHOTO_SPEC";
-          userStates.set(chatId, userState);
-          bot?.sendMessage(
-            chatId,
-            `✅ Выбрана общая сфера. Фото товара уже загружено.\n\nЕсли на этом фото есть характеристики (спецификация), нажмите «✨ Распознать по этому фото». Либо отправьте фото спецификации отдельно.`,
-            {
-              reply_markup: {
-                inline_keyboard: [
-                  [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
-                  [{ text: "❌ Отмена", callback_data: "cancel" }],
-                ],
-              },
-            }
-          );
-        } else {
-          userState.tempProductData.photos = [];
-          userState.state = "WAITING_PHOTO_PRODUCT";
-          userStates.set(chatId, userState);
-          bot?.sendMessage(
-            chatId,
-            `Выбрана общая сфера.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
-            {
-              reply_markup: {
-                keyboard: [
-                  [{ text: "Пропустить фото товара" }],
-                  [{ text: "❌ Отмена" }],
-                ],
-                resize_keyboard: true,
-              },
-            },
-          );
-        }
-      }
     } else {
       bot?.answerCallbackQuery(query.id);
     }
@@ -969,13 +883,11 @@ if (bot) {
   bot.on("message", async (msg) => {
     // Ignore messages with photos if we process them in "photo" handler
     if (msg.photo) return;
-    // Unique key: messageId + text to prevent duplicate processing from double-clicks or retries
     const payloadForDedup =
       msg.text || (msg.web_app_data ? msg.web_app_data.data : "");
     const uniqueKey = `${msg.message_id}_${payloadForDedup}`;
     if (processedMessageIds.has(uniqueKey)) return;
 
-    // Also ignore identical messages received within 3 seconds (handles button double-clicks)
     const ts = Date.now();
     const last = lastProcessedPayload.get(msg.chat.id);
     if (last && last.text === payloadForDedup && ts - last.time < 3000) {
@@ -984,7 +896,6 @@ if (bot) {
     lastProcessedPayload.set(msg.chat.id, { text: payloadForDedup, time: ts });
 
     processedMessageIds.add(uniqueKey);
-    // basic cleanup to prevent memory leak
     if (processedMessageIds.size > 1000) {
       processedMessageIds.clear();
       processedMessageIds.add(uniqueKey);
@@ -998,6 +909,7 @@ if (bot) {
       text = msg.web_app_data.data;
     }
 
+    // Cancellation handler
     if (isCancelMessage(text)) {
       userStates.delete(chatId);
       getMainKeyboard(chatId).then((replyMarkup) => {
@@ -1008,6 +920,7 @@ if (bot) {
       return;
     }
 
+    // Logout handler
     if (
       text === "/logout" || 
       text === "🚪 Выйти" || 
@@ -1029,7 +942,7 @@ if (bot) {
       getMainKeyboard(chatId).then((replyMarkup) => {
         bot?.sendMessage(
           chatId,
-          "🚪 Вы успешно вышли из системы (роль сброшена).\n\nТеперь вы можете авторизоваться заново с помощью команды /admin или кнопки «Вход» (введя код другого поставщика или фасилитатора).",
+          "🚪 Вы успешно вышли из системы (роль сброшена).\n\nТеперь вы можете авторизоваться заново с помощью кнопки «🔑 Войти» или команды /admin.",
           {
             reply_markup: replyMarkup,
           }
@@ -1040,11 +953,12 @@ if (bot) {
 
     const userState = userStates.get(chatId) || { state: "IDLE" };
 
-    if (text === "/admin" || text === "🔑 Войти (Авторизация)" || text === "Войти") {
+    // Login prompt
+    if (text === "/admin" || text === "🔑 Войти (Авторизация)" || text === "🔑 Войти" || text === "Войти") {
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,
-        "🔑 Введите секретный код администратора, поставщика или фасилитатора:\n\n_(например: 020779 или @020779@)_",
+        "🔑 *Авторизация в системе*\n\nВведите секретный код доступа администратора, поставщика или фасилитатора:\n_(например: `020779` или `@020779@`)_",
         {
           parse_mode: "Markdown",
           reply_markup: {
@@ -1056,7 +970,7 @@ if (bot) {
       return;
     }
 
-    // Attempt authentication if in WAITING_PASSWORD state OR if message looks like a code / /admin command
+    // Check code authentication
     const isExplicitAuthAttempt =
       userState.state === "WAITING_PASSWORD" ||
       text.startsWith("/admin");
@@ -1074,11 +988,11 @@ if (bot) {
           { merge: true }
         ).catch((err) => console.error("Error persisting admin role:", err));
 
-        userStates.set(chatId, { state: "ADMIN_MENU" });
+        userStates.delete(chatId);
         const replyMarkup = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          "✅ Доступ разрешен!\n\nВы успешно авторизованы как *Администратор*.",
+          "✅ *Авторизация успешна!*\n\nВы вошли как *Администратор*.\nВам доступны управление каталогом, выгрузка Excel, статистика и добавление товаров.",
           {
             parse_mode: "Markdown",
             reply_markup: replyMarkup,
@@ -1094,7 +1008,7 @@ if (bot) {
           { merge: true }
         ).catch((err) => console.error("Error persisting supplier role:", err));
 
-        userStates.set(chatId, { state: "ADMIN_MENU" });
+        userStates.delete(chatId);
 
         let supplierName = "";
         const supIdx = matchedSupplierId.replace("supplier", "");
@@ -1109,7 +1023,7 @@ if (bot) {
         const replyMarkup = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          `✅ Доступ разрешен!\n\nВы авторизованы как *${supplierName}*.`,
+          `✅ *Авторизация успешна!*\n\nВы вошли как *${supplierName}*.\n\n💡 Чтобы быстро добавить товар — просто отправьте фото оборудования прямо в этот чат!`,
           {
             parse_mode: "Markdown",
             reply_markup: replyMarkup,
@@ -1136,7 +1050,7 @@ if (bot) {
         const replyMarkup = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          `✅ Доступ разрешен!\n\nВы авторизованы как *Фасилитатор: ${facilitatorName}*.`,
+          `✅ *Авторизация успешна!*\n\nВы вошли как *Фасилитатор: ${facilitatorName}*.\n\nНажмите кнопку «🛍 Открыть Каталог (Выборка)», чтобы сформировать спецификацию для бенефициара.`,
           {
             parse_mode: "Markdown",
             reply_markup: replyMarkup,
@@ -1146,11 +1060,11 @@ if (bot) {
       }
     }
 
-    // Handle /start command unconditionally to always reset state and show welcome message
+    // Handle /start command
     if (text === "/start" || text.startsWith("/start")) {
       userStates.delete(chatId);
       const replyMarkup = await getMainKeyboard(chatId);
-      let greeting = "Привет! Я бот-каталог. Нажмите кнопку «🛍 Открыть Каталог» ниже, чтобы открыть каталог и собрать заказ по минимальным ценам. Или просто отправьте мне коды товаров.";
+      let greeting = "👋 *Добро пожаловать в Каталог оборудования ГРП!*\n\nЗдесь вы можете просматривать каталог, искать оборудование по моделям и формировать заказы по минимальным ценам поставщиков.";
       
       if (facilitatorUsers.has(chatId)) {
         const facilitatorId = facilitatorUsers.get(chatId) || "";
@@ -1160,21 +1074,22 @@ if (bot) {
           const idx = parseInt(facilitatorId.replace("facilitator", ""), 10) - 2;
           facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
         }
-        greeting = `Привет, ${facilitatorName}! Вы авторизованы как Фасилитатор.\nНажмите кнопку ниже, чтобы открыть каталог в режиме Фасилитатора и сформировать Лист выборки товаров.`;
+        greeting = `👋 *Здравствуйте, ${facilitatorName}!*\n\nВы авторизованы как *Фасилитатор*.\n\nНажмите «🛍 Открыть Каталог (Выборка)», чтобы сформировать Лист выборки товаров для бенефициаров, либо воспользуйтесь поиском оборудования.`;
       } else if (adminUsers.has(chatId)) {
-        greeting = `Привет! Вы авторизованы как Администратор.\nНажмите кнопку ниже, чтобы открыть каталог или управлять товарами.`;
+        greeting = `👋 *Здравствуйте, Администратор!*\n\nВам доступен полный контроль над каталогом: добавление товаров через ИИ, выгрузка Excel, статистика и просмотр кодов доступа.`;
       } else if (supplierUsers.has(chatId)) {
-        greeting = `Привет! Вы авторизованы как Поставщик.\nНажмите кнопку ниже, чтобы открыть каталог.`;
+        const supplierId = supplierUsers.get(chatId) || "";
+        greeting = `👋 *Здравствуйте, Поставщик!*\n\nВы можете быстро добавить товар, просто отправив фото оборудования в этот чат, либо открыть веб-портал цен.`;
       }
 
       bot?.sendMessage(chatId, greeting, {
+        parse_mode: "Markdown",
         reply_markup: replyMarkup,
       });
       return;
     }
 
     if (isExplicitAuthAttempt) {
-      // Keep state as WAITING_PASSWORD so user can try entering code again easily
       userStates.set(chatId, { state: "WAITING_PASSWORD" });
       bot?.sendMessage(
         chatId,
@@ -1190,336 +1105,250 @@ if (bot) {
       return;
     }
 
-    const isAuthorized = adminUsers.has(chatId) || supplierUsers.has(chatId);
-    if (text === "➕ Добавить товар") {
-      if (!isAuthorized) {
-        // Let it fall through to the "session expired" handler below
-      } else {
-        const supplierId = supplierUsers.get(chatId) || "";
+    // Role Buttons:
+    // 1. Add product button
+    if (text === "➕ Добавить товар" || text === "➕ Добавить товар (ИИ)") {
+      const isAuth = adminUsers.has(chatId) || supplierUsers.has(chatId);
+      if (!isAuth) {
+        userStates.set(chatId, { state: "WAITING_PASSWORD" });
+        bot?.sendMessage(
+          chatId,
+          "🔒 Для добавления товаров необходимо авторизоваться как Поставщик или Администратор.\n\nВведите секретный код доступа:",
+          {
+            reply_markup: {
+              keyboard: [[{ text: "❌ Отмена" }]],
+              resize_keyboard: true,
+            },
+          }
+        );
+        return;
+      }
 
-        userStates.set(chatId, {
-          state: "WAITING_REGION",
-          tempProductData: { supplierId, regions: [], spheres: [] },
-        });
-
-        bot?.sendMessage(chatId, "⏳ Загружаю список регионов...", {
+      userStates.set(chatId, { state: "WAITING_PHOTO_PRODUCT" });
+      bot?.sendMessage(
+        chatId,
+        "📸 *Добавление оборудования через ИИ*\n\nОтправьте фото оборудования (этикетку, упаковку, шильдик или само изделие).\n\n💡 *ИИ автоматически:*\n• Распознает бренд, модель и название\n• Сформирует техническую спецификацию по ГОСТ (с символами ≤, ≥)\n• Подберет сферу деятельности\n• Запросит у вас только цену товара в сомони",
+        {
+          parse_mode: "Markdown",
           reply_markup: {
             keyboard: [[{ text: "❌ Отмена" }]],
             resize_keyboard: true,
           },
-        });
-
-        getRegionsList().then((regionsProps) => {
-          const text = `*Выбор регионов для товара*\n\nВыбранные регионы: *не выбраны*\n\nВыберите один или несколько регионов применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или выберите "Пропустить регион" чтобы внести товар глобально по сферам._`;
-          const replyMarkup = buildRegionsKeyboard(regionsProps, []);
-          
-          bot?.sendMessage(chatId, text, {
-            parse_mode: "Markdown",
-            reply_markup: replyMarkup,
-          });
-        });
-        return;
-      }
-    }
-
-    if (userState.state === "WAITING_REGION") {
-      if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-
-      const customRegion = text.trim();
-      if (!userState.tempProductData.regions) {
-        userState.tempProductData.regions = [];
-      }
-      if (!userState.tempProductData.regions.includes(customRegion)) {
-        userState.tempProductData.regions.push(customRegion);
-      }
-      userState.tempProductData.region = customRegion;
-      userState.state = "WAITING_SPHERE";
-      userStates.set(chatId, userState);
-
-      bot?.sendMessage(chatId, `✅ Регион "${customRegion}" добавлен к выбору.`);
-
-      bot?.sendMessage(chatId, "⏳ Загружаю список сфер...", {
-        reply_markup: {
-          keyboard: [[{ text: "❌ Отмена" }]],
-          resize_keyboard: true,
-        },
-      });
-
-      getSpheresList().then((spheresProps) => {
-        const text = `*Выбор сфер для товара*\n\nВыбранные сферы: *не выбраны*\n\nВыберите одну или несколько сфер применения из списка ниже с помощью кнопок-чекбоксов. Когда закончите, нажмите «📥 Подтвердить выбор».\n\n_Или введите новое название сферы текстом:_`;
-        const replyMarkup = buildSpheresKeyboard(spheresProps, []);
-        
-        bot?.sendMessage(chatId, text, {
-          parse_mode: "Markdown",
-          reply_markup: replyMarkup,
-        });
-      });
-      return;
-    }
-
-    if (userState.state === "WAITING_SPHERE") {
-      if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      const sphereText =
-        text === "/skip" || text === "Общее (пропустить)"
-          ? "Общее"
-          : text.trim();
-      const spheresList = sphereText.split(",").map(s => s.trim()).filter(Boolean);
-      userState.tempProductData.sphere = spheresList[0] || "Общее";
-      userState.tempProductData.spheres = spheresList;
-
-      if (userState.tempProductData.productPhotoUrl) {
-        userState.state = "WAITING_PHOTO_SPEC";
-        userStates.set(chatId, userState);
-        bot?.sendMessage(
-          chatId,
-          `✅ Сфера "${sphereText}" сохранена! Фото товара уже загружено.\n\nЕсли на этом фото есть характеристики (спецификация), нажмите «✨ Распознать по этому фото». Либо отправьте фото спецификации/этикетки отдельно.`,
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "✨ Распознать по этому фото", callback_data: "recognize_single_photo" }],
-                [{ text: "❌ Отмена", callback_data: "cancel" }],
-              ],
-            },
-          }
-        );
-      } else {
-        userState.tempProductData.photos = [];
-        userState.state = "WAITING_PHOTO_PRODUCT";
-        userStates.set(chatId, userState);
-        bot?.sendMessage(
-          chatId,
-          `Сфера "${sphereText}" сохранена.\n\nТеперь отправьте фото самого товара (оно будет отображаться в каталоге).`,
-          {
-            reply_markup: {
-              keyboard: [
-                [{ text: "Пропустить фото товара" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
-        );
-      }
-      return;
-    }
-
-    if (
-      userState.state === "WAITING_PHOTO_PRODUCT" &&
-      text === "Пропустить фото товара"
-    ) {
-      if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      userState.state = "WAITING_PHOTO_SPEC";
-      userStates.set(chatId, userState);
-      bot?.sendMessage(
-        chatId,
-        `Теперь отправьте фото спецификации (коробку, характеристики, этикетку) для распознавания.\n*(Можно отправить несколько фото по очереди. Когда загрузите все фото, нажмите «🔍 Распознать»)*`,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "🔍 Распознать", callback_data: "recognize" }],
-              [{ text: "❌ Отмена", callback_data: "cancel" }],
-            ],
-          },
-        },
+        }
       );
       return;
     }
 
-    if (userState.state === "WAITING_PHOTO_SPEC" && text === "🔍 Распознать") {
-      if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-      const photos = userState.tempProductData.photos || [];
-      const textSpecs = userState.tempProductData.textSpecs || "";
-      if (photos.length === 0 && !textSpecs.trim()) {
-        bot?.sendMessage(chatId, "Вы не отправляли ни спецификации, ни фото.");
-        return;
+    // 2. Search button
+    if (text === "🔍 Поиск оборудования" || text === "🔍 Найти в каталоге" || text === "/search") {
+      userStates.set(chatId, { state: "WAITING_SEARCH" });
+      bot?.sendMessage(
+        chatId,
+        "🔍 *Поиск оборудования*\n\nВведите название, бренд, модель, сферу или код (например: `перфоратор`, `makita`, `швея`, `0015`):",
+        {
+          parse_mode: "Markdown",
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        }
+      );
+      return;
+    }
+
+    // 3. Supplier: My products & prices
+    if (text === "📋 Мои товары / Цены") {
+      const supplierId = supplierUsers.get(chatId) || "supplier2";
+      const globalDict = await getGlobalDict();
+      let supName = "Поставщик";
+      const supIdx = supplierId.replace("supplier", "");
+      if (supIdx === "2" && globalDict.suppliers?.[0]) supName = globalDict.suppliers[0];
+      else if (supIdx === "3" && globalDict.suppliers?.[1]) supName = globalDict.suppliers[1];
+      else if (supIdx === "4" && globalDict.suppliers?.[2]) supName = globalDict.suppliers[2];
+
+      bot?.sendMessage(chatId, "⏳ Загружаю ваши товары...");
+      const snap = await getDocs(collection(db, "products"));
+      const myItems: any[] = [];
+      snap.forEach((d) => {
+        const p = d.data();
+        const propKey = `price${supIdx === "2" ? "Supplier2" : supIdx === "3" ? "Supplier3" : "Supplier4"}`;
+        const hasLegacyPrice = parseFloat(p[propKey]) > 0;
+        const hasMatrixPrice = p.prices?.[supplierId] && Object.values(p.prices[supplierId]).some((v: any) => parseFloat(v) > 0);
+        if (hasLegacyPrice || hasMatrixPrice) {
+          myItems.push({ id: d.id, ...p });
+        }
+      });
+
+      let msgText = `📋 *Товары поставщика: ${supName}*\n\nВсего позиций с вашими ценами: *${myItems.length} шт.*\n\n`;
+      if (myItems.length > 0) {
+        const sample = myItems.slice(0, 8);
+        sample.forEach((it, i) => {
+          const propKey = `price${supIdx === "2" ? "Supplier2" : supIdx === "3" ? "Supplier3" : "Supplier4"}`;
+          const pLegacy = parseFloat(it[propKey]) || 0;
+          msgText += `${i + 1}. *#${it.code || it.id}* — ${it.name}: *${pLegacy > 0 ? `${pLegacy} с.` : "цена по регионам"}*\n`;
+        });
+        if (myItems.length > 8) {
+          msgText += `\n_...и еще ${myItems.length - 8} товаров._\n`;
+        }
+        msgText += `\n💡 Для массового управления ценами откройте «🛍 Открыть Портал».`;
+      } else {
+        msgText += `У вас пока нет позиций с установленными ценами.\nНажмите «➕ Добавить товар» или отправьте фото оборудования в чат!`;
       }
 
-      bot?.sendMessage(chatId, "⏳ Обрабатываю данные и распознаю...");
+      const keyboard = await getMainKeyboard(chatId);
+      bot?.sendMessage(chatId, msgText, {
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      });
+      return;
+    }
 
+    // 4. Facilitator: My quote specs
+    if (text === "📜 Мои спецификации (КП)" || text === "📜 Мои спецификации") {
+      bot?.sendMessage(chatId, "⏳ Загружаю историю спецификаций...");
       try {
-        const ai = getGenAI();
-        if (!ai) {
-          bot?.sendMessage(
-            chatId,
-            "❌ Ошибка: API ключ Gemini не настроен на сервере.",
-          );
+        const qSnap = await getDocs(query(collection(db, "quotes_history"), orderBy("createdAtTimestamp", "desc"), limit(6)));
+        if (qSnap.empty) {
+          bot?.sendMessage(chatId, "📜 Спецификации и КП пока не сформированы.\n\nОткройте Каталог кнопкой ниже, выберите товары и сформируйте первый Лист выборки!");
           return;
         }
+        let msgText = "📜 *Последние сформированные Листы выборки (КП):*\n\n";
+        let idx = 0;
+        qSnap.forEach((d) => {
+          idx++;
+          const q = d.data();
+          const dateStr = q.createdAt ? q.createdAt.split(",")[0] : "—";
+          msgText += `${idx}. *${q.id}* (${dateStr})\n`;
+          msgText += `   👤 Получатель: ${q.clientName || "Не указан"}\n`;
+          msgText += `   📍 Регион: ${q.selectedRegion || "—"} | Фасилитатор: ${q.facilitatorName || "—"}\n`;
+          msgText += `   💰 Сумма: *${q.totalAmount || 0} сомони* (${q.items?.length || 0} тов.)\n\n`;
+        });
+        msgText += "_Для создания нового листа нажмите «🛍 Открыть Каталог (Выборка)»._";
+        bot?.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+      } catch (err: any) {
+        bot?.sendMessage(chatId, `⚠️ Не удалось загрузить историю: ${err?.message || err}`);
+      }
+      return;
+    }
 
-        const inlineDataParts = [];
-        for (const fileLink of photos) {
-          const response = await axios.get(fileLink, {
-            responseType: "arraybuffer",
-          });
-          const imageBuffer = Buffer.from(response.data, "binary");
-          const base64Image = imageBuffer.toString("base64");
-          inlineDataParts.push({
-            inlineData: { mimeType: "image/jpeg", data: base64Image },
-          });
-        }
-
-        const prompt = `
-          Посмотри на изображения (если есть) и проанализируй текстовое описание (если предоставлено).
-          Текстовое описание от пользователя:\n${textSpecs}\n
-          Обобщи информацию и извлеки следующие данные:
-          - name: Название товара.
-          - description: Полное описание и технические характеристики.
-          - unit: Единица измерения (шт., компл., кг, м). По умолчанию "шт."
-
-          Ответь строго в формате JSON, без маркдауна и лишних слов (просто сам JSON и всё).
-        `;
-
-        const genAIResponse = await ai.models.generateContent({
-          model: "gemini-2.5-flash",
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }, ...inlineDataParts],
-            },
-          ],
-          config: {
-            systemInstruction:
-              "You are an expert procurement and tender data extraction AI. Your job is to extract product equipment specs from images.\n\nCRITICAL RESTRICTIONS AND FORMATTING RULES FOR DESCRIPTION AND NAME:\n1. Focus ONLY on main technical parameters and specifications. STRICTLY EXCLUDE promotional text, package contents/inclusions (e.g., 'В комплекте...', 'Сумка', 'инструкция', etc.), and full sentences. DO NOT include what is included in the box.\n2. BRANDS, MODELS, AND IDENTIFIERS MUST BE PRESERVED: If the photo or text mentions a specific brand, model name, manufacturer, abbreviation, or serial number, you MUST include it in the product 'name', formatted as '<Product type> - <Brand/Model>' (e.g., 'Дрель - Total 2020', 'Перфоратор - Makita HR2470', 'Кабель - ГОСТ 3х2.5'). Do NOT strip or generalize these names; include them so users can identify the exact model in the catalog.\n3. TENDER SPECIFICATION FORMAT (MATH SYMBOLS): You MUST transform parameters into a flexible format for procurement using mathematical symbols limits. For example:\n - Use '≤' for maximum limits (voltage, power, weight, dimensions that shouldn't be exceeded) -> 'Мощность: ≤ 2 кВт', 'Напряжение: ≤ 220 В', 'Вес: ≤ 1.5 кг'.\n - Use '≥' for minimum capacities (size, speed, volume, strength) -> 'Скорость: ≥ 1500 Об/мин', 'Зажим: ≥ 10мм'.\n - Append 'или аналог' to materials and specific component types -> 'Аккумулятор: Li-Ion или аналог'.\n\nEnsure ALL extracted parameters are formatted this way. Do not write 'Не более' or 'Не менее', use '≤' and '≥'.\n\nIMPORTANT: Each parameter in the 'description' field MUST be separated by a newline character (\\n). Do NOT use semicolons or commas to separate distinct parameters.",
-            responseMimeType: "application/json",
-          },
+    // 5. Admin: Statistics
+    if (text === "📊 Статистика Каталога") {
+      bot?.sendMessage(chatId, "⏳ Считаю статистику каталога...");
+      try {
+        const snap = await getDocs(collection(db, "products"));
+        const total = snap.size;
+        let withPhoto = 0;
+        const sphereCounts: Record<string, number> = {};
+        snap.forEach((d) => {
+          const p = d.data();
+          if (p.imageBase64 || p.photoUrl) withPhoto++;
+          const sph = p.sphere || (p.spheres?.[0] || "Общее");
+          sphereCounts[sph] = (sphereCounts[sph] || 0) + 1;
         });
 
-        const textRes = genAIResponse.text || "{}";
-        const parsed = JSON.parse(textRes);
+        let msgText = `📊 *Статистика Каталога Проекта*\n\n`;
+        msgText += `📦 Всего позиций: *${total} шт.*\n`;
+        msgText += `📸 С фотографиями: *${withPhoto} шт.* (${total > 0 ? Math.round((withPhoto / total) * 100) : 0}%)\n\n`;
+        msgText += `📂 *Распределение по сферам:*\n`;
+        const sortedSpheres = Object.entries(sphereCounts).sort((a, b) => b[1] - a[1]);
+        sortedSpheres.forEach(([sName, cnt]) => {
+          msgText += `• ${sName}: *${cnt} шт.*\n`;
+        });
 
-        userState.tempProductData = {
-          ...userState.tempProductData,
-          name: parsed.name || "Без названия",
-          description: parsed.description || "",
-          unit: parsed.unit || "шт.",
-          code: Math.random().toString(36).substring(2, 8).toUpperCase(), // Temporary random code
-          prices: {}, // will be populated
-          regionPrices: {},
-          currentPricingRegionIndex: 0,
-        };
+        bot?.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+      } catch (err: any) {
+        bot?.sendMessage(chatId, `⚠️ Ошибка: ${err?.message || err}`);
+      }
+      return;
+    }
 
-        userState.state = "WAITING_PRICE";
-        userStates.set(chatId, userState);
+    // 6. Admin: Download Catalog Excel
+    if (text === "📥 Скачать Каталог (Excel)" || text === "📥 Скачать каталог") {
+      await generateAndSendCatalogExcel(chatId);
+      return;
+    }
 
-        const regions = userState.tempProductData.regions || [];
-        if (regions.length > 0) {
-          const currentRegion = regions[0];
-          const preview = `✅ Спецификация распознана!\n\n*Название:* ${parsed.name}\n*Спецификация:* ${parsed.description}\n*Единица:* ${parsed.unit}\n\nТеперь укажите цену для региона *${currentRegion}* (или отправьте 0 / Нажмите «⏩ Пропустить регион»):`;
-          bot?.sendMessage(chatId, preview, {
-            parse_mode: "Markdown",
-            reply_markup: {
-              keyboard: [
-                [{ text: "⏩ Пропустить регион" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          });
-        } else {
-          const preview = adminUsers.has(chatId)
-            ? `✅ Распознано:\n\n*Название:* ${parsed.name}\n*Спецификация:* ${parsed.description}\n*Единица:* ${parsed.unit}\n\nТеперь отправьте базовую цену (Главный каталог) в виде числа (в сомони).`
-            : `✅ Спецификация распознана!\n\nТеперь отправьте вашу цену для этого товара (в сомони).`;
+    // 7. Admin: Codes directory
+    if (text === "🔑 Коды доступа" || text === "🔑 Коды доступа (Справочник)") {
+      const globalDict = await getGlobalDict();
+      let msgText = `🔑 *Справочник кодов доступа:*\n\n`;
+      msgText += `👑 *Администратор:* \`${globalDict.adminPassword || "020779"}\` (или \`@020779@\`)\n\n`;
+      msgText += `🏢 *Поставщики:*\n`;
+      const supCodes = globalDict.supplierCodes || {};
+      const supNames = globalDict.suppliers || [];
+      msgText += `• ${supNames[0] || "Поставщик 1"}: \`${supCodes.supplier2 || "—"}\`\n`;
+      msgText += `• ${supNames[1] || "Поставщик 2"}: \`${supCodes.supplier3 || "—"}\`\n`;
+      msgText += `• ${supNames[2] || "Поставщик 3"}: \`${supCodes.supplier4 || "—"}\`\n\n`;
+      msgText += `📋 *Фасилитаторы:*\n`;
+      const facCodes = globalDict.facilitatorCodes || {};
+      const facNames = globalDict.facilitators || [];
+      facNames.forEach((fName: string, i: number) => {
+        const fId = `facilitator${i + 2}`;
+        msgText += `• ${fName}: \`${facCodes[fId] || "—"}\`\n`;
+      });
 
-          bot?.sendMessage(chatId, preview, {
+      bot?.sendMessage(chatId, msgText, { parse_mode: "Markdown" });
+      return;
+    }
+
+    // 8. Guides & Project Info
+    if (text === "ℹ️ Памятка фасилитатора") {
+      const memo = `ℹ️ *Памятка Фасилитатора*\n\n1. *Открытие каталога:*\nНажмите «🛍 Открыть Каталог (Выборка)». Каталог откроется с привязкой к вашей организации.\n\n2. *Подбор оборудования:*\nУкажите регион бенефициара и сферу деятельности. Добавьте необходимое оборудование в корзину.\n\n3. *Сравнение цен:*\nСистема автоматически выбирает наименьшую цену среди аккредитованных поставщиков с учетом доставки.\n\n4. *Формирование документов:*\nНажмите «Сформировать Лист выборки». Бот сгенерирует официальный PDF и Excel с QR-кодом для защиты от подделок.\n\n5. *Поиск в чате:*\nВы также можете найти любое оборудование прямо здесь: нажмите «🔍 Поиск оборудования» и введите название или код.`;
+      bot?.sendMessage(chatId, memo, { parse_mode: "Markdown" });
+      return;
+    }
+
+    if (text === "ℹ️ Инструкция поставщика") {
+      const memo = `ℹ️ *Инструкция Поставщика*\n\n1. *Быстрое добавление товара:*\nПросто отправьте фото оборудования или шильдика/упаковки в чат! ИИ мгновенно распознает марку, сформирует технические характеристики по ГОСТ и запросит цену.\n\n2. *Управление ценами по регионам:*\nНажмите «🛍 Открыть Портал». В веб-портале вы можете массово проставить цены на товары для разных регионов Таджикистана.\n\n3. *Просмотр позиций:*\nНажмите «📋 Мои товары / Цены» для быстрого просмотра позиций с вашими ценами прямо в Telegram.`;
+      bot?.sendMessage(chatId, memo, { parse_mode: "Markdown" });
+      return;
+    }
+
+    if (text === "❓ Справка о проекте") {
+      const memo = `❓ *О проекте «Каталог Оборудования»*\n\nСистема централизованного каталога оборудования и прозрачного формирования коммерческих предложений для Группы Реализации Проекта (ГРП) при Министерстве труда, миграции и занятости населения Республики Таджикистан.\n\n• Автоматический выбор наименьшей цены среди поставщиков\n• Учет региональной логистики\n• Мгновенная генерация защищенных спецификаций (Листов выборки) с QR-верификацией\n• Прямая интеграция Telegram с веб-каталогом`;
+      bot?.sendMessage(chatId, memo, { parse_mode: "Markdown" });
+      return;
+    }
+
+    // State handling: WAITING_PHOTO_PRODUCT
+    if (userState.state === "WAITING_PHOTO_PRODUCT") {
+      bot?.sendMessage(
+        chatId,
+        "📸 Пожалуйста, отправьте фото оборудования (или шильдика/упаковки).\n\nЛибо нажмите «❌ Отмена», чтобы вернуться в меню.",
+        {
+          reply_markup: {
+            keyboard: [[{ text: "❌ Отмена" }]],
+            resize_keyboard: true,
+          },
+        }
+      );
+      return;
+    }
+
+    // State handling: WAITING_PRICE
+    if (userState.state === "WAITING_PRICE") {
+      const priceVal = parseFloat(text.replace(",", "."));
+      if (isNaN(priceVal) || priceVal <= 0) {
+        bot?.sendMessage(
+          chatId,
+          "Пожалуйста, отправьте корректное число для цены (например: `1450` или `1450.50`), либо нажмите «❌ Отмена»:",
+          {
             parse_mode: "Markdown",
             reply_markup: {
               keyboard: [[{ text: "❌ Отмена" }]],
               resize_keyboard: true,
             },
-          });
-        }
-      } catch (e) {
-        console.error(e);
-        bot?.sendMessage(
-          chatId,
-          "⚠️ Ошибка при распознавании. Попробуйте еще раз или напишите /cancel.",
-        );
-      }
-      return;
-    }
-
-    if (userState.state === "WAITING_PRICE") {
-      if (!adminUsers.has(chatId) && !supplierUsers.has(chatId)) return;
-
-      const product = userState.tempProductData;
-      const regionsToSet = product.regions && product.regions.length > 0 ? product.regions : [];
-
-      let priceVal = 0;
-      let skipCurrentRegion = false;
-
-      if (regionsToSet.length > 0) {
-        const currentIndex = product.currentPricingRegionIndex || 0;
-        const currentRegion = regionsToSet[currentIndex];
-
-        if (text === "⏩ Пропустить регион") {
-          skipCurrentRegion = true;
-        } else {
-          priceVal = parseFloat(text.replace(",", "."));
-          if (isNaN(priceVal) || priceVal < 0) {
-            bot?.sendMessage(
-              chatId,
-              `Пожалуйста, отправьте корректное число для цены (например: 100.50) для региона *${currentRegion}* или нажмите «⏩ Пропустить регион»:`,
-              {
-                parse_mode: "Markdown",
-                reply_markup: {
-                  keyboard: [
-                    [{ text: "⏩ Пропустить регион" }],
-                    [{ text: "❌ Отмена" }],
-                  ],
-                  resize_keyboard: true,
-                },
-              }
-            );
-            return;
           }
-        }
-
-        if (!product.regionPrices) {
-          product.regionPrices = {};
-        }
-
-        if (!skipCurrentRegion) {
-          product.regionPrices[currentRegion] = priceVal;
-        }
-
-        const nextIndex = currentIndex + 1;
-        product.currentPricingRegionIndex = nextIndex;
-        userStates.set(chatId, userState);
-
-        if (nextIndex < regionsToSet.length) {
-          const nextRegion = regionsToSet[nextIndex];
-          bot?.sendMessage(
-            chatId,
-            `Укажите цену для региона *${nextRegion}* (или отправьте 0 / Нажмите «⏩ Пропустить регион»):`,
-            {
-              parse_mode: "Markdown",
-              reply_markup: {
-                keyboard: [
-                  [{ text: "⏩ Пропустить регион" }],
-                  [{ text: "❌ Отмена" }],
-                ],
-                resize_keyboard: true,
-              },
-            }
-          );
-          return;
-        }
-      } else {
-        // No regions chosen - treat as global catalog price
-        priceVal = parseFloat(text.replace(",", "."));
-        if (isNaN(priceVal) || priceVal < 0) {
-          bot?.sendMessage(
-            chatId,
-            "Пожалуйста, отправьте корректное число для цены (например: 100.50).",
-          );
-          return;
-        }
+        );
+        return;
       }
 
-      // If we reach here, we have finished collecting prices! Now we save.
       try {
+        const product = userState.tempProductData || {};
         const nextCode = await generateNextProductCode(db);
         const productId = nextCode;
+        const isSupplier = supplierUsers.has(chatId);
+        const supplierIdToUse = isSupplier ? (product.supplierId || supplierUsers.get(chatId) || "supplier2") : "supplier1";
 
         const finalPrices: any = {
           supplier1: {},
@@ -1527,45 +1356,7 @@ if (bot) {
           supplier3: {},
           supplier4: {},
         };
-
-        const isSupplier = supplierUsers.has(chatId);
-        const supplierIdToUse = isSupplier
-          ? (product.supplierId || supplierUsers.get(chatId) || "supplier2")
-          : "supplier1";
-
-        // Populate regional prices
-        if (product.regionPrices && Object.keys(product.regionPrices).length > 0) {
-          Object.entries(product.regionPrices).forEach(([reg, val]) => {
-            if (typeof val === "number" && val > 0) {
-              if (finalPrices[supplierIdToUse]) {
-                finalPrices[supplierIdToUse][reg] = val;
-              }
-            }
-          });
-        } else if (regionsToSet.length > 0) {
-          // Fallback if we have regions but no specific regionPrices
-          regionsToSet.forEach((reg: string) => {
-            if (finalPrices[supplierIdToUse]) {
-              finalPrices[supplierIdToUse][reg] = priceVal;
-            }
-          });
-        }
-
-        // Determine main display price
-        let mainPrice = priceVal;
-        if (product.regionPrices && Object.keys(product.regionPrices).length > 0) {
-          const validPrices = Object.values(product.regionPrices).filter(
-            (v) => typeof v === "number" && v > 0
-          ) as number[];
-          if (validPrices.length > 0) {
-            mainPrice = validPrices[0];
-          }
-        }
-
-        const sphereToUse = product.sphere || (product.spheres?.[0] || "Общее");
-        const spheresToUse = product.spheres && product.spheres.length > 0
-          ? product.spheres
-          : [sphereToUse];
+        finalPrices[supplierIdToUse] = { "Душанбе": priceVal };
 
         const finalProduct: any = {
           id: productId,
@@ -1573,218 +1364,47 @@ if (bot) {
           name: (product.name || "Товар без названия").trim().slice(0, 250),
           description: (product.description || "").trim().slice(0, 3990),
           unit: product.unit || "шт.",
-          sphere: sphereToUse,
-          spheres: spheresToUse,
-          regions: regionsToSet || [],
-          category: product.category || "Без категории",
-          price: isSupplier ? 0 : mainPrice,
-          priceSupplier1: supplierIdToUse === "supplier1" ? mainPrice : 0,
-          priceSupplier2: supplierIdToUse === "supplier2" ? mainPrice : 0,
-          priceSupplier3: supplierIdToUse === "supplier3" ? mainPrice : 0,
-          priceSupplier4: supplierIdToUse === "supplier4" ? mainPrice : 0,
+          sphere: product.sphere || "Общее",
+          spheres: product.spheres || [product.sphere || "Общее"],
+          regions: ["Душанбе"],
+          category: product.sphere || "Общее",
+          price: isSupplier ? 0 : priceVal,
+          priceSupplier1: supplierIdToUse === "supplier1" ? priceVal : 0,
+          priceSupplier2: supplierIdToUse === "supplier2" ? priceVal : 0,
+          priceSupplier3: supplierIdToUse === "supplier3" ? priceVal : 0,
+          priceSupplier4: supplierIdToUse === "supplier4" ? priceVal : 0,
           prices: finalPrices,
           imageBase64: product.imageBase64 || "",
-          mimeType: (product.imageBase64 && product.imageBase64.startsWith("data:image"))
-            ? (product.imageBase64.split(";")[0].split(":")[1] || "image/jpeg")
-            : "",
+          mimeType: "image/jpeg",
           createdAt: Date.now(),
         };
 
         await setDoc(doc(db, "products", productId), finalProduct);
-        userStates.set(chatId, { state: "ADMIN_MENU" });
+        userStates.delete(chatId);
         const menuKeyboard = await getMainKeyboard(chatId);
         bot?.sendMessage(
           chatId,
-          `✅ Товар успешно добавлен в каталог!\n\n*Код/ID товара:* #${nextCode}\n*Название:* ${finalProduct.name}\n*Цена:* ${mainPrice > 0 ? `${mainPrice} с.` : "Не указана"}`,
+          `✅ *Товар успешно сохранен в Каталог!*\n\n🆔 *Код товара:* \`#${nextCode}\`\n📦 *Наименование:* ${finalProduct.name}\n📂 *Сфера:* ${finalProduct.sphere}\n💰 *Цена:* *${priceVal} сомони*\n\nТовар уже доступен в Каталоге и включен в алгоритм выбора цен!`,
           {
             parse_mode: "Markdown",
             reply_markup: menuKeyboard,
           },
         );
-      } catch (e: any) {
-        console.error("Error saving product from bot:", e);
-        bot?.sendMessage(
-          chatId,
-          `⚠️ Ошибка при сохранении в базу данных: ${e?.message || e}`,
-          {
-            reply_markup: await getMainKeyboard(chatId),
-          }
-        );
+      } catch (err: any) {
+        console.error("Error saving product from bot:", err);
+        bot?.sendMessage(chatId, `⚠️ Ошибка при сохранении в базу: ${err?.message || err}`);
       }
       return;
     }
 
-    // --- NORMAL USER LOGIC BELOW THIS LINE ---
-    if (text === "🛠 Панель администратора" || text === "🛠 Личный кабинет фасилитатора") {
-      if (adminUsers.has(chatId)) {
-        userStates.set(chatId, { state: "ADMIN_MENU" });
-        bot?.sendMessage(
-          chatId,
-          "🛠 Панель администратора открыта. Вы авторизованы как Администратор.",
-          {
-            reply_markup: {
-              keyboard: [
-                [{ text: "➕ Добавить товар" }],
-                [{ text: "🚪 Выйти (Сбросить роль)" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
-        );
-        return;
-      }
-
-      if (supplierUsers.has(chatId)) {
-        userStates.set(chatId, { state: "ADMIN_MENU" });
-        const supplierId = supplierUsers.get(chatId) || "";
-        bot?.sendMessage(
-          chatId,
-          `🛠 Панель администратора открыта. Вы авторизованы как Поставщик (${supplierId}).`,
-          {
-            reply_markup: {
-              keyboard: [
-                [{ text: "➕ Добавить товар" }],
-                [{ text: "🚪 Выйти (Сбросить роль)" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
-        );
-        return;
-      }
-
-      if (facilitatorUsers.has(chatId)) {
-        const facilitatorId = facilitatorUsers.get(chatId) || "";
-        const globalDict = await getGlobalDict();
-        let facilitatorName = "Фасилитатор";
-        if (globalDict.facilitators) {
-          const idx = parseInt(facilitatorId.replace("facilitator", ""), 10) - 2;
-          facilitatorName = globalDict.facilitators[idx] || "Фасилитатор";
-        }
-        bot?.sendMessage(
-          chatId,
-          `🛠 Вы авторизованы как Фасилитатор: ${facilitatorName}.\n\nЗдесь вы можете открыть каталог с закрепленной за вами ролью.`,
-          {
-            reply_markup: {
-              keyboard: [
-                [
-                  {
-                    text: "🛍 Открыть Каталог (Фасилитатор)",
-                    web_app: {
-                      url: getFacilitatorUrl(facilitatorId),
-                    },
-                  },
-                ],
-                [{ text: "🚪 Выйти (Сбросить роль)" }],
-                [{ text: "❌ Отмена" }],
-              ],
-              resize_keyboard: true,
-            },
-          },
-        );
-        return;
-      }
-
-      userStates.set(chatId, { state: "WAITING_PASSWORD" });
-      bot?.sendMessage(
-        chatId,
-        "Введите секретный код администратора, поставщика или фасилитатора:",
-        {
-          reply_markup: {
-            keyboard: [[{ text: "❌ Отмена" }]],
-            resize_keyboard: true,
-          },
-        },
-      );
+    // State handling: WAITING_SEARCH
+    if (userState.state === "WAITING_SEARCH") {
+      userStates.delete(chatId);
+      await handleSearchQuery(chatId, text);
       return;
     }
 
-    const isUserAuthorized =
-      adminUsers.has(chatId) ||
-      supplierUsers.has(chatId) ||
-      facilitatorUsers.has(chatId);
-
-    if (!isUserAuthorized) {
-      getMainKeyboard(chatId).then((replyMarkup) => {
-        bot?.sendMessage(
-          chatId,
-          "⚠️ Доступ ограничен. Вы не авторизованы в системе.\n\nПожалуйста, нажмите «🔑 Войти (Авторизация)» ниже или используйте команду /admin для входа с помощью вашего секретного кода доступа.",
-          {
-            reply_markup: replyMarkup,
-          }
-        );
-      });
-      return;
-    }
-
-    if (userState.state !== "IDLE") {
-      if (
-        userState.state === "WAITING_PHOTO_SPEC" &&
-        text !== "🔍 Распознать" &&
-        !isCancelMessage(text) &&
-        text !== "➕ Добавить товар"
-      ) {
-        if (!userState.tempProductData.textSpecs) {
-          userState.tempProductData.textSpecs = "";
-        }
-        userState.tempProductData.textSpecs += "\n" + text;
-        bot?.sendMessage(
-          chatId,
-          "✅ Текстовое описание добавлено. Если это всё, отправьте ещё или нажмите '🔍 Распознать'",
-          {
-            reply_markup: {
-              inline_keyboard: [
-                [{ text: "🔍 Распознать", callback_data: "recognize" }],
-                [{ text: "❌ Отмена", callback_data: "cancel" }],
-              ],
-            },
-          },
-        );
-        return;
-      }
-
-      let promptMessage =
-        "Пожалуйста, используйте кнопки меню или нажмите '❌ Отмена', чтобы выйти.";
-      if (userState.state === "ADMIN_MENU")
-        promptMessage =
-          "Вы находитесь в панели администратора. Нажмите '➕ Добавить товар', чтобы добавить новый товар, или '❌ Отмена', чтобы выйти в обычный режим.";
-      if (userState.state === "WAITING_PHOTO_PRODUCT")
-        promptMessage =
-          "Вы добавляете товар. Пожалуйста, отправьте фото товара.";
-      if (userState.state === "WAITING_PHOTO_SPEC")
-        promptMessage =
-          "Отправьте фото спецификации, введите спецификацию текстом, или нажмите '🔍 Распознать'.";
-
-      bot?.sendMessage(chatId, promptMessage);
-      return;
-    }
-
-    if (text === "➕ Добавить товар" || text === "🔍 Распознать") {
-      bot?.sendMessage(
-        chatId,
-        "Ваша сессия истекла. Пожалуйста, зайдите в панель администратора заново: '🛠 Панель администратора'.",
-        {
-          reply_markup: {
-            keyboard: [
-              [
-                {
-                  text: "🛍 Открыть Каталог",
-                  web_app: {
-                    url: getMainCatalogUrl(),
-                  },
-                },
-              ],
-              [{ text: "🛠 Панель администратора" }],
-            ],
-            resize_keyboard: true,
-          },
-        },
-      );
-      return;
-    }
-
+    // Order Code Check vs Natural Query Search:
     const rawTokensText = (
       msg.web_app_data ? msg.web_app_data.data : text
     ).trim();
@@ -1803,13 +1423,11 @@ if (bot) {
         }));
 
     if (!isLikelySearch) {
-      // Just ignore normal text messages instead of complaining, or guide them.
-      bot?.sendMessage(
-        chatId,
-        "Для формирования корзины введите коды товаров через пробел. (Например: 0001.1 0002.5).",
-      );
+      // Natural search across products rather than error message!
+      await handleSearchQuery(chatId, rawTokensText);
       return;
     }
+
 
     const rawTokens = tokens.map((s) => s.replace(/^#/, ""));
     if (rawTokens.length === 0) return;

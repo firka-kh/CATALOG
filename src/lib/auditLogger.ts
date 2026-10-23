@@ -2,12 +2,15 @@ import {
   collection,
   doc,
   setDoc,
+  deleteDoc,
+  writeBatch,
   getDocs,
   query,
   orderBy,
   limit,
   where,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { fetchQuotesHistory } from "./quotesHistory";
@@ -167,6 +170,34 @@ export async function getAuditLogs(): Promise<AuditLogEntry[]> {
 }
 
 /**
+ * Subscribe in real-time to audit logs stream
+ */
+export function subscribeToAuditLogs(callback: (logs: AuditLogEntry[]) => void): () => void {
+  try {
+    const q = query(collection(db, "audit_logs"), orderBy("timestamp", "desc"), limit(1000));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const logs: AuditLogEntry[] = [];
+        snapshot.forEach((d) => {
+          logs.push(d.data() as AuditLogEntry);
+        });
+        callback(logs);
+      },
+      (error) => {
+        console.warn("Firestore onSnapshot error for audit_logs, using polling fallback:", error);
+        getAuditLogs().then(callback);
+      }
+    );
+    return unsubscribe;
+  } catch (err) {
+    console.warn("Failed to initiate audit_logs snapshot subscription:", err);
+    getAuditLogs().then(callback);
+    return () => {};
+  }
+}
+
+/**
  * Sync existing quote history records into audit_logs if they are not yet indexed
  */
 export async function syncHistoricalQuotesToAudit(): Promise<number> {
@@ -216,5 +247,59 @@ export async function syncHistoricalQuotesToAudit(): Promise<number> {
   } catch (err) {
     console.error("Failed to sync historical quotes to audit:", err);
     return 0;
+  }
+}
+
+/**
+ * Delete a single audit log entry from Firestore
+ */
+export async function deleteAuditLog(id: string): Promise<boolean> {
+  try {
+    await deleteDoc(doc(db, "audit_logs", id));
+    try {
+      const cached = JSON.parse(localStorage.getItem("spmei_recent_audit_logs") || "[]");
+      const updated = cached.filter((l: AuditLogEntry) => l.id !== id);
+      localStorage.setItem("spmei_recent_audit_logs", JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    return true;
+  } catch (err) {
+    console.error("Failed to delete audit log entry:", err);
+    throw err;
+  }
+}
+
+/**
+ * Delete multiple audit log entries from Firestore in bulk batches
+ */
+export async function deleteBulkAuditLogs(ids: string[]): Promise<number> {
+  if (!ids || ids.length === 0) return 0;
+  try {
+    const chunkSize = 400; // Under Firestore 500 ops per batch limit
+    let totalDeleted = 0;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        batch.delete(doc(db, "audit_logs", id));
+      });
+      await batch.commit();
+      totalDeleted += chunk.length;
+    }
+
+    try {
+      const idSet = new Set(ids);
+      const cached = JSON.parse(localStorage.getItem("spmei_recent_audit_logs") || "[]");
+      const updated = cached.filter((l: AuditLogEntry) => !idSet.has(l.id));
+      localStorage.setItem("spmei_recent_audit_logs", JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+
+    return totalDeleted;
+  } catch (err) {
+    console.error("Failed to bulk delete audit log entries:", err);
+    throw err;
   }
 }

@@ -6,9 +6,11 @@ import { Product } from '../types';
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-enableIndexedDbPersistence(db).catch((err) => {
-  console.warn("Firebase persistence could not be enabled:", err);
-});
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    console.warn("Firebase persistence could not be enabled:", err);
+  });
+}
 
 export enum OperationType {
   CREATE = 'create',

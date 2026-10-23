@@ -19,7 +19,7 @@ process.on("unhandledRejection", (reason, promise) => {
 });
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const SERVER_BUILD_ID = Date.now().toString();
 
 app.get("/api/version", (req, res) => {
@@ -313,16 +313,21 @@ app.post("/api/fetch-image", async (req, res) => {
 });
 
 async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
+  const distPath = fs.existsSync(path.join(process.cwd(), "dist", "index.html"))
+    ? path.join(process.cwd(), "dist")
+    : fs.existsSync(path.join(process.cwd(), "build", "index.html"))
+      ? path.join(process.cwd(), "build")
+      : null;
+
+  const isProduction = process.env.NODE_ENV === "production" || !!distPath;
+
+  if (!isProduction || !distPath) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = fs.existsSync(path.join(process.cwd(), "dist", "index.html"))
-      ? path.join(process.cwd(), "dist")
-      : path.join(process.cwd(), "build");
     app.use(express.static(distPath, {
       setHeaders: (res, filePath) => {
         if (filePath.endsWith("index.html") || filePath.endsWith("sw.js")) {
@@ -339,7 +344,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

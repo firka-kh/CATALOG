@@ -27,6 +27,7 @@ import {
   Edit3,
   History,
   HelpCircle,
+  QrCode,
 } from "lucide-react";
 import { Product } from "./types";
 import {
@@ -41,6 +42,7 @@ import { db } from "./lib/firebase";
 
 import { downloadCartExcel } from "./lib/excelExport";
 import { saveQuoteToHistory, updateQuoteInHistory } from "./lib/quotesHistory";
+import { logAuditEvent } from "./lib/auditLogger";
 import { DISTRICTS_BY_REGION } from "./App";
 
 interface CartItem {
@@ -890,6 +892,21 @@ export function CartModal({
 
   const handleExcelExport = async () => {
     if (!validateCanExportOrPrint()) return;
+    logAuditEvent({
+      actionType: "EXPORT_EXCEL",
+      actorName: specialistName.trim() || currentFacilitatorRep || facilitatorName.trim(),
+      actorRole: "facilitator",
+      facilitatorName: facilitatorName.trim(),
+      region: selectedRegion,
+      district: district.trim(),
+      beneficiaryName: clientName.trim(),
+      beneficiaryId: beneficiaryId.trim() || undefined,
+      quoteId: savedQuoteId || undefined,
+      totalAmount: total,
+      itemsCount: displayedCart.length,
+      details: `Экспорт спецификации КП в Excel (Бенефициар: ${clientName.trim() || "Не указан"}, сумма: ${total.toLocaleString("ru-RU")} сомони)`,
+    }).catch((err) => console.warn("Audit error:", err));
+
     await downloadCartExcel(
       displayedCart,
       displayedCart.length > 0 ? logisticsCost : 0,
@@ -2284,6 +2301,21 @@ export function CartModal({
                 <Archive className="w-4 h-4" />
                 <span>Перейти в Архив КП</span>
               </button>
+
+              {savedQuoteId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const rawOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+                    const origin = rawOrigin.includes('ais-dev-') ? rawOrigin.replace('ais-dev-', 'ais-pre-') : rawOrigin;
+                    window.open(`${origin}/?verify=${encodeURIComponent(savedQuoteId)}`, '_blank');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs sm:text-sm font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-xl transition-all shadow-xs cursor-pointer"
+                >
+                  <QrCode className="w-4 h-4 text-emerald-600" />
+                  <span>Проверить QR-код (Гос. верификация)</span>
+                </button>
+              )}
 
               <div className="flex items-center gap-2">
                 <button

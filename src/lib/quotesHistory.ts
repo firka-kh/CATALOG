@@ -498,3 +498,22 @@ export async function deleteAllQuotesFromHistory(): Promise<number> {
     throw error;
   }
 }
+
+/**
+ * Fetch a single quote by its ID for electronic verification and audit
+ */
+export async function fetchQuoteById(quoteId: string): Promise<QuoteRecord | null> {
+  if (!quoteId) return null;
+  try {
+    const cleanId = quoteId.trim();
+    const docRef = doc(db, "quotes_history", cleanId);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      return snap.data() as QuoteRecord;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error fetching single quote by id:", error);
+    return null;
+  }
+}

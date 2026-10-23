@@ -1,5 +1,5 @@
-# Use the official Node.js 20 image (Debian based slim)
-FROM node:20-slim
+# Use the official Node.js 22 image (Debian based slim)
+FROM node:22-slim
 
 # Set working directory
 WORKDIR /app

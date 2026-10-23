@@ -3239,7 +3239,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         facilitatorCodes={globalDict.facilitatorCodes || {}}
         facilitatorRegions={globalDict.facilitatorRegions || {}}
         suppliers={globalDict.suppliers || []}
-        supplierCodes={globalDict.supplierAssignedCodes || {}}
+        supplierCodes={globalDict.supplierCodes || {}}
+        supplierAssignedCodes={globalDict.supplierAssignedCodes || {}}
         supplierLegalNames={globalDict.supplierLegalNames || {}}
         onAdminSuccess={handleAdminLoginSuccess}
         onFacilitatorSuccess={handleFacilitatorLoginSuccess}
@@ -3257,7 +3258,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         facilitatorCodes={globalDict.facilitatorCodes || {}}
         facilitatorRegions={globalDict.facilitatorRegions || {}}
         suppliers={globalDict.suppliers || []}
-        supplierCodes={globalDict.supplierAssignedCodes || {}}
+        supplierCodes={globalDict.supplierCodes || {}}
+        supplierAssignedCodes={globalDict.supplierAssignedCodes || {}}
         supplierLegalNames={globalDict.supplierLegalNames || {}}
         onAdminSuccess={handleAdminLoginSuccess}
         onFacilitatorSuccess={(matchedKey, matchedRegion) => {
@@ -6738,7 +6740,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           facilitatorCodes={globalDict.facilitatorCodes || {}}
           facilitatorRegions={globalDict.facilitatorRegions || {}}
           suppliers={globalDict.suppliers || []}
-          supplierCodes={globalDict.supplierAssignedCodes || {}}
+          supplierCodes={globalDict.supplierCodes || {}}
+          supplierAssignedCodes={globalDict.supplierAssignedCodes || {}}
           supplierLegalNames={globalDict.supplierLegalNames || {}}
           onCancel={() => setIsSwitchLoginOpen(false)}
           onAdminSuccess={handleAdminLoginSuccess}

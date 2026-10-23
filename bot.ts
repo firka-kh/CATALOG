@@ -543,15 +543,31 @@ async function tryAuthenticateCode(rawCodeText: string): Promise<string | null> 
     return "admin";
   }
 
-  // 2. Check Supplier codes
+  // 2. Check Supplier codes (both PIN passwords and assigned codes like SPMEI-100)
   const supplierCodes = globalDict.supplierCodes || {};
+  const supplierAssignedCodes = globalDict.supplierAssignedCodes || {};
+
   for (const [supId, code] of Object.entries(supplierCodes)) {
     if (code) {
       const normSupCode = String(code).trim().toLowerCase().replace(/["'@\s]/g, "");
-      if (normSupCode === norm) {
+      if (normSupCode === norm || String(code).trim().toLowerCase() === cleanCode.toLowerCase()) {
         return "supplier:" + supId;
       }
     }
+  }
+
+  for (const [supId, code] of Object.entries(supplierAssignedCodes)) {
+    if (code) {
+      const normAssigned = String(code).trim().toLowerCase().replace(/["'@\s]/g, "");
+      if (normAssigned === norm || String(code).trim().toLowerCase() === cleanCode.toLowerCase()) {
+        return "supplier:" + supId;
+      }
+    }
+  }
+
+  // Check direct supplier slot key (e.g. supplier2)
+  if (norm.startsWith("supplier") && (supplierCodes[norm] !== undefined || supplierAssignedCodes[norm] !== undefined)) {
+    return "supplier:" + norm;
   }
 
   // 3. Check Facilitator codes

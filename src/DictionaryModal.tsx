@@ -91,6 +91,8 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
   const [editSupplierRegions, setEditSupplierRegions] = useState<string[]>([]);
   const [editSupplierDistricts, setEditSupplierDistricts] = useState<Record<string, string[]>>({});
   const [editSupplierPin, setEditSupplierPin] = useState('');
+  const [copiedPortalKey, setCopiedPortalKey] = useState<string | null>(null);
+  const [savedPinKey, setSavedPinKey] = useState<string | null>(null);
 
   const [deleteConfirmSupplier, setDeleteConfirmSupplier] = useState<{
     slotKey: string;
@@ -511,7 +513,6 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
   const handleSaveEditSupplier = (slotKey: string) => {
     const legalName = editSupplierLegalName.trim();
     if (!legalName) {
-      alert("Юридическое название не может быть пустым");
       return;
     }
 
@@ -549,7 +550,7 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
         nextCodes[slotKey] = editSupplierPin.trim();
       }
 
-      return {
+      const updated = {
         ...prev,
         supplierLegalNames: nextLegalNames,
         supplierPhones: nextPhones,
@@ -559,6 +560,9 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
         supplierDistricts: nextDistricts,
         supplierCodes: nextCodes
       };
+
+      onSave(updated, false);
+      return updated;
     });
 
     setEditingSupplierKey(null);
@@ -1218,7 +1222,7 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                                   </span>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                   <div>
                                     <label className="block text-[10px] font-bold text-slate-600 mb-1 uppercase tracking-wider">
                                       Юридическое (реальное) название *
@@ -1239,7 +1243,21 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                                       type="text"
                                       value={editSupplierPhone}
                                       onChange={e => setEditSupplierPhone(e.target.value)}
+                                      placeholder="+7 (999) 000-00-00"
                                       className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-indigo-700 mb-1 uppercase tracking-wider flex items-center gap-1">
+                                      <Key className="w-3 h-3 text-indigo-500" />
+                                      Секретный PIN (пароль) *
+                                    </label>
+                                    <input 
+                                      type="text"
+                                      value={editSupplierPin}
+                                      onChange={e => setEditSupplierPin(e.target.value)}
+                                      placeholder="Например: 0121026@"
+                                      className="w-full border border-indigo-300 rounded-md px-3 py-1.5 text-sm bg-indigo-50/40 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold text-indigo-800"
                                     />
                                   </div>
                                 </div>
@@ -1453,17 +1471,26 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                                       type="button"
                                       onClick={() => {
                                         navigator.clipboard.writeText(portalUrl);
-                                        alert("Ссылка на портал скопирована!");
+                                        setCopiedPortalKey(slotKey);
+                                        setTimeout(() => setCopiedPortalKey(null), 2000);
                                       }}
-                                      className="px-2.5 py-1 bg-white border border-slate-300 shadow-2xs rounded text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors whitespace-nowrap cursor-pointer"
+                                      className="px-2.5 py-1 bg-white border border-slate-300 shadow-2xs rounded text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1"
                                       title="Скопировать ссылку"
                                     >
-                                      Копировать
+                                      {copiedPortalKey === slotKey ? (
+                                        <>
+                                          <Check className="w-3 h-3 text-emerald-600" />
+                                          <span className="text-emerald-700">Скопировано!</span>
+                                        </>
+                                      ) : (
+                                        "Копировать"
+                                      )}
                                     </button>
                                   </div>
 
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-28">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider whitespace-nowrap w-28 flex items-center gap-1">
+                                      <Key className="w-3 h-3 text-indigo-500" />
                                       Секретный PIN:
                                     </span>
                                     <input 
@@ -1474,12 +1501,33 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                                         nextCodes[slotKey] = e.target.value;
                                         setLocalData((prev: any) => ({ ...prev, supplierCodes: nextCodes }));
                                       }}
-                                      placeholder="Код для входа поставщика..."
-                                      className="w-40 text-xs bg-white border border-slate-300 rounded px-2 py-1 text-slate-900 outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                                      onBlur={() => {
+                                        const nextCodes = { ...(localData.supplierCodes || {}) };
+                                        onSave({ ...localData, supplierCodes: nextCodes }, false);
+                                        setSavedPinKey(slotKey);
+                                        setTimeout(() => setSavedPinKey(null), 2500);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          const nextCodes = { ...(localData.supplierCodes || {}) };
+                                          onSave({ ...localData, supplierCodes: nextCodes }, false);
+                                          setSavedPinKey(slotKey);
+                                          setTimeout(() => setSavedPinKey(null), 2500);
+                                        }
+                                      }}
+                                      placeholder="Код для входа (например: 0121026@)..."
+                                      className="w-48 text-xs bg-white border border-slate-300 rounded px-2.5 py-1 text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 font-mono font-bold text-indigo-800 shadow-2xs"
                                     />
-                                    <span className="text-[11px] text-slate-400">
-                                      (Используется для авторизации поставщика на портале)
-                                    </span>
+                                    {savedPinKey === slotKey ? (
+                                      <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 font-bold">
+                                        <Check className="w-3.5 h-3.5" />
+                                        Сохранено!
+                                      </span>
+                                    ) : (
+                                      <span className="text-[11px] text-slate-400">
+                                        (Пароль для входа в веб-приложение, на портал и в бот)
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -1847,14 +1895,23 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                                      className="flex-1 text-xs bg-white border border-slate-200 rounded px-2.5 py-1 text-slate-600 outline-none select-all"
                                    />
                                    <button
+                                     type="button"
                                      onClick={() => {
                                        navigator.clipboard.writeText(portalUrl);
-                                       alert("Ссылка на портал фасилитатора скопирована!");
+                                       setCopiedPortalKey(fKey);
+                                       setTimeout(() => setCopiedPortalKey(null), 2000);
                                      }}
-                                     className="px-2.5 py-1 bg-white border border-slate-200 shadow-sm rounded text-xs font-semibold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors whitespace-nowrap"
+                                     className="px-2.5 py-1 bg-white border border-slate-200 shadow-sm rounded text-xs font-semibold text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors whitespace-nowrap flex items-center gap-1 cursor-pointer"
                                      title="Скопировать ссылку"
                                    >
-                                     Копировать
+                                     {copiedPortalKey === fKey ? (
+                                       <>
+                                         <Check className="w-3 h-3 text-emerald-600" />
+                                         <span className="text-emerald-700">Скопировано!</span>
+                                       </>
+                                     ) : (
+                                       "Копировать"
+                                     )}
                                    </button>
                                  </div>
                                </div>

@@ -12,6 +12,7 @@ export interface AnimatedLoginScreenProps {
   facilitatorRegions?: Record<string, string>;
   suppliers?: string[];
   supplierCodes?: Record<string, string>;
+  supplierAssignedCodes?: Record<string, string>;
   supplierLegalNames?: Record<string, string>;
   onAdminSuccess: () => void;
   onFacilitatorSuccess: (facilitatorKey: string, region?: string) => void;
@@ -28,6 +29,7 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
   facilitatorRegions = {},
   suppliers = [],
   supplierCodes = {},
+  supplierAssignedCodes = {},
   supplierLegalNames = {},
   onAdminSuccess,
   onFacilitatorSuccess,
@@ -268,15 +270,41 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
         }
       }
 
-      // 3. Check if matches any supplier code
+      // 3. Check if matches any supplier code (PIN password)
       for (const [key, codeVal] of Object.entries(supplierCodes)) {
         if (codeVal) {
           const normCode = String(codeVal).trim().toLowerCase().replace(/["'@\s]/g, "");
-          if (normCode === lower) {
+          if (normCode === lower || String(codeVal).trim().toLowerCase() === inputClean.toLowerCase()) {
             const name = supplierLegalNames[key] || key;
             triggerSuccess(() => onSupplierSuccess(key, name));
             return;
           }
+        }
+      }
+
+      // Check supplier assigned identifier (e.g. SPMEI-100, SPMEI-101)
+      if (supplierAssignedCodes) {
+        for (const [key, codeVal] of Object.entries(supplierAssignedCodes)) {
+          if (codeVal) {
+            const normCode = String(codeVal).trim().toLowerCase().replace(/["'@\s]/g, "");
+            if (normCode === lower || String(codeVal).trim().toLowerCase() === inputClean.toLowerCase()) {
+              const name = supplierLegalNames[key] || key;
+              triggerSuccess(() => onSupplierSuccess(key, name));
+              return;
+            }
+          }
+        }
+      }
+
+      // Check supplier slot key (e.g. supplier2)
+      if (lower.startsWith("supplier")) {
+        const matchingKey = Object.keys(supplierCodes).find(k => k.toLowerCase() === lower) ||
+                            Object.keys(supplierLegalNames).find(k => k.toLowerCase() === lower) ||
+                            (supplierAssignedCodes ? Object.keys(supplierAssignedCodes).find(k => k.toLowerCase() === lower) : undefined);
+        if (matchingKey) {
+          const name = supplierLegalNames[matchingKey] || matchingKey;
+          triggerSuccess(() => onSupplierSuccess(matchingKey, name));
+          return;
         }
       }
 

@@ -104,8 +104,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   // Add / Edit Product Modal State
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
-  const [isCustomSphere, setIsCustomSphere] = useState(false);
   const [isCustomUnit, setIsCustomUnit] = useState(false);
+  const [productFormError, setProductFormError] = useState<string | null>(null);
+  const [productSuccessMessage, setProductSuccessMessage] = useState<string | null>(null);
   const [showOnlyNew, setShowOnlyNew] = useState(false);
   const [productForm, setProductForm] = useState({
     name: '',
@@ -152,10 +153,20 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         const data = docSnap.data();
         setGlobalDict({
           regions: data.regions || [],
+          districtsByRegion: data.districtsByRegion || {},
           spheres: data.spheres || [],
           suppliers: data.suppliers || [],
           pricingRules: data.pricingRules || {},
-          supplierCodes: data.supplierCodes || {}
+          supplierCodes: data.supplierCodes || {},
+          supplierSpheres: data.supplierSpheres || {},
+          supplierLegalNames: data.supplierLegalNames || {},
+          supplierPhones: data.supplierPhones || {},
+          supplierAllRegions: data.supplierAllRegions || {},
+          supplierRegions: data.supplierRegions || {},
+          supplierDistricts: data.supplierDistricts || {},
+          supplierAssignedCodes: data.supplierAssignedCodes || {},
+          adminPassword: data.adminPassword,
+          logisticsCosts: data.logisticsCosts || {},
         });
       }
       setIsConfigLoaded(true);
@@ -200,7 +211,47 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
   const currentSupplierLabel = getSupplierLabel(supplierId);
 
+  // Resolve slotKey (e.g. 'supplier2') even if supplierId is an assigned code (e.g. 'SPMEI-100')
+  const resolveSlotKey = useCallback(() => {
+    if (globalDict.supplierSpheres && globalDict.supplierSpheres[supplierId]) {
+      return supplierId;
+    }
+    if (globalDict.supplierAssignedCodes) {
+      for (const [k, v] of Object.entries(globalDict.supplierAssignedCodes)) {
+        if (typeof v === 'string' && v.toLowerCase() === supplierId.toLowerCase()) {
+          return k;
+        }
+      }
+    }
+    return supplierId;
+  }, [globalDict.supplierSpheres, globalDict.supplierAssignedCodes, supplierId]);
+
+  // Spheres strictly configured for this supplier by administrator in dictionaries
+  const supplierAllowedSpheres = useMemo(() => {
+    const slotKey = resolveSlotKey();
+    const assigned = globalDict.supplierSpheres?.[slotKey];
+    if (Array.isArray(assigned) && assigned.length > 0) {
+      return assigned.filter(Boolean);
+    }
+    // If administrator hasn't assigned specific spheres yet, fallback to system spheres
+    return (globalDict.spheres || []).filter(Boolean);
+  }, [globalDict.supplierSpheres, globalDict.spheres, resolveSlotKey]);
+
+  // Spheres available in product modal (strictly supplier's allowed spheres, plus existing product spheres if editing)
+  const modalSpheresList = useMemo(() => {
+    const set = new Set<string>(supplierAllowedSpheres);
+    if (editingProductId && productForm.spheres) {
+      productForm.spheres.forEach(s => {
+        if (s) set.add(s);
+      });
+    }
+    return Array.from(set).filter(Boolean);
+  }, [supplierAllowedSpheres, editingProductId, productForm.spheres]);
+
   const uniqueSpheres = useMemo(() => {
+    if (supplierAllowedSpheres.length > 0) {
+      return supplierAllowedSpheres;
+    }
     const s = new Set<string>();
     globalDict.spheres.forEach((sph) => s.add(sph));
     products.forEach((p) => {
@@ -208,7 +259,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       else if (p.sphere) s.add(p.sphere);
     });
     return Array.from(s).filter(Boolean);
-  }, [products, globalDict.spheres]);
+  }, [supplierAllowedSpheres, products, globalDict.spheres]);
 
   const newProductsCount = products.filter(
     (p) => p.createdAt && Date.now() - p.createdAt < 24 * 60 * 60 * 1000,
@@ -628,18 +679,22 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   // Open modal for manual product creation
   const handleOpenAddProduct = () => {
     setEditingProductId(null);
-    setIsCustomSphere(false);
     setIsCustomUnit(false);
+    setProductFormError(null);
 
     const initialRegPrices: Record<string, string> = {};
     globalDict.regions.forEach(r => {
       initialRegPrices[r] = '';
     });
 
+    const defaultSphere = (selectedSphere && supplierAllowedSpheres.includes(selectedSphere))
+      ? [selectedSphere]
+      : (supplierAllowedSpheres.length > 0 ? [supplierAllowedSpheres[0]] : []);
+
     setProductForm({
       name: '',
       code: '',
-      spheres: selectedSphere ? [selectedSphere] : (globalDict.spheres.length > 0 ? [globalDict.spheres[0]] : []),
+      spheres: defaultSphere,
       description: '',
       unit: 'шт.',
       basePrice: '',
@@ -653,7 +708,7 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   // Open modal for editing existing product
   const handleOpenEditProduct = (p: Product) => {
     setEditingProductId(p.id);
-    setIsCustomSphere(false);
+    setProductFormError(null);
     const standardUnits = ['шт.', 'кг', 'г', 'т', 'метр', 'мм', 'см', 'литр', 'мл', 'упак.', 'короб.', 'компл.'];
     const curUnit = p.unit || 'шт.';
     setIsCustomUnit(!standardUnits.includes(curUnit));
@@ -856,14 +911,15 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const handleSubmitProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!productForm.name.trim()) {
-      alert("Пожалуйста, введите название товара.");
+      setProductFormError("Пожалуйста, введите название товара.");
       return;
     }
     if (!productForm.spheres || productForm.spheres.length === 0) {
-      alert("Пожалуйста, выберите хотя бы одну сферу.");
+      setProductFormError("Пожалуйста, выберите сферу деятельности из разрешённого списка.");
       return;
     }
 
+    setProductFormError(null);
     setIsSaving(true);
     try {
       const basePriceNum = parseFloat(productForm.basePrice) || 0;
@@ -954,12 +1010,14 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
       await setDoc(doc(db, "products", targetId), productPayload);
 
+      const isEdit = Boolean(editingProductId);
       setIsProductModalOpen(false);
       setEditingProductId(null);
-      alert(editingProductId ? "Товар успешно обновлен!" : "Товар успешно добавлен!");
+      setProductSuccessMessage(isEdit ? "Товар успешно обновлен!" : "Товар успешно добавлен!");
+      setTimeout(() => setProductSuccessMessage(null), 3000);
     } catch (err: any) {
       console.error(err);
-      alert("Ошибка при сохранении: " + err.message);
+      setProductFormError("Ошибка при сохранении: " + (err?.message || "Неизвестная ошибка"));
     } finally {
       setIsSaving(false);
     }
@@ -1562,55 +1620,55 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               {/* Spheres */}
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between items-center">
-                  <label className="text-sm font-semibold text-slate-700">
-                    Сфера *
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomSphere(!isCustomSphere)}
-                    className="text-xs text-indigo-600 hover:underline"
-                  >
-                    {isCustomSphere ? "Выбрать из списка" : "+ Добавить"}
-                  </button>
-                </div>
-                {isCustomSphere ? (
-                  <input
-                    type="text"
-                    value={productForm.spheres.join(", ")}
-                    onChange={(e) =>
-                      setProductForm((prev) => ({
-                        ...prev,
-                        spheres: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
-                      }))
-                    }
-                    className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    required
-                    placeholder="Введите сферы через запятую..."
-                  />
-                ) : (
-                  <div className="flex flex-col gap-2 max-h-40 overflow-y-auto border border-slate-300 rounded-md p-2 bg-white shadow-sm">
-                    {uniqueSpheres.map((s) => (
-                      <label key={s} className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer hover:bg-slate-50 p-1 rounded">
-                        <input
-                          type="checkbox"
-                          checked={productForm.spheres.includes(s)}
-                          onChange={(e) => {
-                            const checked = e.target.checked;
-                            setProductForm((prev) => {
-                              const newSpheres = checked
-                                ? [...prev.spheres, s]
-                                : prev.spheres.filter((sphere) => sphere !== s);
-                              return { ...prev, spheres: newSpheres };
-                            });
-                          }}
-                          className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
-                        />
-                        {s}
-                      </label>
-                    ))}
-                    {uniqueSpheres.length === 0 && (
-                      <span className="text-slate-400 p-2 text-xs text-center">Нет доступных сфер</span>
+                  <label className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                    <span>Сфера деятельности *</span>
+                    {supplierAllowedSpheres.length > 0 && (
+                      <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                        Назначено администратором: {supplierAllowedSpheres.length}
+                      </span>
                     )}
+                  </label>
+                </div>
+
+                {modalSpheresList.length === 0 ? (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>
+                      Администратор ещё не закрепил сферы деятельности за вашей организацией в справочнике системы. Обратитесь к администратору для назначения сфер.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto border border-slate-300 rounded-md p-2 bg-white shadow-sm">
+                    {modalSpheresList.map((s) => {
+                      const isChecked = productForm.spheres.includes(s);
+                      return (
+                        <label
+                          key={s}
+                          className={`flex items-center gap-2 text-sm p-1.5 rounded cursor-pointer transition-colors ${
+                            isChecked
+                              ? "bg-indigo-50 text-indigo-900 font-semibold"
+                              : "text-slate-700 hover:bg-slate-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setProductForm((prev) => {
+                                const newSpheres = checked
+                                  ? [...prev.spheres, s]
+                                  : prev.spheres.filter((sphere) => sphere !== s);
+                                return { ...prev, spheres: newSpheres };
+                              });
+                              if (productFormError) setProductFormError(null);
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                          />
+                          <span className="truncate">{s}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1855,6 +1913,13 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 </div>
               </div>
 
+              {productFormError && (
+                <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-xs font-semibold">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{productFormError}</span>
+                </div>
+              )}
+
               <div className="mt-4 flex gap-3 justify-end pt-4 border-t border-slate-100">
                 <button
                   type="button"
@@ -1876,6 +1941,14 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Product Success Toast */}
+      {productSuccessMessage && (
+        <div className="fixed bottom-6 right-6 z-[120] bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+          <Check className="w-4 h-4" />
+          <span>{productSuccessMessage}</span>
         </div>
       )}
 

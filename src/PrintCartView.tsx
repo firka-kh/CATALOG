@@ -217,20 +217,27 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
     (matchedFacKey ? facilitatorEmails?.[matchedFacKey] : undefined) ||
     "";
 
-  // Filter cart items by selected sphere if provided
-  let filteredCart = cart;
-  if (selectedSphere && !selectedSphere.toLowerCase().includes("все") && selectedSphere.trim() !== "") {
-    filteredCart = cart.filter(item => {
-      const prodSpheres = item.product.spheres && item.product.spheres.length > 0 
-        ? item.product.spheres 
-        : [item.product.sphere || "Общее"];
-      return prodSpheres.some(s => 
-        s === selectedSphere || 
-        s.includes(selectedSphere) || 
-        selectedSphere.includes(s)
-      );
-    });
-  }
+  // Cart items to display in coupon (always include all items in the coupon/cart)
+  const cartItems = (cart && Array.isArray(cart)) ? cart : [];
+
+  const getItemPrice = (item: CartItem): number => {
+    if (typeof item.selectedPrice === 'number' && !isNaN(item.selectedPrice) && item.selectedPrice !== Infinity && item.selectedPrice > 0) {
+      return item.selectedPrice;
+    }
+    const parsed = Number(item.selectedPrice);
+    if (!isNaN(parsed) && parsed !== Infinity && parsed > 0) {
+      return parsed;
+    }
+    const supp = item.selectedSupplier || 'supplier2';
+    const regionPrice = item.product?.prices?.[supp]?.[selectedRegion];
+    if (typeof regionPrice === 'number' && !isNaN(regionPrice) && regionPrice > 0) {
+      return regionPrice;
+    }
+    if (typeof item.product?.price === 'number' && !isNaN(item.product.price) && item.product.price > 0) {
+      return item.product.price;
+    }
+    return 0;
+  };
 
   const getSupplierName = (supp?: 'supplier1' | 'supplier2' | 'supplier3' | 'supplier4' | string) => {
     if (!supp || supp === 'supplier1') return 'Логистика';
@@ -248,13 +255,14 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
     return formatSupplierCode(supp, assignedCode || listEntry, idx >= 0 ? idx : undefined);
   };
 
-  const suppliersInCart = Array.from(new Set(filteredCart.map(item => item.selectedSupplier || 'supplier2'))) as ('supplier1' | 'supplier2' | 'supplier3' | 'supplier4')[];
+  const suppliersInCart = Array.from(
+    new Set(cartItems.map(item => item.selectedSupplier || 'supplier2'))
+  ) as ('supplier1' | 'supplier2' | 'supplier3' | 'supplier4')[];
 
-  const grandItemsTotal = filteredCart.reduce((sum, item) => {
-    const p = (!item.selectedPrice || item.selectedPrice === Infinity) ? 0 : Number(item.selectedPrice);
-    return sum + p * item.quantity;
+  const grandItemsTotal = cartItems.reduce((sum, item) => {
+    return sum + getItemPrice(item) * (item.quantity || 1);
   }, 0);
-  const grandTotal = grandItemsTotal + (filteredCart.length > 0 ? logisticsCost : 0);
+  const grandTotal = grandItemsTotal + (cartItems.length > 0 ? (logisticsCost || 0) : 0);
 
   return (
     <div ref={ref} className="hidden print:block bg-white text-black text-sm">
@@ -447,7 +455,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                     {suppliersInCart.map((sKey) => {
                       const sName = getSupplierName(sKey);
                       const sPhone = supplierPhones?.[sKey];
-                      const sItems = filteredCart.filter(it => (it.selectedSupplier || 'supplier2') === sKey);
+                      const sItems = cartItems.filter(it => (it.selectedSupplier || 'supplier2') === sKey);
                       return (
                         <div key={sKey} className="flex items-center justify-between py-1 px-1.5 bg-white rounded border border-slate-200 text-xs">
                           <span className="font-mono font-bold text-slate-900">{sName}</span>
@@ -472,11 +480,10 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
         {(() => {
           let runningItemIndex = 0;
           return suppliersInCart.map((supplierKey, sIndex) => {
-            const supplierItems = filteredCart.filter(item => (item.selectedSupplier || 'supplier2') === supplierKey);
+            const supplierItems = cartItems.filter(item => (item.selectedSupplier || 'supplier2') === supplierKey);
             const supplierName = getSupplierName(supplierKey);
             const supplierSubtotal = supplierItems.reduce((sum, item) => {
-              const p = (!item.selectedPrice || item.selectedPrice === Infinity) ? 0 : Number(item.selectedPrice);
-              return sum + p * item.quantity;
+              return sum + getItemPrice(item) * (item.quantity || 1);
             }, 0);
 
             const isNewPage = sIndex > 0;
@@ -526,6 +533,8 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                     {supplierItems.map((item) => {
                       runningItemIndex++;
                       const currentItemNum = runningItemIndex;
+                      const unitPrice = getItemPrice(item);
+                      const rowTotal = unitPrice * (item.quantity || 1);
 
                       let rawImg = item.product.imageBase64 || (item.product as any).imageUrl || (item.product as any).image || "";
                       let mime = item.product.mimeType;
@@ -570,37 +579,36 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                             )}
                           </td>
                           <td className="py-2 px-3 text-right font-mono text-slate-800 border-r border-slate-200">
-                            {(!item.selectedPrice || item.selectedPrice === Infinity) ? (
+                            {unitPrice <= 0 ? (
                               <span className="text-rose-600 font-semibold">НЕТ ЦЕНЫ</span>
                             ) : (
-                              `${Number(item.selectedPrice).toFixed(2)} с.`
+                              `${unitPrice.toFixed(2)} с.`
                             )}
                           </td>
                           <td className="py-2 px-2 text-center font-mono text-slate-800 border-r border-slate-200">
                             {item.quantity} {item.product.unit || 'шт.'}
                           </td>
                           <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                            {(!item.selectedPrice || item.selectedPrice === Infinity) ? (
+                            {unitPrice <= 0 ? (
                               <span className="text-rose-600 font-semibold">—</span>
                             ) : (
-                              `${(Number(item.selectedPrice) * item.quantity).toFixed(2)} с.`
+                              `${rowTotal.toFixed(2)} с.`
                             )}
                           </td>
                         </tr>
                       );
                     })}
-
-                    {suppliersInCart.length > 1 && (
-                      <tr className="bg-slate-50/80 font-semibold text-xs border-t border-slate-300">
-                        <td colSpan={6} className="py-2 px-3 text-right text-slate-600">
-                          Подытог ({supplierName}):
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                          {supplierSubtotal.toFixed(2)} с.
-                        </td>
-                      </tr>
-                    )}
                   </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-100 font-bold text-xs border-t-2 border-slate-300">
+                      <td colSpan={6} className="py-2 px-3 text-right text-slate-700 uppercase tracking-wide">
+                        {suppliersInCart.length > 1 ? `Подытог (${supplierName}):` : 'Итого по товарам:'}
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                        {supplierSubtotal.toFixed(2)} с.
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             );
@@ -608,55 +616,96 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
         })()}
 
         {/* Clean Summary Totals */}
-        <div className="border border-slate-300 rounded-lg p-3 bg-slate-50/40 break-inside-avoid mb-6 max-w-sm ml-auto">
-          <div className="space-y-1 text-xs">
+        <div className="border border-slate-300 rounded-lg p-3.5 bg-slate-50/60 break-inside-avoid mb-6 max-w-sm ml-auto">
+          <div className="space-y-1.5 text-xs">
+            <div className="flex justify-between items-center text-slate-700">
+              <span className="font-medium">Сумма товаров:</span>
+              <span className="font-mono font-bold text-slate-900">{grandItemsTotal.toFixed(2)} с.</span>
+            </div>
             {logisticsCost > 0 && (
-              <div className="flex justify-between items-center text-slate-600 pb-1 border-b border-slate-200">
-                <span>Логистика ({selectedRegion || "Все регионы"}):</span>
-                <span className="font-mono font-semibold">{logisticsCost.toFixed(2)} с.</span>
+              <div className="flex justify-between items-center text-slate-700 pb-1.5 border-b border-slate-200">
+                <span className="font-medium">Логистика ({selectedRegion || "Все регионы"}):</span>
+                <span className="font-mono font-bold text-slate-900">{logisticsCost.toFixed(2)} с.</span>
               </div>
             )}
-            <div className="flex justify-between items-center text-sm font-bold text-slate-900 pt-0.5">
-              <span>ИТОГО К ОПЛАТЕ:</span>
-              <span className="font-mono text-base">{grandTotal.toFixed(2)} с.</span>
+            <div className="flex justify-between items-center text-sm font-bold text-slate-900 pt-1.5 border-t border-slate-300">
+              <span className="uppercase tracking-wider">ИТОГО К ОПЛАТЕ:</span>
+              <span className="font-mono text-base font-extrabold text-blue-700">{grandTotal.toFixed(2)} с.</span>
             </div>
           </div>
         </div>
 
         {/* Physical Signatures */}
-        <div className="mt-4 grid grid-cols-3 gap-6 pt-4 border-t border-slate-300 break-inside-avoid">
+        <div className="mt-5 grid grid-cols-3 gap-6 pt-5 border-t border-slate-200 break-inside-avoid">
           {/* 1. Бенефициар */}
-          <div className="text-center">
-            <div className="w-full max-w-[200px] mx-auto border-b border-slate-400 mb-2 min-h-[28px]" />
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-800">
-              ПОДПИСЬ БЕНЕФИЦИАРА
+          <div className="text-center flex flex-col items-center">
+            <div className="w-full max-w-[200px] flex flex-col items-center">
+              <span className="text-[11px] text-slate-300 font-normal tracking-wide select-none" style={{ color: '#cbd5e1' }}>
+                подпись
+              </span>
+              <div className="w-full border-b-2 border-blue-400 mb-2 mt-0.5" style={{ borderColor: '#60a5fa' }} />
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-              {clientName ? `(${beneficiaryId ? `ID: ${beneficiaryId} • ` : ""}${clientName})` : "____________________"}
+            <div className="text-[12px] font-bold uppercase tracking-wider text-slate-900">
+              БЕНЕФИЦИАР
+            </div>
+            <div className="text-[11px] text-slate-700 font-medium mt-0.5 min-h-[16px]">
+              {beneficiaryId ? `ID: ${beneficiaryId}` : ""} {beneficiaryId && clientName ? "• " : ""}{clientName || ""}
+            </div>
+            <div className="mt-2.5">
+              <span
+                className="inline-block text-blue-600 text-xs font-bold tracking-wider uppercase"
+                style={{ color: '#2563eb' }}
+              >
+                ПРИНЯЛ
+              </span>
             </div>
           </div>
 
-          {/* 2. Фасилитатор */}
-          <div className="text-center">
-            <div className="w-full max-w-[200px] mx-auto border-b border-slate-400 mb-2 min-h-[28px]" />
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-800">
-              ПОДПИСЬ ФАСИЛИТАТОРА
+          {/* 2. ГРП МТМЗН РТ */}
+          <div className="text-center flex flex-col items-center">
+            <div className="w-full max-w-[200px] flex flex-col items-center">
+              <span className="text-[11px] text-slate-300 font-normal tracking-wide select-none" style={{ color: '#cbd5e1' }}>
+                подпись
+              </span>
+              <div className="w-full border-b-2 border-blue-400 mb-2 mt-0.5" style={{ borderColor: '#60a5fa' }} />
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-              {resolvedFacRep ? `(${resolvedFacRep})` : resolvedFacLegalName ? `(${resolvedFacLegalName})` : specialistName ? `(${specialistName})` : "____________________"}
+            <div className="text-[12px] font-bold uppercase tracking-wider text-slate-900">
+              ГРП МТМЗН РТ
+            </div>
+            <div className="min-h-[16px] mt-0.5" />
+            <div className="mt-2.5">
+              <span
+                className="inline-block text-blue-600 text-xs font-bold tracking-wider uppercase"
+                style={{ color: '#2563eb' }}
+              >
+                ОДОБРИЛ
+              </span>
             </div>
           </div>
 
           {/* 3. Поставщик */}
-          <div className="text-center">
-            <div className="w-full max-w-[200px] mx-auto border-b border-slate-400 mb-2 min-h-[28px]" />
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-800">
-              {suppliersInCart.length > 1 ? "ПОДПИСИ ПОСТАВЩИКОВ" : "ПОДПИСЬ ПОСТАВЩИКА"}
+          <div className="text-center flex flex-col items-center">
+            <div className="w-full max-w-[200px] flex flex-col items-center">
+              <span className="text-[11px] text-slate-300 font-normal tracking-wide select-none" style={{ color: '#cbd5e1' }}>
+                подпись
+              </span>
+              <div className="w-full border-b-2 border-blue-400 mb-2 mt-0.5" style={{ borderColor: '#60a5fa' }} />
             </div>
-            <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+            <div className="text-[12px] font-bold uppercase tracking-wider text-slate-900">
+              ПОСТАВЩИК
+            </div>
+            <div className="text-[11px] text-slate-700 font-medium mt-0.5 min-h-[16px] truncate max-w-[200px]">
               {suppliersInCart.length > 0
-                ? `(${suppliersInCart.map(s => getSupplierName(s)).join(', ')})`
-                : "____________________"}
+                ? suppliersInCart.map(s => getSupplierName(s)).join(', ')
+                : "SPMEI-100"}
+            </div>
+            <div className="mt-2.5">
+              <span
+                className="inline-block text-blue-600 text-xs font-bold tracking-wider uppercase"
+                style={{ color: '#2563eb' }}
+              >
+                СДАЛ
+              </span>
             </div>
           </div>
         </div>

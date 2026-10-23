@@ -780,6 +780,35 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     return formatSupplierCode(sup, assignedCode || listEntry, idx >= 0 ? idx : undefined);
   };
 
+  const getSupplierSpheres = (
+    sup: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
+  ): string[] => {
+    if (globalDict.supplierSpheres?.[sup]?.length) {
+      return globalDict.supplierSpheres[sup];
+    }
+    // Check if sup matches an assigned code
+    if (globalDict.supplierAssignedCodes) {
+      for (const [k, v] of Object.entries(globalDict.supplierAssignedCodes)) {
+        if (v === sup && globalDict.supplierSpheres?.[k]?.length) {
+          return globalDict.supplierSpheres[k];
+        }
+      }
+    }
+    return [];
+  };
+
+  const getSupplierLabelWithSpheres = (
+    sup: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
+  ) => {
+    const baseLabel = getSupplierLabel(sup);
+    if (sup === "supplier1") return baseLabel;
+    const spheres = getSupplierSpheres(sup);
+    if (spheres.length > 0) {
+      return `${baseLabel} (${spheres.join(", ")})`;
+    }
+    return baseLabel;
+  };
+
   const getSupplierFormTabName = (
     sup: "supplier1" | "supplier2" | "supplier3" | "supplier4" | string,
   ) => {
@@ -3781,13 +3810,13 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <select
                   value={selectedSupplier}
                   onChange={(e) => setSelectedSupplier(e.target.value)}
-                  className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-52 font-semibold text-indigo-700"
+                  className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-auto min-w-[13rem] max-w-[26rem] font-semibold text-indigo-700 truncate"
                   title="Выберите поставщика или весь список"
                 >
                   <option value="all">Все поставщики (весь каталог)</option>
                   {availableSupplierKeys.map((supKey) => (
                     <option key={supKey} value={supKey}>
-                      {getSupplierLabel(supKey)}
+                      {getSupplierLabelWithSpheres(supKey)}
                     </option>
                   ))}
                 </select>
@@ -5167,7 +5196,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           <option value="">Все поставщики</option>
                           {availableSupplierKeys.map((supKey) => (
                             <option key={supKey} value={supKey}>
-                              {getSupplierLabel(supKey)}
+                              {getSupplierLabelWithSpheres(supKey)}
                             </option>
                           ))}
                         </select>

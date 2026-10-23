@@ -10,11 +10,33 @@ import { searchImages } from "./src/lib/imageSearch.ts";
 
 dotenv.config();
 
-process.on("uncaughtException", (err) => {
+process.on("uncaughtException", (err: any) => {
+  const msg = err?.message || String(err);
+  if (
+    msg.includes("ECONNRESET") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ESOCKETTIMEDOUT") ||
+    msg.includes("EFATAL") ||
+    msg.includes("EAI_AGAIN")
+  ) {
+    console.warn("Transient network connection reset (recovering):", msg);
+    return;
+  }
   console.error("Uncaught Exception:", err);
 });
 
-process.on("unhandledRejection", (reason, promise) => {
+process.on("unhandledRejection", (reason: any, promise) => {
+  const msg = reason?.message || String(reason);
+  if (
+    msg.includes("ECONNRESET") ||
+    msg.includes("ETIMEDOUT") ||
+    msg.includes("ESOCKETTIMEDOUT") ||
+    msg.includes("EFATAL") ||
+    msg.includes("EAI_AGAIN")
+  ) {
+    console.warn("Transient network rejection (recovering):", msg);
+    return;
+  }
   console.error("Unhandled Rejection at:", promise, "reason:", reason);
 });
 

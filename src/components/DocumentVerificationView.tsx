@@ -489,10 +489,10 @@ export const DocumentVerificationView: React.FC<Props> = ({
                 <div className="w-28 h-28 rounded-full border-2 border-indigo-400/80 flex flex-col items-center justify-center p-1">
                   <Award className="w-5 h-5 text-indigo-400 mb-0.5" />
                   <span className="text-[8px] font-black uppercase tracking-wider leading-tight text-indigo-200">
-                    ГОСУДАРСТВЕННЫЙ
+                    ЭЛЕКТРОННЫЙ КОНТРОЛЬ
                   </span>
-                  <span className="text-[7px] font-bold uppercase tracking-tight text-indigo-300">
-                    ЭЛЕКТРОННЫЙ РЕЕСТР
+                  <span className="text-[7.5px] font-bold uppercase tracking-tight text-indigo-300">
+                    ГРП МТМЗН
                   </span>
                   <span className="text-[7px] font-mono text-emerald-400 font-black mt-0.5">
                     ✓ ВЕРИФИЦИРОВАНО

@@ -1380,9 +1380,6 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           const raw = localStorage.getItem("spmei_pending_print_meta");
           if (raw) {
             savedMeta = JSON.parse(raw);
-            if (savedMeta?.cartPrintMetadata) {
-              setCartPrintMetadata(savedMeta.cartPrintMetadata);
-            }
             if (savedMeta?.cart && savedMeta.cart.length > 0) {
               setCart(savedMeta.cart);
             }
@@ -1397,7 +1394,32 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           console.warn("Failed to parse spmei_pending_print_meta:", e);
         }
 
-        const effectiveMeta = savedMeta?.cartPrintMetadata || cartPrintMetadata;
+        const urlP = new URLSearchParams(window.location.search);
+        const urlClientName = urlP.get("clientName");
+        const urlBeneficiaryId = urlP.get("beneficiaryId");
+        const urlQuoteId = urlP.get("quoteId");
+        const urlSpecialistName = urlP.get("specialistName");
+        const urlDistrict = urlP.get("district");
+        const urlRegion = urlP.get("region");
+        const urlSphere = urlP.get("sphere");
+        const urlFacilitatorName = urlP.get("facilitatorName");
+        const urlNote = urlP.get("note");
+
+        const effectiveMeta = {
+          ...(savedMeta?.cartPrintMetadata || {}),
+          clientName: urlClientName || savedMeta?.cartPrintMetadata?.clientName || cartPrintMetadata.clientName || "",
+          beneficiaryId: urlBeneficiaryId || savedMeta?.cartPrintMetadata?.beneficiaryId || cartPrintMetadata.beneficiaryId || "",
+          quoteId: urlQuoteId || savedMeta?.cartPrintMetadata?.quoteId || cartPrintMetadata.quoteId || "",
+          specialistName: urlSpecialistName || savedMeta?.cartPrintMetadata?.specialistName || cartPrintMetadata.specialistName || "",
+          selectedDistrict: urlDistrict || savedMeta?.selectedDistrict || savedMeta?.cartPrintMetadata?.selectedDistrict || cartPrintMetadata.selectedDistrict || "",
+          selectedRegion: urlRegion || savedMeta?.selectedRegion || savedMeta?.cartPrintMetadata?.selectedRegion || cartPrintMetadata.selectedRegion || "",
+          selectedSphere: urlSphere || savedMeta?.selectedSphere || savedMeta?.cartPrintMetadata?.selectedSphere || cartPrintMetadata.selectedSphere || "",
+          facilitatorName: urlFacilitatorName || savedMeta?.cartPrintMetadata?.facilitatorName || cartPrintMetadata.facilitatorName || "",
+          note: urlNote || savedMeta?.cartPrintMetadata?.note || cartPrintMetadata.note || "",
+        };
+
+        setCartPrintMetadata(effectiveMeta);
+
         const now = new Date();
         const datePart = now.toLocaleDateString("ru-RU", {
           day: "2-digit",
@@ -6232,13 +6254,27 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     setShowPrintWarning(false);
                     const effectiveCart = (cartPrintMetadata.cart && cartPrintMetadata.cart.length > 0) ? cartPrintMetadata.cart : cart;
                     const logCost = cartPrintMetadata.logisticsCost ?? (selectedRegion ? (globalDict.logisticsCosts?.[selectedRegion] || 0) : 0);
+                    
+                    const metaToPass = {
+                      ...cartPrintMetadata,
+                      clientName: cartPrintMetadata.clientName || restoredCartMeta?.clientName || "",
+                      beneficiaryId: cartPrintMetadata.beneficiaryId || restoredCartMeta?.beneficiaryId || "",
+                      quoteId: cartPrintMetadata.quoteId || restoredCartMeta?.quoteId || "",
+                      specialistName: cartPrintMetadata.specialistName || restoredCartMeta?.specialistName || "",
+                      selectedDistrict: cartPrintMetadata.selectedDistrict || restoredCartMeta?.district || selectedDistrict || "",
+                      selectedRegion: cartPrintMetadata.selectedRegion || selectedRegion || "",
+                      selectedSphere: cartPrintMetadata.selectedSphere || selectedSphere || "",
+                      facilitatorName: cartPrintMetadata.facilitatorName || restoredCartMeta?.facilitatorName || getFacilitatorName(),
+                      note: cartPrintMetadata.note || restoredCartMeta?.note || "",
+                    };
+
                     try {
                       localStorage.setItem("spmei_pending_print_meta", JSON.stringify({
-                        cartPrintMetadata,
+                        cartPrintMetadata: metaToPass,
                         cart: effectiveCart,
-                        selectedRegion: selectedRegion || cartPrintMetadata.selectedRegion || "",
-                        selectedDistrict: cartPrintMetadata.selectedDistrict || selectedDistrict || "",
-                        selectedSphere: cartPrintMetadata.selectedSphere || selectedSphere || "",
+                        selectedRegion: selectedRegion || metaToPass.selectedRegion || "",
+                        selectedDistrict: metaToPass.selectedDistrict || selectedDistrict || "",
+                        selectedSphere: metaToPass.selectedSphere || selectedSphere || "",
                         logisticsCost: logCost,
                         timestamp: Date.now(),
                       }));
@@ -6251,11 +6287,22 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       "print",
                       printWarningType || "catalog",
                     );
-                    if (printWarningType === "cart" && effectiveCart.length > 0) {
-                      const cartDataStr = effectiveCart
-                        .map((item) => `${item.product.id}:${item.quantity}`)
-                        .join(",");
-                      url.searchParams.set("cartData", cartDataStr);
+                    if (printWarningType === "cart") {
+                      if (effectiveCart.length > 0) {
+                        const cartDataStr = effectiveCart
+                          .map((item) => `${item.product.id}:${item.quantity}`)
+                          .join(",");
+                        url.searchParams.set("cartData", cartDataStr);
+                      }
+                      if (metaToPass.clientName) url.searchParams.set("clientName", metaToPass.clientName);
+                      if (metaToPass.beneficiaryId) url.searchParams.set("beneficiaryId", metaToPass.beneficiaryId);
+                      if (metaToPass.quoteId) url.searchParams.set("quoteId", metaToPass.quoteId);
+                      if (metaToPass.specialistName) url.searchParams.set("specialistName", metaToPass.specialistName);
+                      if (metaToPass.selectedDistrict) url.searchParams.set("district", metaToPass.selectedDistrict);
+                      if (metaToPass.selectedRegion) url.searchParams.set("region", metaToPass.selectedRegion);
+                      if (metaToPass.selectedSphere) url.searchParams.set("sphere", metaToPass.selectedSphere);
+                      if (metaToPass.facilitatorName) url.searchParams.set("facilitatorName", metaToPass.facilitatorName);
+                      if (metaToPass.note) url.searchParams.set("note", metaToPass.note);
                     }
                     window.open(url.toString(), "_blank");
                   }}
@@ -6721,23 +6768,23 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           supplierPhones={globalDict.supplierPhones}
           supplierLegalNames={globalDict.supplierLegalNames}
           supplierAssignedCodes={globalDict.supplierAssignedCodes}
-          clientName={cartPrintMetadata.clientName}
-          beneficiaryId={cartPrintMetadata.beneficiaryId}
-          facilitatorName={cartPrintMetadata.facilitatorName || getFacilitatorName()}
-          facilitatorLegalName={cartPrintMetadata.facilitatorLegalName || resolvedFacilitator.legalName}
-          facilitatorRep={cartPrintMetadata.facilitatorRep || resolvedFacilitator.representative}
-          facilitatorPhone={cartPrintMetadata.facilitatorPhone || resolvedFacilitator.phone}
-          facilitatorEmail={cartPrintMetadata.facilitatorEmail || resolvedFacilitator.email}
+          clientName={cartPrintMetadata.clientName || restoredCartMeta?.clientName || ""}
+          beneficiaryId={cartPrintMetadata.beneficiaryId || restoredCartMeta?.beneficiaryId || ""}
+          facilitatorName={cartPrintMetadata.facilitatorName || restoredCartMeta?.facilitatorName || getFacilitatorName()}
+          facilitatorLegalName={cartPrintMetadata.facilitatorLegalName || restoredCartMeta?.facilitatorLegalName || resolvedFacilitator.legalName}
+          facilitatorRep={cartPrintMetadata.facilitatorRep || restoredCartMeta?.facilitatorRep || resolvedFacilitator.representative}
+          facilitatorPhone={cartPrintMetadata.facilitatorPhone || restoredCartMeta?.facilitatorPhone || resolvedFacilitator.phone}
+          facilitatorEmail={cartPrintMetadata.facilitatorEmail || restoredCartMeta?.facilitatorEmail || resolvedFacilitator.email}
           facilitatorLegalNames={globalDict.facilitatorLegalNames}
           facilitatorRepresentatives={globalDict.facilitatorRepresentatives}
           facilitatorPhones={globalDict.facilitatorPhones}
           facilitatorEmails={globalDict.facilitatorEmails}
           facilitatorRegions={globalDict.facilitatorRegions}
           facilitators={globalDict.facilitators}
-          specialistName={cartPrintMetadata.specialistName}
-          note={cartPrintMetadata.note}
+          specialistName={cartPrintMetadata.specialistName || restoredCartMeta?.specialistName || ""}
+          note={cartPrintMetadata.note || restoredCartMeta?.note || ""}
           createdAt={cartPrintMetadata.createdAt}
-          quoteId={cartPrintMetadata.quoteId}
+          quoteId={cartPrintMetadata.quoteId || restoredCartMeta?.quoteId || ""}
         />
       )}
 

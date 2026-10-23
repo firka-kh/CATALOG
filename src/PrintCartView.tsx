@@ -94,7 +94,38 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
   quoteId,
   allProducts,
 }, ref) => {
-  const effectiveQuoteId = quoteId || (beneficiaryId ? `QP-${beneficiaryId}` : `QP-${Date.now().toString(36).toUpperCase()}`);
+  // Resolve client and beneficiary details with multiple robust fallbacks
+  const urlParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  let cachedPrintMeta: any = null;
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem("spmei_pending_print_meta");
+      if (raw) cachedPrintMeta = JSON.parse(raw);
+    } catch (_) {}
+  }
+
+  const effectiveClientName = (
+    clientName ||
+    cachedPrintMeta?.cartPrintMetadata?.clientName ||
+    cachedPrintMeta?.clientName ||
+    urlParams?.get('clientName') ||
+    ""
+  ).trim();
+
+  const effectiveBeneficiaryId = (
+    beneficiaryId ||
+    cachedPrintMeta?.cartPrintMetadata?.beneficiaryId ||
+    cachedPrintMeta?.beneficiaryId ||
+    urlParams?.get('beneficiaryId') ||
+    ""
+  ).trim();
+
+  const effectiveQuoteId =
+    quoteId ||
+    cachedPrintMeta?.cartPrintMetadata?.quoteId ||
+    urlParams?.get('quoteId') ||
+    (effectiveBeneficiaryId ? `QP-${effectiveBeneficiaryId}` : `QP-${Date.now().toString(36).toUpperCase()}`);
+
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   useEffect(() => {
@@ -270,13 +301,17 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
         @media print {
           @page {
             size: A4 landscape;
-            margin: 10mm;
+            margin: 6mm;
           }
-          body {
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
             background: white !important;
             color: black !important;
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;
+            height: auto !important;
+            min-height: 0 !important;
           }
           .print\\:hidden {
             display: none !important;
@@ -284,9 +319,9 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
         }
       `}</style>
 
-      <div className="flex flex-col p-6 bg-white text-slate-900 min-h-screen">
+      <div className="flex flex-col p-3 bg-white text-slate-900">
         {/* Document Header - First Page Only */}
-        <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-300">
+        <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-300">
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-xl font-bold uppercase tracking-wider text-slate-900">КУПОН</h1>
@@ -296,9 +331,9 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                 </span>
               )}
             </div>
-            {beneficiaryId && (
+            {effectiveBeneficiaryId && (
               <p className="text-xs text-slate-500 font-mono mt-0.5">
-                Идентификатор бенефициара: <strong className="text-slate-800">{beneficiaryId}</strong>
+                Идентификатор бенефициара: <strong className="text-slate-800">{effectiveBeneficiaryId}</strong>
               </p>
             )}
           </div>
@@ -311,9 +346,9 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
         </div>
 
         {/* 3-Column Metadata Card - Clean, Flat, Hairline Borders */}
-        <div className="mb-5 grid grid-cols-3 gap-3 items-stretch break-inside-avoid">
+        <div className="mb-2.5 grid grid-cols-3 gap-2.5 items-stretch break-inside-avoid">
           {/* Column 1: Client & Geographic Parameters */}
-          <div className="p-3.5 border border-slate-200 rounded-lg bg-slate-50/50 flex flex-col justify-between">
+          <div className="p-2.5 border border-slate-200 rounded-lg bg-slate-50/50 flex flex-col justify-between">
             <div>
               <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-2.5 pb-1 border-b border-slate-200 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
@@ -327,12 +362,12 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                 <div>
                   <span className="text-[10px] uppercase font-semibold text-slate-400 block">Бенефициар:</span>
                   <div className="font-bold text-slate-900 text-sm mt-0.5 flex items-center gap-1.5 flex-wrap">
-                    {beneficiaryId && (
+                    {effectiveBeneficiaryId && (
                       <span className="bg-slate-800 text-white font-mono text-[11px] px-1.5 py-0.2 rounded font-bold">
-                        ID: {beneficiaryId}
+                        ID: {effectiveBeneficiaryId}
                       </span>
                     )}
-                    <span>{clientName || "—"}</span>
+                    <span>{effectiveClientName || "—"}</span>
                   </div>
                 </div>
 
@@ -517,16 +552,16 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                 </div>
 
                 {/* Streamlined Clean Table */}
-                <table className="w-full text-left border-collapse border border-slate-200 mb-4">
+                <table className="w-full text-left border-collapse border border-slate-200 mb-2">
                   <thead>
-                    <tr className="bg-slate-100/80 text-slate-700 uppercase text-[11px] font-semibold border-b border-slate-300">
-                      <th className="py-2 px-2 w-9 text-center border-r border-slate-200">№</th>
-                      <th className="py-2 px-2 w-14 text-center border-r border-slate-200">Фото</th>
-                      <th className="py-2 px-3 w-1/4 border-r border-slate-200">Наименование</th>
-                      <th className="py-2 px-3 border-r border-slate-200">Технические характеристики</th>
-                      <th className="py-2 px-3 w-24 text-right border-r border-slate-200">Цена</th>
-                      <th className="py-2 px-2 w-20 text-center border-r border-slate-200">Кол-во</th>
-                      <th className="py-2 px-3 w-28 text-right">Сумма</th>
+                    <tr className="bg-slate-100/80 text-slate-700 uppercase text-[10px] font-semibold border-b border-slate-300">
+                      <th className="py-1 px-2 w-8 text-center border-r border-slate-200">№</th>
+                      <th className="py-1 px-2 w-12 text-center border-r border-slate-200">Фото</th>
+                      <th className="py-1 px-2.5 w-1/4 border-r border-slate-200">Наименование</th>
+                      <th className="py-1 px-2.5 border-r border-slate-200">Технические характеристики</th>
+                      <th className="py-1 px-2.5 w-24 text-right border-r border-slate-200">Цена</th>
+                      <th className="py-1 px-2 w-16 text-center border-r border-slate-200">Кол-во</th>
+                      <th className="py-1 px-2.5 w-28 text-right">Сумма</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-xs">
@@ -551,18 +586,18 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
 
                       return (
                         <tr key={`${item.product.id}-${item.selectedSupplier}`} className="break-inside-avoid hover:bg-slate-50/50">
-                          <td className="py-2 px-2 text-center font-medium text-slate-500 border-r border-slate-200">{currentItemNum}</td>
-                          <td className="py-2 px-2 text-center border-r border-slate-200">
+                          <td className="py-1 px-2 text-center font-medium text-slate-500 border-r border-slate-200">{currentItemNum}</td>
+                          <td className="py-1 px-2 text-center border-r border-slate-200">
                             {imgSrc ? (
-                              <img src={imgSrc} alt="" className="w-12 h-12 object-cover border border-slate-200 mx-auto rounded" />
+                              <img src={imgSrc} alt="" className="w-9 h-9 object-cover border border-slate-200 mx-auto rounded" />
                             ) : (
-                              <div className="w-12 h-12 bg-slate-50 border border-slate-200 flex items-center justify-center text-[9px] text-slate-400 mx-auto rounded">Нет фото</div>
+                              <div className="w-9 h-9 bg-slate-50 border border-slate-200 flex items-center justify-center text-[8px] text-slate-400 mx-auto rounded">Нет фото</div>
                             )}
                           </td>
-                          <td className="py-2 px-3 border-r border-slate-200">
+                          <td className="py-1 px-2.5 border-r border-slate-200">
                             <div className="flex flex-col items-start gap-0.5">
                               {item.product.code && (
-                                <span className="font-mono text-[10px] text-slate-500 font-semibold">
+                                <span className="font-mono text-[9px] text-slate-500 font-semibold leading-tight">
                                   #{item.product.code}
                                 </span>
                               )}
@@ -571,24 +606,24 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                               </span>
                             </div>
                           </td>
-                          <td className="py-2 px-3 border-r border-slate-200 text-slate-600 leading-snug">
+                          <td className="py-1 px-2.5 border-r border-slate-200 text-slate-600 leading-snug text-[11px]">
                             {item.product.description ? (
                               <div className="whitespace-pre-line break-words max-w-xs">{item.product.description}</div>
                             ) : (
                               <span className="text-slate-300 italic">—</span>
                             )}
                           </td>
-                          <td className="py-2 px-3 text-right font-mono text-slate-800 border-r border-slate-200">
+                          <td className="py-1 px-2.5 text-right font-mono text-slate-800 border-r border-slate-200">
                             {unitPrice <= 0 ? (
                               <span className="text-rose-600 font-semibold">НЕТ ЦЕНЫ</span>
                             ) : (
                               `${unitPrice.toFixed(2)} с.`
                             )}
                           </td>
-                          <td className="py-2 px-2 text-center font-mono text-slate-800 border-r border-slate-200">
+                          <td className="py-1 px-2 text-center font-mono text-slate-800 border-r border-slate-200">
                             {item.quantity} {item.product.unit || 'шт.'}
                           </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          <td className="py-1 px-2.5 text-right font-mono font-bold text-slate-900">
                             {unitPrice <= 0 ? (
                               <span className="text-rose-600 font-semibold">—</span>
                             ) : (
@@ -601,10 +636,10 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-100 font-bold text-xs border-t-2 border-slate-300">
-                      <td colSpan={6} className="py-2 px-3 text-right text-slate-700 uppercase tracking-wide">
+                      <td colSpan={6} className="py-1.5 px-2.5 text-right text-slate-700 uppercase tracking-wide">
                         {suppliersInCart.length > 1 ? `Подытог (${supplierName}):` : 'Итого по товарам:'}
                       </td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                      <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900">
                         {supplierSubtotal.toFixed(2)} с.
                       </td>
                     </tr>
@@ -615,45 +650,89 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
           });
         })()}
 
-        {/* Clean Summary Totals */}
-        <div className="border border-slate-300 rounded-lg p-3.5 bg-slate-50/60 break-inside-avoid mb-6 max-w-sm ml-auto">
-          <div className="space-y-1.5 text-xs">
-            <div className="flex justify-between items-center text-slate-700">
-              <span className="font-medium">Сумма товаров:</span>
-              <span className="font-mono font-bold text-slate-900">{grandItemsTotal.toFixed(2)} с.</span>
-            </div>
-            {logisticsCost > 0 && (
-              <div className="flex justify-between items-center text-slate-700 pb-1.5 border-b border-slate-200">
-                <span className="font-medium">Логистика ({selectedRegion || "Все регионы"}):</span>
-                <span className="font-mono font-bold text-slate-900">{logisticsCost.toFixed(2)} с.</span>
+        {/* Row above signatures: Verification QR (Left) and Summary Totals (Right) */}
+        <div className="flex items-end justify-between gap-4 mb-2 break-inside-avoid">
+          {/* Minimalist Verification QR (Left) */}
+          <div className="flex items-center gap-2.5 p-1.5 bg-slate-50/80 border border-slate-300 rounded-lg">
+            {qrDataUrl ? (
+              <img
+                src={qrDataUrl}
+                alt="QR-код проверки подлинности"
+                className="w-13 h-13 object-contain rounded bg-white p-0.5 border border-slate-200 shrink-0"
+              />
+            ) : (
+              <div className="w-13 h-13 bg-white flex items-center justify-center border border-dashed border-slate-300 rounded shrink-0">
+                <QrCode className="w-4 h-4 text-slate-400 animate-pulse" />
               </div>
             )}
-            <div className="flex justify-between items-center text-sm font-bold text-slate-900 pt-1.5 border-t border-slate-300">
-              <span className="uppercase tracking-wider">ИТОГО К ОПЛАТЕ:</span>
-              <span className="font-mono text-base font-extrabold text-blue-700">{grandTotal.toFixed(2)} с.</span>
+            <div className="text-left pr-1.5">
+              <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-800 leading-tight">
+                Электронный контроль
+              </div>
+              <div className="text-[8.5px] text-slate-500 mt-0.5 leading-snug">
+                Проверка подлинности бланка
+              </div>
+              {effectiveQuoteId && (
+                <div className="text-[8px] text-slate-600 font-mono mt-0.5 font-semibold" title={effectiveQuoteId}>
+                  Код: {effectiveQuoteId}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Clean Summary Totals (Right) */}
+          <div className="border border-slate-300 rounded-lg p-2.5 bg-slate-50/60 max-w-xs w-full">
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between items-center text-slate-700">
+                <span className="font-medium">Сумма товаров:</span>
+                <span className="font-mono font-bold text-slate-900">{grandItemsTotal.toFixed(2)} с.</span>
+              </div>
+              {logisticsCost > 0 && (
+                <div className="flex justify-between items-center text-slate-700 pb-1 border-b border-slate-200">
+                  <span className="font-medium">Логистика ({selectedRegion || "Все регионы"}):</span>
+                  <span className="font-mono font-bold text-slate-900">{logisticsCost.toFixed(2)} с.</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center text-xs font-bold text-slate-900 pt-1 border-t border-slate-300">
+                <span className="uppercase tracking-wider">ИТОГО К ОПЛАТЕ:</span>
+                <span className="font-mono text-sm font-extrabold text-blue-700">{grandTotal.toFixed(2)} с.</span>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Physical Signatures */}
-        <div className="mt-5 grid grid-cols-3 gap-6 pt-5 border-t border-slate-200 break-inside-avoid">
+        <div className="mt-5 grid grid-cols-3 gap-8 pt-4 border-t-2 border-slate-300 break-inside-avoid">
           {/* 1. Бенефициар */}
-          <div className="text-center flex flex-col items-center">
-            <div className="w-full max-w-[200px] flex flex-col items-center">
-              <span className="text-[11px] text-slate-300 font-normal tracking-wide select-none" style={{ color: '#cbd5e1' }}>
+          <div className="text-center flex flex-col items-center justify-between">
+            <div className="w-full max-w-[220px] flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-normal tracking-wide select-none" style={{ color: '#94a3b8' }}>
                 подпись
               </span>
-              <div className="w-full border-b-2 border-blue-400 mb-2 mt-0.5" style={{ borderColor: '#60a5fa' }} />
+              <div className="w-full border-b-2 border-slate-400 mb-2 mt-0.5" style={{ borderColor: '#64748b' }} />
             </div>
-            <div className="text-[12px] font-bold uppercase tracking-wider text-slate-900">
+            <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">
               БЕНЕФИЦИАР
             </div>
-            <div className="text-[11px] text-slate-700 font-medium mt-0.5 min-h-[16px]">
-              {beneficiaryId ? `ID: ${beneficiaryId}` : ""} {beneficiaryId && clientName ? "• " : ""}{clientName || ""}
+            <div className="min-h-[30px] flex flex-col items-center justify-center mt-1 px-1">
+              {effectiveClientName ? (
+                <span className="text-xs font-black text-slate-900 tracking-tight leading-tight block">
+                  {effectiveClientName}
+                </span>
+              ) : (
+                <span className="text-[11px] text-slate-400 italic">
+                  ФИО бенефициара не указано
+                </span>
+              )}
+              {effectiveBeneficiaryId && (
+                <span className="font-mono text-[10px] text-slate-600 font-bold mt-0.5 block">
+                  ID: {effectiveBeneficiaryId}
+                </span>
+              )}
             </div>
             <div className="mt-2.5">
               <span
-                className="inline-block text-blue-600 text-xs font-bold tracking-wider uppercase"
+                className="inline-block text-blue-600 text-xs font-black tracking-wider uppercase"
                 style={{ color: '#2563eb' }}
               >
                 ПРИНЯЛ
@@ -662,20 +741,24 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
           </div>
 
           {/* 2. ГРП МТМЗН РТ */}
-          <div className="text-center flex flex-col items-center">
-            <div className="w-full max-w-[200px] flex flex-col items-center">
-              <span className="text-[11px] text-slate-300 font-normal tracking-wide select-none" style={{ color: '#cbd5e1' }}>
+          <div className="text-center flex flex-col items-center justify-between">
+            <div className="w-full max-w-[220px] flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-normal tracking-wide select-none" style={{ color: '#94a3b8' }}>
                 подпись
               </span>
-              <div className="w-full border-b-2 border-blue-400 mb-2 mt-0.5" style={{ borderColor: '#60a5fa' }} />
+              <div className="w-full border-b-2 border-slate-400 mb-2 mt-0.5" style={{ borderColor: '#64748b' }} />
             </div>
-            <div className="text-[12px] font-bold uppercase tracking-wider text-slate-900">
+            <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">
               ГРП МТМЗН РТ
             </div>
-            <div className="min-h-[16px] mt-0.5" />
+            <div className="min-h-[30px] flex items-center justify-center mt-1 px-1">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider select-none">
+                Официальный контроль
+              </span>
+            </div>
             <div className="mt-2.5">
               <span
-                className="inline-block text-blue-600 text-xs font-bold tracking-wider uppercase"
+                className="inline-block text-blue-600 text-xs font-black tracking-wider uppercase"
                 style={{ color: '#2563eb' }}
               >
                 ОДОБРИЛ
@@ -684,51 +767,30 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
           </div>
 
           {/* 3. Поставщик */}
-          <div className="text-center flex flex-col items-center">
-            <div className="w-full max-w-[200px] flex flex-col items-center">
-              <span className="text-[11px] text-slate-300 font-normal tracking-wide select-none" style={{ color: '#cbd5e1' }}>
+          <div className="text-center flex flex-col items-center justify-between">
+            <div className="w-full max-w-[220px] flex flex-col items-center">
+              <span className="text-[10px] text-slate-400 font-normal tracking-wide select-none" style={{ color: '#94a3b8' }}>
                 подпись
               </span>
-              <div className="w-full border-b-2 border-blue-400 mb-2 mt-0.5" style={{ borderColor: '#60a5fa' }} />
+              <div className="w-full border-b-2 border-slate-400 mb-2 mt-0.5" style={{ borderColor: '#64748b' }} />
             </div>
-            <div className="text-[12px] font-bold uppercase tracking-wider text-slate-900">
+            <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">
               ПОСТАВЩИК
             </div>
-            <div className="text-[11px] text-slate-700 font-medium mt-0.5 min-h-[16px] truncate max-w-[200px]">
-              {suppliersInCart.length > 0
-                ? suppliersInCart.map(s => getSupplierName(s)).join(', ')
-                : "SPMEI-100"}
+            <div className="min-h-[30px] flex items-center justify-center mt-1 px-1">
+              <span className="text-[11px] text-slate-800 font-bold truncate max-w-[220px]">
+                {suppliersInCart.length > 0
+                  ? suppliersInCart.map(s => getSupplierName(s)).join(', ')
+                  : "SPMEI-100"}
+              </span>
             </div>
             <div className="mt-2.5">
               <span
-                className="inline-block text-blue-600 text-xs font-bold tracking-wider uppercase"
+                className="inline-block text-blue-600 text-xs font-black tracking-wider uppercase"
                 style={{ color: '#2563eb' }}
               >
                 СДАЛ
               </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Minimalist Verification QR (Bottom Right) */}
-        <div className="mt-4 pt-3 border-t border-slate-200 break-inside-avoid flex justify-end">
-          <div className="flex flex-col items-center p-1.5 bg-white border border-slate-200 rounded-lg text-center">
-            {qrDataUrl ? (
-              <img
-                src={qrDataUrl}
-                alt="QR-код проверки подлинности"
-                className="w-20 h-20 object-contain"
-              />
-            ) : (
-              <div className="w-20 h-20 bg-slate-50 flex items-center justify-center border border-dashed border-slate-300 rounded">
-                <QrCode className="w-6 h-6 text-slate-400 animate-pulse" />
-              </div>
-            )}
-            <div className="mt-1 text-[8px] font-bold uppercase tracking-wider text-slate-700 leading-none">
-              ЭЛЕКТРОННЫЙ КОНТРОЛЬ
-            </div>
-            <div className="text-[7.5px] text-slate-400 font-mono mt-0.5 max-w-[90px] truncate" title={effectiveQuoteId}>
-              {effectiveQuoteId}
             </div>
           </div>
         </div>

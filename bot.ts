@@ -104,29 +104,43 @@ try {
       process.env.BOT_WEBHOOK_URL,
     );
   } else {
-    bot = new TelegramBot(token, { polling: true });
+    bot = new TelegramBot(token, {
+      polling: {
+        interval: 1000,
+        autoStart: true,
+        params: {
+          timeout: 20,
+        },
+      },
+    });
     console.log("Telegram Bot running in Polling mode.");
   }
 
   if (bot) {
     bot.on("error", (error: any) => {
       const errMsg = error?.message || String(error);
-      if (errMsg.includes("409 Conflict") || errMsg.includes("ETELEGRAM")) {
-        console.warn("Telegram Bot error (conflict/network):", errMsg);
-      } else {
-        console.error("Telegram Bot error:", errMsg);
-      }
+      console.warn("Telegram Bot error event (network reconnect):", errMsg);
     });
     bot.on("polling_error", (error: any) => {
       const errMsg = error?.message || String(error);
-      if (errMsg.includes("409 Conflict") || errMsg.includes("ETELEGRAM")) {
-        console.warn("Telegram Bot polling conflict (another instance active):", errMsg);
+      const isTransient =
+        errMsg.includes("ECONNRESET") ||
+        errMsg.includes("ETIMEDOUT") ||
+        errMsg.includes("ESOCKETTIMEDOUT") ||
+        errMsg.includes("ENOTFOUND") ||
+        errMsg.includes("EAI_AGAIN") ||
+        errMsg.includes("EFATAL") ||
+        errMsg.includes("409 Conflict") ||
+        errMsg.includes("ETELEGRAM");
+
+      if (isTransient) {
+        console.warn("Telegram Bot polling network retry:", errMsg);
       } else {
-        console.error("Telegram Bot polling error:", errMsg);
+        console.warn("Telegram Bot polling warning:", errMsg);
       }
     });
     bot.on("webhook_error", (error: any) => {
-      console.error("Telegram Bot webhook error:", error?.message || error);
+      console.warn("Telegram Bot webhook warning:", error?.message || error);
     });
 
     // Sync menu button URL with Telegram

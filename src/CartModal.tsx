@@ -41,7 +41,7 @@ import {
 import { db } from "./lib/firebase";
 
 import { downloadCartExcel } from "./lib/excelExport";
-import { saveQuoteToHistory, updateQuoteInHistory } from "./lib/quotesHistory";
+import { saveQuoteToHistory, updateQuoteInHistory, fetchQuotesHistory, QuoteRecord } from "./lib/quotesHistory";
 import { logAuditEvent } from "./lib/auditLogger";
 import { DISTRICTS_BY_REGION } from "./App";
 
@@ -185,10 +185,8 @@ export function CartModal({
   // Customer metadata state
   const [clientName, setClientName] = useState("");
   const [beneficiaryId, setBeneficiaryId] = useState("");
-  const handleBeneficiaryIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const rawVal = e.target.value.replace(/\D/g, "").slice(0, 6);
-    setBeneficiaryId(rawVal);
-  };
+  const [existingQuotes, setExistingQuotes] = useState<QuoteRecord[]>([]);
+  const [isDuplicateConfirmModalOpen, setIsDuplicateConfirmModalOpen] = useState(false);
   const [facilitatorName, setFacilitatorName] = useState(defaultFacilitatorName);
   const [currentFacilitatorLegalName, setCurrentFacilitatorLegalName] = useState(facilitatorLegalName || "");
   const [currentFacilitatorRep, setCurrentFacilitatorRep] = useState(facilitatorRep || "");
@@ -210,13 +208,60 @@ export function CartModal({
   const [saveRequiredError, setSaveRequiredError] = useState(false);
   const [isConfirmSaveModalOpen, setIsConfirmSaveModalOpen] = useState(false);
   const [isSavedSuccessModalOpen, setIsSavedSuccessModalOpen] = useState(false);
+  const [clientNameCharWarning, setClientNameCharWarning] = useState<string | null>(null);
+
   const clientNameInputRef = useRef<HTMLInputElement>(null);
   const specialistNameInputRef = useRef<HTMLInputElement>(null);
   const districtSelectRef = useRef<HTMLSelectElement>(null);
   const saveButtonRef = useRef<HTMLButtonElement>(null);
-
-  const [clientNameCharWarning, setClientNameCharWarning] = useState<string | null>(null);
   const clientNameWarningTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchQuotesHistory()
+        .then((records) => setExistingQuotes(records || []))
+        .catch((err) => console.warn("Failed to load quotes for duplicate check:", err));
+    }
+  }, [isOpen]);
+
+  const handleBeneficiaryIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawVal = e.target.value.replace(/\D/g, "").slice(0, 6);
+    setBeneficiaryId(rawVal);
+  };
+
+  const duplicateMatch = useMemo(() => {
+    if (!existingQuotes || existingQuotes.length === 0) return null;
+
+    // Check ID match
+    const cleanId = beneficiaryId.trim();
+    let idMatch: QuoteRecord | undefined;
+    if (cleanId.length > 0) {
+      idMatch = existingQuotes.find((q) => {
+        if (savedQuoteId && q.id === savedQuoteId) return false;
+        return q.beneficiaryId && q.beneficiaryId.trim() === cleanId;
+      });
+    }
+
+    // Check Name match (case-insensitive, normalized whitespace)
+    const cleanName = clientName.trim().toLowerCase().replace(/\s+/g, " ");
+    let nameMatch: QuoteRecord | undefined;
+    if (cleanName.length >= 3) {
+      nameMatch = existingQuotes.find((q) => {
+        if (savedQuoteId && q.id === savedQuoteId) return false;
+        const qName = (q.clientName || "").trim().toLowerCase().replace(/\s+/g, " ");
+        return qName === cleanName;
+      });
+    }
+
+    if (!idMatch && !nameMatch) return null;
+
+    return {
+      idMatch,
+      nameMatch,
+      matchedQuote: idMatch || nameMatch!,
+      type: idMatch && nameMatch ? ("both" as const) : idMatch ? ("id" as const) : ("name" as const),
+    };
+  }, [existingQuotes, beneficiaryId, clientName, savedQuoteId]);
 
   const triggerClientNameWarning = (msg = "Разрешены только буквы (латиница и кириллица). Цифры и знаки запрещены!") => {
     setClientNameCharWarning(msg);
@@ -807,6 +852,10 @@ export function CartModal({
     if (!validateAllRequiredFields()) return;
     if (isSavedToHistory && !isEditingArchiveQuote) {
       setIsSavedSuccessModalOpen(true);
+      return;
+    }
+    if (duplicateMatch && !isEditingArchiveQuote) {
+      setIsDuplicateConfirmModalOpen(true);
       return;
     }
     setIsConfirmSaveModalOpen(true);
@@ -1437,6 +1486,44 @@ export function CartModal({
                   )}
                 </div>
               </div>
+
+              {/* Duplicate Beneficiary Warning Banner - Strict Block */}
+              {duplicateMatch && !isEditingArchiveQuote && (
+                <div className="mt-3 p-3.5 rounded-xl bg-rose-950/90 border-2 border-rose-500/80 text-rose-200 text-xs shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-500/50 flex items-center justify-center text-rose-400 shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-bold text-rose-300 text-sm flex items-center gap-2 flex-wrap">
+                        <span>⚠️ Бенефициар уже существует в базе! Создание дубликата запрещено</span>
+                      </div>
+                      <p className="text-rose-200/90 mt-1 text-xs leading-relaxed">
+                        В Архиве КП найден купон <strong className="text-white font-mono bg-rose-900/60 px-1.5 py-0.5 rounded border border-rose-600/50">№ {duplicateMatch.matchedQuote.id}</strong> от {duplicateMatch.matchedQuote.createdAt}.
+                        {duplicateMatch.matchedQuote.beneficiaryId ? ` ID: ${duplicateMatch.matchedQuote.beneficiaryId}.` : ""} Клиент: <strong className="text-white">{duplicateMatch.matchedQuote.clientName}</strong>.
+                      </p>
+                      <p className="text-rose-300/80 mt-1.5 text-[11px] leading-snug">
+                        Создание отдельного повторного купона заблокировано правилами системы, чтобы не потерять историю изменений бенефициара. Внесите изменения или добавьте товары через <strong>«Редактировать»</strong> у существующего купона в Архиве КП.
+                      </p>
+                      <div className="mt-2.5 flex items-center gap-2.5 flex-wrap">
+                        {onOpenQuotesHistory && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onClose();
+                              onOpenQuotesHistory();
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-lg text-xs transition-all shadow-md active:scale-95 cursor-pointer"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                            <span>Перейти в Архив КП для редактирования</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Second Row: Optional Note & Compact Locked Info & Save */}
               <div className="flex flex-col md:flex-row items-center justify-between gap-3 mt-3 pt-2.5 border-t border-slate-800">
@@ -2153,6 +2240,97 @@ export function CartModal({
           </div>
         )}
       </div>
+
+      {/* Modal warning when Facilitator tries to save with existing beneficiary ID or Name */}
+      {isDuplicateConfirmModalOpen && duplicateMatch && (
+        <div className="fixed inset-0 z-[130] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-amber-500/70 rounded-2xl shadow-2xl max-w-md w-full overflow-hidden text-slate-100 animate-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-amber-500/30 bg-amber-950/40 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-amber-300">
+                  Повторный бенефициар в базе
+                </h3>
+                <p className="text-xs text-amber-200/80">
+                  Обнаружено совпадение {duplicateMatch.type === "both" ? "по ID и ФИО" : duplicateMatch.type === "id" ? "по ID" : "по ФИО"}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-3.5 text-xs leading-relaxed">
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="text-[10px] font-bold uppercase text-slate-400">
+                  Найден купон в Архиве КП:
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Номер купона:</span>
+                  <span className="font-mono font-bold text-indigo-400">
+                    #{duplicateMatch.matchedQuote.id}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Бенефициар:</span>
+                  <span className="font-semibold text-white">
+                    {duplicateMatch.matchedQuote.clientName}
+                  </span>
+                </div>
+                {duplicateMatch.matchedQuote.beneficiaryId && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">ID бенефициара:</span>
+                    <span className="font-mono font-bold text-amber-300">
+                      {duplicateMatch.matchedQuote.beneficiaryId}
+                    </span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Дата оформления:</span>
+                  <span className="text-slate-300">
+                    {duplicateMatch.matchedQuote.createdAt}
+                  </span>
+                </div>
+                {duplicateMatch.matchedQuote.totalAmount !== undefined && (
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Сумма:</span>
+                    <span className="font-mono font-bold text-emerald-400">
+                      {duplicateMatch.matchedQuote.totalAmount.toLocaleString("ru-RU")} с.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <p className="text-slate-300">
+                В системе уже зарегистрирован купон для этого получателя. Создание отдельного купона заблокировано правилами системы, чтобы не нарушать непрерывную историю изменений бенефициара. Пожалуйста, перейдите в <strong>Архив КП</strong> и откройте существующий купон для редактирования.
+              </p>
+            </div>
+
+            <div className="p-4 bg-slate-950/70 border-t border-slate-800 flex flex-col-reverse sm:flex-row gap-2 justify-end">
+              <button
+                type="button"
+                onClick={() => setIsDuplicateConfirmModalOpen(false)}
+                className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
+              >
+                Вернуться и исправить
+              </button>
+              {onOpenQuotesHistory && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsDuplicateConfirmModalOpen(false);
+                    onClose();
+                    onOpenQuotesHistory();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Archive className="w-4 h-4" />
+                  <span>Перейти в Архив КП для редактирования</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal Before Saving to Archive */}
       {isConfirmSaveModalOpen && (

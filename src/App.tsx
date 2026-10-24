@@ -35,6 +35,7 @@ import {
   LogOut,
   Shield,
   UserCheck,
+  ExternalLink,
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
@@ -987,6 +988,52 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   const [isDictModalOpen, setIsDictModalOpen] = useState(false);
   const [isQuotesHistoryOpen, setIsQuotesHistoryOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+  const [isMonitoringStandaloneView, setIsMonitoringStandaloneView] = useState(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return (
+        p.get("view") === "monitoring" ||
+        p.get("view") === "analytics" ||
+        p.get("mode") === "monitoring"
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  const handleExitMonitoringView = () => {
+    setIsMonitoringStandaloneView(false);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("view");
+      url.searchParams.delete("mode");
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleEnterMonitoringView = () => {
+    setIsAnalyticsModalOpen(false);
+    setIsMonitoringStandaloneView(true);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("view", "monitoring");
+      window.history.replaceState({}, "", url.toString());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (isMonitoringStandaloneView) {
+      const prev = document.title;
+      document.title = "Мониторинг и Аналитика цен — SPMEI Monitoring";
+      return () => {
+        document.title = prev;
+      };
+    }
+  }, [isMonitoringStandaloneView]);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [isSwitchLoginOpen, setIsSwitchLoginOpen] = useState(false);
   const [cartPrintMetadata, setCartPrintMetadata] = useState<{
@@ -3565,6 +3612,18 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
+                      handleEnterMonitoringView();
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 hover:text-indigo-200 transition-colors rounded-md font-medium text-xs ml-3 border-l-2 border-indigo-500/50"
+                    title="Открыть отдельную панель мониторинга без бокового меню для специалиста"
+                  >
+                    <ExternalLink className="w-4 h-4 text-indigo-400" />
+                    Окно мониторинга (без меню)
+                  </a>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
                       setIsAuditModalOpen(true);
                     }}
                     className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 hover:text-white transition-colors rounded-md font-semibold"
@@ -3712,15 +3771,24 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <span className="sm:hidden">Архив</span>
               </button>
               {isReallyAdmin && (
-                <button
-                  onClick={() => setIsAnalyticsModalOpen(true)}
-                  className="flex items-center gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm"
-                  title="Аналитика и Аномалии цен"
-                >
-                  <TrendingUp className="w-3.5 h-3.5 text-rose-200" />
-                  <span className="hidden sm:inline">Аналитика</span>
-                  <span className="sm:hidden">Аналитика</span>
-                </button>
+                <div className="flex items-center bg-rose-600 rounded-md overflow-hidden shadow-sm">
+                  <button
+                    onClick={() => setIsAnalyticsModalOpen(true)}
+                    className="flex items-center gap-1.5 text-xs bg-rose-600 hover:bg-rose-700 text-white px-2.5 py-1 sm:px-3 sm:py-1.5 font-semibold transition-all cursor-pointer"
+                    title="Аналитика и Аномалии цен (модальное окно)"
+                  >
+                    <TrendingUp className="w-3.5 h-3.5 text-rose-200" />
+                    <span className="hidden sm:inline">Аналитика</span>
+                    <span className="sm:hidden">Аналитика</span>
+                  </button>
+                  <button
+                    onClick={handleEnterMonitoringView}
+                    className="border-l border-rose-500/80 bg-rose-700 hover:bg-rose-800 text-white px-1.5 sm:px-2 py-1 sm:py-1.5 transition-colors flex items-center justify-center cursor-pointer"
+                    title="Открыть отдельное окно мониторинга без бокового меню для специалиста"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-rose-200" />
+                  </button>
+                </div>
               )}
               <button
                 onClick={() => setIsAuditModalOpen(true)}
@@ -6907,8 +6975,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       )}
 
       <AnalyticsModal
-        isOpen={isAnalyticsModalOpen}
-        onClose={() => setIsAnalyticsModalOpen(false)}
+        isOpen={isAnalyticsModalOpen || isMonitoringStandaloneView}
+        isStandalone={isMonitoringStandaloneView}
+        onClose={isMonitoringStandaloneView ? handleExitMonitoringView : () => setIsAnalyticsModalOpen(false)}
+        onToggleStandalone={() => {
+          if (isMonitoringStandaloneView) {
+            handleExitMonitoringView();
+            setIsAnalyticsModalOpen(true);
+          } else {
+            handleEnterMonitoringView();
+          }
+        }}
         products={products}
         globalDict={globalDict}
         onEditProduct={(product) => handleEditProduct(product)}

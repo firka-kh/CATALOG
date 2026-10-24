@@ -38,6 +38,9 @@ import {
   ArrowUp,
   ArrowDown,
   Medal,
+  Maximize2,
+  ArrowLeft,
+  Copy,
 } from "lucide-react";
 import { Product } from "../types";
 import { formatSupplierCode } from "../lib/supplierUtils";
@@ -65,6 +68,8 @@ interface AnalyticsModalProps {
   };
   onEditProduct?: (product: Product) => void;
   onViewProduct?: (product: Product) => void;
+  isStandalone?: boolean;
+  onToggleStandalone?: () => void;
 }
 
 export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
@@ -74,10 +79,22 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
   globalDict,
   onEditProduct,
   onViewProduct,
+  isStandalone = false,
+  onToggleStandalone,
 }) => {
+  const [copiedLink, setCopiedLink] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "heatmap" | "anomalies" | "sales" | "regions" | "facilitators"
   >("heatmap");
+
+  const handleCopyMonitoringLink = () => {
+    const url = `${window.location.origin}${window.location.pathname}?view=monitoring`;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3000);
+    }
+  };
 
   // District Heatmap Controls & Drill-down State
   const [heatmapMetric, setHeatmapMetric] = useState<"sum" | "quotes" | "beneficiaries">("sum");
@@ -982,52 +999,124 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md transition-all print:hidden">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] flex flex-col overflow-hidden border border-slate-200">
+    <div
+      className={
+        isStandalone
+          ? "fixed inset-0 z-[100] w-screen h-screen flex flex-col bg-slate-100 overflow-hidden print:hidden"
+          : "fixed inset-0 z-[70] flex items-center justify-center p-2 sm:p-6 bg-slate-950/70 backdrop-blur-md transition-all print:hidden"
+      }
+    >
+      <div
+        className={`bg-white flex flex-col overflow-hidden ${
+          isStandalone
+            ? "w-full h-full rounded-none border-0 shadow-none"
+            : "rounded-2xl shadow-2xl w-full max-w-7xl h-[92vh] border border-slate-200"
+        }`}
+      >
         {/* Top Header */}
-        <div className="bg-slate-900 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 shrink-0">
+        <div className="bg-slate-900 text-white px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-indigo-600/90 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30 shrink-0">
               <TrendingUp className="w-6 h-6 text-white" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight text-white">
-                  Аналитика и Аномалии цен
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-bold tracking-tight text-white">
+                  {isStandalone
+                    ? "Панель мониторинга и аналитики цен (SPMEI Monitoring)"
+                    : "Аналитика и Аномалии цен"}
                 </h2>
                 <span className="bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                  Эксклюзивный инструмент
+                  {isStandalone ? "Специалист по мониторингу" : "Эксклюзивный инструмент"}
                 </span>
+                {isStandalone && (
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider hidden md:inline-flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Без бокового меню
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Выявление критических разниц цен поставщиков, закупки по сферам, анализ регионов и активных фасилитаторов
+                {isStandalone
+                  ? "Специализированное рабочее место: выявление критических разниц цен, тепловая карта районов, анализ охвата и активности фасилитаторов"
+                  : "Выявление критических разниц цен поставщиков, закупки по сферам, анализ регионов и активных фасилитаторов"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Copy monitoring link button */}
+            <button
+              onClick={handleCopyMonitoringLink}
+              className="px-3 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="Скопировать прямую ссылку на панель мониторинга для специалиста"
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="w-4 h-4 text-emerald-400" />
+                  <span className="text-emerald-300 font-bold">Ссылка скопирована!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-slate-400" />
+                  <span className="hidden md:inline">Ссылка мониторинга</span>
+                </>
+              )}
+            </button>
+
+            {/* Standalone toggle button in modal mode */}
+            {!isStandalone && (
+              <button
+                onClick={() => {
+                  if (onToggleStandalone) {
+                    onToggleStandalone();
+                  } else {
+                    window.open(`${window.location.origin}${window.location.pathname}?view=monitoring`, "_blank");
+                  }
+                }}
+                className="px-3 py-2 bg-indigo-600/80 hover:bg-indigo-600 active:scale-95 text-white text-xs font-semibold rounded-xl border border-indigo-500/50 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+                title="Развернуть как отдельное полноэкранное окно мониторинга без бокового меню"
+              >
+                <Maximize2 className="w-4 h-4" />
+                <span className="hidden sm:inline">В отдельное окно</span>
+              </button>
+            )}
+
             <button
               onClick={handleExportAnalyticsExcel}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2 shrink-0"
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-emerald-600/20 flex items-center gap-2 shrink-0 cursor-pointer"
               title="Выгрузить сводный отчет в Excel"
             >
               <Download className="w-4 h-4" />
               <span>Экспорт в Excel</span>
             </button>
+
             <button
               onClick={loadQuotesData}
               disabled={loadingHistory}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors shrink-0"
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors shrink-0 cursor-pointer"
               title="Обновить данные"
             >
               <RefreshCw className={`w-4 h-4 ${loadingHistory ? "animate-spin text-indigo-400" : ""}`} />
             </button>
-            <button
-              onClick={onClose}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-colors shrink-0"
-            >
-              <X className="w-5 h-5" />
-            </button>
+
+            {isStandalone ? (
+              <button
+                onClick={onClose}
+                className="px-3 py-2 bg-rose-600/90 hover:bg-rose-600 active:scale-95 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md shadow-rose-600/20"
+                title="Вернуться в основной каталог товаров"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>В Каталог</span>
+              </button>
+            ) : (
+              <button
+                onClick={onClose}
+                className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-xl transition-colors shrink-0 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
           </div>
         </div>
 

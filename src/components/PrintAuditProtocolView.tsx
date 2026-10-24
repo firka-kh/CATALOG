@@ -63,10 +63,36 @@ export const PrintAuditProtocolView = forwardRef<HTMLDivElement, PrintAuditProto
           return "Печать Каталога цен";
         case "ADMIN_LOGIN":
           return "Вход Администратора";
+        case "ADMIN_LOGOUT":
+          return "Выход Администратора";
+        case "FACILITATOR_LOGIN":
+          return "Вход Фасилитатора";
+        case "FACILITATOR_LOGOUT":
+          return "Выход Фасилитатора";
         case "USER_LOGIN":
           return "Авторизация пользователя";
         case "FACILITATOR_SWITCH":
           return "Смена профиля фасилитатора";
+        case "SUPPLIER_LOGIN":
+          return "Вход Поставщика в портал";
+        case "SUPPLIER_LOGOUT":
+          return "Выход Поставщика из портала";
+        case "SUPPLIER_UPDATE_PRICE":
+          return "Изменение цены товара (Поставщик)";
+        case "SUPPLIER_BATCH_PRICE_UPDATE":
+          return "Пакетное обновление цен (Поставщик)";
+        case "SUPPLIER_ADD_PRODUCT":
+          return "Добавление товара (Поставщик)";
+        case "SUPPLIER_EDIT_PRODUCT":
+          return "Редактирование карточки товара (Поставщик)";
+        case "SUPPLIER_DELETE_PRODUCT":
+          return "УДАЛЕНИЕ ТОВАРА ИЗ КАТАЛОГА (Поставщик)";
+        case "SUPPLIER_IMPORT_EXCEL":
+          return "Импорт прайс-листа Excel (Поставщик)";
+        case "SUPPLIER_EXPORT_EXCEL":
+          return "Выгрузка реестра в Excel (Поставщик)";
+        case "SUPPLIER_CLEAR_PRICES":
+          return "Обнуление цен в каталоге";
         case "UPDATE_PRICE_EXCEL":
           return "Обновление прайсов поставщика";
         case "EXPORT_EXCEL":

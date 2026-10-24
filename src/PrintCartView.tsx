@@ -711,9 +711,9 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
 
         {/* Physical Signatures - lowered to the bottom, without full-width divider line */}
         <div className="mt-8 grid grid-cols-3 gap-8 pt-2 break-inside-avoid items-start">
-          {/* 1. Заявитель (с дублирующим блоком-копией ниже) */}
+          {/* 1. Бенефициар (первый блок: Заявка, второй блок: Принял) */}
           <div className="text-center flex flex-col items-center gap-6">
-            {/* Первый блок Заявителя */}
+            {/* Первый блок: Бенефициар - ЗАЯВКА */}
             <div className="w-full flex flex-col items-center">
               <div className="w-full max-w-[220px] flex flex-col items-center">
                 <span className="text-[10px] text-slate-400 font-normal tracking-wide select-none" style={{ color: '#94a3b8' }}>
@@ -722,7 +722,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                 <div className="w-full border-b-2 border-slate-500 mb-2 mt-0.5" style={{ borderColor: '#64748b' }} />
               </div>
               <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">
-                ЗАЯВИТЕЛЬ
+                БЕНЕФИЦИАР
               </div>
               <div className="min-h-[28px] flex flex-col items-center justify-center mt-1 px-1">
                 {effectiveClientName ? (
@@ -731,7 +731,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                   </span>
                 ) : (
                   <span className="text-[11px] text-slate-400 italic">
-                    ФИО заявителя не указано
+                    ФИО бенефициара не указано
                   </span>
                 )}
                 {effectiveBeneficiaryId && (
@@ -745,12 +745,12 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                   className="inline-block text-blue-600 text-xs font-black tracking-wider uppercase"
                   style={{ color: '#2563eb' }}
                 >
-                  ПРИНЯЛ
+                  ЗАЯВКА
                 </span>
               </div>
             </div>
 
-            {/* Второй блок Заявителя (точная копия ниже) */}
+            {/* Второй блок: Бенефициар - ПРИНЯЛ */}
             <div className="w-full flex flex-col items-center">
               <div className="w-full max-w-[220px] flex flex-col items-center">
                 <span className="text-[10px] text-slate-400 font-normal tracking-wide select-none" style={{ color: '#94a3b8' }}>
@@ -759,7 +759,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                 <div className="w-full border-b-2 border-slate-500 mb-2 mt-0.5" style={{ borderColor: '#64748b' }} />
               </div>
               <div className="text-[12px] font-black uppercase tracking-wider text-slate-900">
-                ЗАЯВИТЕЛЬ
+                БЕНЕФИЦИАР
               </div>
               <div className="min-h-[28px] flex flex-col items-center justify-center mt-1 px-1">
                 {effectiveClientName ? (
@@ -768,7 +768,7 @@ export const PrintCartView = React.forwardRef<HTMLDivElement, Props>(({
                   </span>
                 ) : (
                   <span className="text-[11px] text-slate-400 italic">
-                    ФИО заявителя не указано
+                    ФИО бенефициара не указано
                   </span>
                 )}
                 {effectiveBeneficiaryId && (

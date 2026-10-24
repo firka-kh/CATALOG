@@ -7,6 +7,7 @@ import { downloadSupplierExcel, parseSupplierExcel } from './lib/excelSupplier';
 import { UpdateNotifier } from './components/UpdateNotifier';
 import { generateNextProductCode } from './lib/generateNextCode';
 import { formatSupplierCode } from './lib/supplierUtils';
+import { logAuditEvent } from './lib/auditLogger';
 
 const UNITS = [
     { value: 'шт.', label: 'шт. (Штука)' },
@@ -98,6 +99,8 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearAdminPasswordInput, setClearAdminPasswordInput] = useState('');
+  const [clearAdminPasswordError, setClearAdminPasswordError] = useState('');
   const [isClearing, setIsClearing] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -410,6 +413,50 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
       if (Object.keys(updateData).length > 0) {
         await updateDoc(ref, updateData);
+
+        // Audit Logging for Supplier Price/Unit Update
+        const oldPriceVal = getSupplierPriceDetails(p).mainPrice;
+        const newPriceVal = priceInput !== undefined ? (parseFloat(priceInput) || 0) : oldPriceVal;
+        const diff = newPriceVal - oldPriceVal;
+        const regName = selectedRegion || "Все регионы";
+        
+        let changeDesc = `Поставщик ${currentSupplierLabel} обновил товар "${p.name}" (код ${p.code || p.id}): `;
+        if (priceInput !== undefined) {
+          changeDesc += `цена ${oldPriceVal} с. ➔ ${newPriceVal} с. (${diff >= 0 ? `+${diff}` : diff} с., ${regName})`;
+        }
+        if (unitInput !== undefined && unitInput !== (p.unit || 'шт.')) {
+          changeDesc += `${priceInput !== undefined ? ', ' : ''}ед. изм.: ${p.unit || 'шт.'} ➔ ${unitInput}`;
+        }
+
+        logAuditEvent({
+          actionType: "SUPPLIER_UPDATE_PRICE",
+          actorName: currentSupplierLabel,
+          actorRole: "supplier",
+          supplierId,
+          supplierName: currentSupplierLabel,
+          supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+          productId: p.id,
+          productName: p.name,
+          productCode: p.code,
+          region: selectedRegion || "Все регионы",
+          oldPrice: oldPriceVal,
+          newPrice: newPriceVal,
+          diffAmount: diff,
+          details: changeDesc,
+          metadata: {
+            productId: p.id,
+            productName: p.name,
+            productCode: p.code,
+            oldPrice: oldPriceVal,
+            newPrice: newPriceVal,
+            diffAmount: diff,
+            oldUnit: p.unit || 'шт.',
+            newUnit: unitInput || p.unit || 'шт.',
+            region: selectedRegion || "Все регионы",
+            supplierId,
+            supplierLabel: currentSupplierLabel,
+          },
+        }).catch(console.warn);
       }
 
       setSavedRowId(productId);
@@ -498,6 +545,39 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
           await batch.commit();
       }
 
+      // Audit Logging for Batch Price Update
+      const summaryItems = updatesToMake.slice(0, 20).map(p => {
+        const oldPriceVal = getSupplierPriceDetails(p).mainPrice;
+        const newPriceVal = editedPrices[p.id] !== undefined ? (parseFloat(editedPrices[p.id]) || 0) : oldPriceVal;
+        return {
+          id: p.id,
+          name: p.name,
+          code: p.code,
+          oldPrice: oldPriceVal,
+          newPrice: newPriceVal,
+          diff: newPriceVal - oldPriceVal,
+        };
+      });
+
+      logAuditEvent({
+        actionType: "SUPPLIER_BATCH_PRICE_UPDATE",
+        actorName: currentSupplierLabel,
+        actorRole: "supplier",
+        supplierId,
+        supplierName: currentSupplierLabel,
+        supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+        itemsCount: updatesToMake.length,
+        region: selectedRegion || "Все регионы",
+        details: `Поставщик ${currentSupplierLabel} выполнил пакетное сохранение цен для ${updatesToMake.length} товаров (${selectedRegion ? `регион ${selectedRegion}` : "все регионы"})`,
+        metadata: {
+          itemsCount: updatesToMake.length,
+          region: selectedRegion || "Все регионы",
+          sampleUpdates: summaryItems,
+          supplierId,
+          supplierLabel: currentSupplierLabel,
+        },
+      }).catch(console.warn);
+
       setEditedPrices({});
       setEditedUnits({});
       alert("Все изменения успешно сохранены.");
@@ -527,6 +607,23 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
     try {
         setIsExporting(true);
         await downloadSupplierExcel(displayedProducts, supplierId, selectedRegion, currentSupplierLabel);
+
+        logAuditEvent({
+          actionType: "SUPPLIER_EXPORT_EXCEL",
+          actorName: currentSupplierLabel,
+          actorRole: "supplier",
+          supplierId,
+          supplierName: currentSupplierLabel,
+          supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+          itemsCount: displayedProducts.length,
+          region: selectedRegion || "Все регионы",
+          details: `Поставщик ${currentSupplierLabel} выгрузил прайс-лист в Excel (${displayedProducts.length} позиций, ${selectedRegion || "все регионы"})`,
+          metadata: {
+            itemsCount: displayedProducts.length,
+            region: selectedRegion || "Все регионы",
+            supplierId,
+          },
+        }).catch(console.warn);
     } catch (err: any) {
         console.error(err);
         alert("Ошибка при выгрузке: " + err.message);
@@ -602,6 +699,25 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
            await batch.commit();
         }
 
+        logAuditEvent({
+          actionType: "SUPPLIER_IMPORT_EXCEL",
+          actorName: currentSupplierLabel,
+          actorRole: "supplier",
+          supplierId,
+          supplierName: currentSupplierLabel,
+          supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+          itemsCount: totalUpdated,
+          region: selectedRegion || "Все регионы",
+          details: `Поставщик ${currentSupplierLabel} загрузил прайс-лист Excel "${file.name}": обновлено ${totalUpdated} товаров (${selectedRegion || "все регионы"})`,
+          metadata: {
+            fileName: file.name,
+            fileSize: file.size,
+            totalUpdated,
+            region: selectedRegion || "Все регионы",
+            supplierId,
+          },
+        }).catch(console.warn);
+
         alert(`Загрузка завершена! Обновлено товаров: ${totalUpdated}`);
     } catch (err: any) {
         console.error(err);
@@ -613,7 +729,14 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
   };
 
   const handleClearPrices = async () => {
+    const expectedPass = (globalDict.adminPassword || "020779").trim();
+    if (clearAdminPasswordInput.trim() !== expectedPass) {
+      setClearAdminPasswordError("Неверный пароль администратора системы!");
+      return;
+    }
+
     setIsClearing(true);
+    setClearAdminPasswordError("");
     try {
         let batch = writeBatch(db);
         let count = 0;
@@ -672,7 +795,25 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
             await batch.commit();
         }
 
+        logAuditEvent({
+          actionType: "SUPPLIER_CLEAR_PRICES",
+          actorName: currentSupplierLabel,
+          actorRole: "supplier",
+          supplierId,
+          supplierName: currentSupplierLabel,
+          supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+          itemsCount: totalUpdated,
+          details: `Поставщик ${currentSupplierLabel} обнулил цены на ${totalUpdated} товаров через подтверждение паролем администратора`,
+          metadata: {
+            totalUpdated,
+            supplierId,
+            selectedRegion: selectedRegion || "Все регионы",
+          },
+        }).catch(console.warn);
+
         setShowClearConfirm(false);
+        setClearAdminPasswordInput('');
+        setClearAdminPasswordError('');
         alert(`Цены очищены! (обновлено товаров: ${totalUpdated})`);
     } catch (err: any) {
         console.error(err);
@@ -1017,6 +1158,33 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
       await setDoc(doc(db, "products", targetId), productPayload);
 
       const isEdit = Boolean(editingProductId);
+
+      logAuditEvent({
+        actionType: isEdit ? "SUPPLIER_EDIT_PRODUCT" : "SUPPLIER_ADD_PRODUCT",
+        actorName: currentSupplierLabel,
+        actorRole: "supplier",
+        supplierId,
+        supplierName: currentSupplierLabel,
+        supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+        productId: targetId,
+        productName: productPayload.name,
+        productCode: productPayload.code,
+        details: isEdit
+          ? `Поставщик ${currentSupplierLabel} отредактировал товар "${productPayload.name}" (код ${productPayload.code}, сферы: ${productPayload.spheres?.join(", ") || "—"})`
+          : `Поставщик ${currentSupplierLabel} ДОБАВИЛ новый товар: "${productPayload.name}" (код ${productPayload.code}, цена: ${productForm.basePrice || 0} с., сферы: ${productPayload.spheres?.join(", ") || "—"})`,
+        metadata: {
+          productId: targetId,
+          name: productPayload.name,
+          code: productPayload.code,
+          spheres: productPayload.spheres,
+          unit: productPayload.unit,
+          basePrice: productForm.basePrice,
+          isEdit,
+          supplierId,
+          supplierLabel: currentSupplierLabel,
+        },
+      }).catch(console.warn);
+
       setIsProductModalOpen(false);
       setEditingProductId(null);
       setProductSuccessMessage(isEdit ? "Товар успешно обновлен!" : "Товар успешно добавлен!");
@@ -1034,7 +1202,36 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
     if (!productToDelete) return;
     setIsDeleting(true);
     try {
+      const deletedSnap = {
+        id: productToDelete.id,
+        name: productToDelete.name,
+        code: productToDelete.code,
+        spheres: productToDelete.spheres || (productToDelete.category ? [productToDelete.category] : []),
+        unit: productToDelete.unit,
+        price: getSupplierPriceDetails(productToDelete).mainPrice,
+        allPrices: productToDelete.prices,
+      };
+
       await deleteDoc(doc(db, "products", productToDelete.id));
+
+      logAuditEvent({
+        actionType: "SUPPLIER_DELETE_PRODUCT",
+        actorName: currentSupplierLabel,
+        actorRole: "supplier",
+        supplierId,
+        supplierName: currentSupplierLabel,
+        supplierCode: globalDict.supplierAssignedCodes?.[supplierId],
+        productId: productToDelete.id,
+        productName: productToDelete.name,
+        productCode: productToDelete.code,
+        details: `Поставщик ${currentSupplierLabel} УДАЛИЛ товар из каталога: "${productToDelete.name}" (код: ${productToDelete.code || productToDelete.id}, сфера: ${deletedSnap.spheres.join(", ") || "—"}, цена: ${deletedSnap.price} с.)`,
+        metadata: {
+          deletedProduct: deletedSnap,
+          supplierId,
+          supplierName: currentSupplierLabel,
+        },
+      }).catch(console.warn);
+
       setProductToDelete(null);
       if (viewingProduct?.id === productToDelete.id) {
         setViewingProduct(null);
@@ -1098,6 +1295,21 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         try {
           sessionStorage.setItem(`supplier_auth_${supplierId}`, "true");
         } catch (err) {}
+
+        logAuditEvent({
+          actionType: "SUPPLIER_LOGIN",
+          actorName: currentSupplierLabel,
+          actorRole: "supplier",
+          supplierId,
+          supplierName: currentSupplierLabel,
+          supplierCode: assignedCode,
+          details: `Поставщик ${currentSupplierLabel} успешно вошел в портал (код доступа подтвержден)`,
+          metadata: {
+            supplierId,
+            supplierName: currentSupplierLabel,
+            assignedCode,
+          },
+        }).catch(console.warn);
       } else {
         setAuthError("Неверный код доступа поставщика. Проверьте правильность ввода или уточните код у администратора.");
       }
@@ -1238,6 +1450,15 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
           {requiresAuth && isAuthenticated && (
             <button
               onClick={() => {
+                logAuditEvent({
+                  actionType: "SUPPLIER_LOGOUT",
+                  actorName: currentSupplierLabel,
+                  actorRole: "supplier",
+                  supplierId,
+                  supplierName: currentSupplierLabel,
+                  supplierCode: assignedCode,
+                  details: `Поставщик ${currentSupplierLabel} заблокировал сессию портала`,
+                }).catch(console.warn);
                 setIsAuthenticated(false);
                 setInputCode('');
               }}
@@ -1251,6 +1472,15 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
           <button
             onClick={() => {
+              logAuditEvent({
+                actionType: "SUPPLIER_LOGOUT",
+                actorName: currentSupplierLabel,
+                actorRole: "supplier",
+                supplierId,
+                supplierName: currentSupplierLabel,
+                supplierCode: assignedCode,
+                details: `Поставщик ${currentSupplierLabel} вышел из портала в общий каталог`,
+              }).catch(console.warn);
               try {
                 localStorage.removeItem("catalog_admin");
                 sessionStorage.removeItem("main_admin_auth");
@@ -1258,7 +1488,9 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                 sessionStorage.removeItem("auth_facilitator_key");
                 sessionStorage.removeItem("auth_resolved");
               } catch (e) {}
-              window.location.href = window.location.origin;
+              setTimeout(() => {
+                window.location.href = window.location.origin;
+              }, 100);
             }}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition-colors shrink-0 cursor-pointer"
             title="Выйти в общий каталог / Сменить профиль"
@@ -1299,16 +1531,21 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
                {isImporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                Загрузить цены
             </button>
-            <button
-               onClick={() => {
-                 setShowClearConfirm(true);
-               }}
-               disabled={isClearing}
-               className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 shadow-sm rounded-lg text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-50 ml-2"
-            >
-               {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-               Обнулить цены
-            </button>
+            {/* Кнопка "Обнулить цены" (запаролена под паролем администратора и полностью скрыта из рендера по требованию) */}
+            {false && (
+              <button
+                 onClick={() => {
+                   setClearAdminPasswordInput('');
+                   setClearAdminPasswordError('');
+                   setShowClearConfirm(true);
+                 }}
+                 disabled={isClearing}
+                 className="flex items-center gap-2 px-4 py-2 bg-white border border-red-200 shadow-sm rounded-lg text-sm font-semibold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors disabled:opacity-50 ml-2"
+              >
+                 {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                 Обнулить цены
+              </button>
+            )}
           </div>
 
           {!selectedRegion && supplierId !== 'supplier1' && (
@@ -1527,30 +1764,61 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
         </div>
       )}
 
-      {/* Clear Prices Modal */}
+      {/* Clear Prices Modal (защищено паролем администратора системы) */}
       {showClearConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowClearConfirm(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => { setShowClearConfirm(false); setClearAdminPasswordInput(''); setClearAdminPasswordError(''); }}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
             <div className="p-6 flex flex-col items-center text-center">
               <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
                  <AlertCircle className="w-6 h-6 text-red-600" />
               </div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">Обнулить все цены?</h3>
-              <p className="text-sm text-slate-500 mb-6">
-                 Вы уверены, что хотите удалить ВСЕ введенные вами цены {supplierId === 'supplier1' ? 'в базе' : (selectedRegion ? `для региона «${selectedRegion}»` : 'во всех регионах')}? Это действие необратимо.
+              <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                 Вы уверены, что хотите удалить ВСЕ введенные вами цены {supplierId === 'supplier1' ? 'в базе' : (selectedRegion ? `для региона «${selectedRegion}»` : 'во всех регионах')}? Это действие необратимо и требует подтверждения паролем администратора.
               </p>
+
+              <div className="w-full text-left mb-4">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Пароль администратора:
+                </label>
+                <input
+                  type="password"
+                  placeholder="Введите пароль администратора"
+                  value={clearAdminPasswordInput}
+                  onChange={(e) => {
+                    setClearAdminPasswordInput(e.target.value);
+                    setClearAdminPasswordError('');
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && clearAdminPasswordInput.trim()) {
+                      handleClearPrices();
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+                {clearAdminPasswordError && (
+                  <p className="text-xs text-red-600 font-medium mt-1">
+                    {clearAdminPasswordError}
+                  </p>
+                )}
+              </div>
+
               <div className="flex w-full gap-3">
                 <button
-                  onClick={() => setShowClearConfirm(false)}
+                  onClick={() => {
+                    setShowClearConfirm(false);
+                    setClearAdminPasswordInput('');
+                    setClearAdminPasswordError('');
+                  }}
                   disabled={isClearing}
-                  className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors"
+                  className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors cursor-pointer"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleClearPrices}
-                  disabled={isClearing}
-                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+                  disabled={isClearing || !clearAdminPasswordInput.trim()}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isClearing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Обнулить"}
                 </button>

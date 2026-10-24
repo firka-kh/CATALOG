@@ -1494,6 +1494,35 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   }, [isReallyAdmin, currentRole, activePortalFacilitator, portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region, resolvedFacilitator.name]);
 
   const handleFullLogout = useCallback(() => {
+    // Audit Logging for session termination
+    if (isReallyAdmin || currentRole === "admin") {
+      logAuditEvent({
+        actionType: "ADMIN_LOGOUT",
+        actorName: "Администратор системы",
+        actorRole: "admin",
+        details: "Администратор системы вышел из системы (завершение сеанса)",
+      }).catch(console.warn);
+    } else if (currentRole === "supplier") {
+      logAuditEvent({
+        actionType: "SUPPLIER_LOGOUT",
+        actorName: "Поставщик",
+        actorRole: "supplier",
+        details: "Поставщик вышел из системы (завершение сеанса)",
+      }).catch(console.warn);
+    } else if (activePortalFacilitator || portalFacilitator || currentRole === "facilitator" || isFacilitatorAuthenticated) {
+      const facName = resolvedFacilitator.name || "Фасилитатор";
+      logAuditEvent({
+        actionType: "FACILITATOR_LOGOUT",
+        actorName: facName,
+        actorRole: "facilitator",
+        facilitatorName: facName,
+        facilitatorRep: resolvedFacilitator.rep,
+        facilitatorPhone: resolvedFacilitator.phone,
+        region: resolvedFacilitator.region,
+        details: `Фасилитатор ${facName}${resolvedFacilitator.region ? ` (${resolvedFacilitator.region})` : ""} вышел из системы (завершение сеанса)`,
+      }).catch(console.warn);
+    }
+
     try {
       localStorage.removeItem("catalog_admin");
       sessionStorage.removeItem("main_admin_auth");

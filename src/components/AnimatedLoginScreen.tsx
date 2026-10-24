@@ -254,7 +254,7 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
 
       // 1. Check if matches admin credentials
       if (lower === adminPass || lower === "020779" || lower === "admin") {
-        triggerSuccess(() => onAdminSuccess());
+        triggerSuccess("admin", "Администратор системы", "Успешный вход в панель управления администратора", () => onAdminSuccess());
         return;
       }
 
@@ -264,7 +264,13 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
           const normCode = String(codeVal).trim().toLowerCase().replace(/["'@\s]/g, "");
           if (normCode === lower) {
             const region = facilitatorRegions[key];
-            triggerSuccess(() => onFacilitatorSuccess(key, region));
+            triggerSuccess(
+              "facilitator",
+              key,
+              `Успешный вход фасилитатора: ${key}${region ? ` (${region})` : ""}`,
+              () => onFacilitatorSuccess(key, region),
+              { facilitatorName: key, region }
+            );
             return;
           }
         }
@@ -276,7 +282,14 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
           const normCode = String(codeVal).trim().toLowerCase().replace(/["'@\s]/g, "");
           if (normCode === lower || String(codeVal).trim().toLowerCase() === inputClean.toLowerCase()) {
             const name = supplierLegalNames[key] || key;
-            triggerSuccess(() => onSupplierSuccess(key, name));
+            const code = supplierAssignedCodes?.[key];
+            triggerSuccess(
+              "supplier",
+              name,
+              `Успешный вход поставщика: ${name}${code ? ` [${code}]` : ""}`,
+              () => onSupplierSuccess(key, name),
+              { supplierId: key, supplierName: name, supplierCode: code }
+            );
             return;
           }
         }
@@ -289,7 +302,13 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
             const normCode = String(codeVal).trim().toLowerCase().replace(/["'@\s]/g, "");
             if (normCode === lower || String(codeVal).trim().toLowerCase() === inputClean.toLowerCase()) {
               const name = supplierLegalNames[key] || key;
-              triggerSuccess(() => onSupplierSuccess(key, name));
+              triggerSuccess(
+                "supplier",
+                name,
+                `Успешный вход поставщика по идентификатору: ${name} [${codeVal}]`,
+                () => onSupplierSuccess(key, name),
+                { supplierId: key, supplierName: name, supplierCode: codeVal }
+              );
               return;
             }
           }
@@ -303,7 +322,14 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
                             (supplierAssignedCodes ? Object.keys(supplierAssignedCodes).find(k => k.toLowerCase() === lower) : undefined);
         if (matchingKey) {
           const name = supplierLegalNames[matchingKey] || matchingKey;
-          triggerSuccess(() => onSupplierSuccess(matchingKey, name));
+          const code = supplierAssignedCodes?.[matchingKey];
+          triggerSuccess(
+            "supplier",
+            name,
+            `Успешный вход поставщика: ${name} (ключ: ${matchingKey})`,
+            () => onSupplierSuccess(matchingKey, name),
+            { supplierId: matchingKey, supplierName: name, supplierCode: code }
+          );
           return;
         }
       }
@@ -319,27 +345,45 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
     }, 180);
   };
 
-  const triggerSuccess = (callback: () => void) => {
+  const triggerSuccess = (
+    role: "admin" | "facilitator" | "supplier",
+    actorName: string,
+    details: string,
+    callback: () => void,
+    extra?: {
+      facilitatorName?: string;
+      region?: string;
+      supplierId?: string;
+      supplierName?: string;
+      supplierCode?: string;
+    }
+  ) => {
     setIsLoading(false);
     setIsSuccessCollapsing(true);
     updateEyebrows(0, 0, 0, false, false, true);
 
+    const actionType =
+      role === "admin"
+        ? "ADMIN_LOGIN"
+        : role === "facilitator"
+        ? "FACILITATOR_LOGIN"
+        : "SUPPLIER_LOGIN";
+
     logAuditEvent({
-      actionType: activeRole === "admin" ? "ADMIN_LOGIN" : "USER_LOGIN",
-      actorName:
-        activeRole === "admin"
-          ? "Администратор"
-          : activeRole === "facilitator"
-          ? "Фасилитатор"
-          : "Поставщик",
-      actorRole: activeRole === "admin" ? "admin" : "facilitator",
-      details: `Успешный вход в защищенную зону: ${
-        activeRole === "admin"
-          ? "Панель администратора"
-          : activeRole === "facilitator"
-          ? "Кабинет фасилитатора"
-          : "Портал поставщика"
-      }`,
+      actionType,
+      actorName,
+      actorRole: role,
+      facilitatorName: extra?.facilitatorName,
+      region: extra?.region,
+      supplierId: extra?.supplierId,
+      supplierName: extra?.supplierName,
+      supplierCode: extra?.supplierCode,
+      details,
+      metadata: {
+        role,
+        actorName,
+        ...extra,
+      },
     }).catch(console.warn);
 
     // Fast transition to eliminate perceived motionless screen

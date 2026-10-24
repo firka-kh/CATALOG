@@ -19,7 +19,20 @@ import { captureDeviceAudit, getQuickDeviceSnapshot } from "./deviceFingerprint"
 export type AuditActionType =
   | "USER_LOGIN"
   | "ADMIN_LOGIN"
+  | "ADMIN_LOGOUT"
+  | "FACILITATOR_LOGIN"
+  | "FACILITATOR_LOGOUT"
   | "FACILITATOR_SWITCH"
+  | "SUPPLIER_LOGIN"
+  | "SUPPLIER_LOGOUT"
+  | "SUPPLIER_UPDATE_PRICE"
+  | "SUPPLIER_BATCH_PRICE_UPDATE"
+  | "SUPPLIER_ADD_PRODUCT"
+  | "SUPPLIER_EDIT_PRODUCT"
+  | "SUPPLIER_DELETE_PRODUCT"
+  | "SUPPLIER_IMPORT_EXCEL"
+  | "SUPPLIER_EXPORT_EXCEL"
+  | "SUPPLIER_CLEAR_PRICES"
   | "CREATE_QUOTE"
   | "EDIT_QUOTE"
   | "DELETE_QUOTE"
@@ -31,13 +44,15 @@ export type AuditActionType =
   | "SECURITY_AUDIT"
   | "CLEAR_CART";
 
+export type AuditActorRole = "admin" | "facilitator" | "specialist" | "operator" | "supplier";
+
 export interface AuditLogEntry {
   id: string;
   timestamp: number;
   dateFormatted: string;
   actionType: AuditActionType;
   actorName: string;
-  actorRole: "admin" | "facilitator" | "specialist" | "operator";
+  actorRole: AuditActorRole;
   facilitatorName?: string;
   facilitatorRep?: string;
   facilitatorPhone?: string;
@@ -48,6 +63,15 @@ export interface AuditLogEntry {
   quoteId?: string;
   totalAmount?: number;
   itemsCount?: number;
+  supplierId?: string;
+  supplierName?: string;
+  supplierCode?: string;
+  productId?: string;
+  productName?: string;
+  productCode?: string;
+  oldPrice?: number;
+  newPrice?: number;
+  diffAmount?: number;
   details: string;
   metadata?: Record<string, any>;
   sessionToken: string;
@@ -80,6 +104,25 @@ export function formatAuditDate(ts: number): string {
   });
 }
 
+function cleanAuditObject<T>(val: T): T {
+  if (val === undefined || val === null) {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(cleanAuditObject) as unknown as T;
+  }
+  if (typeof val === "object" && !(val instanceof Date)) {
+    const res: any = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) {
+        res[k] = cleanAuditObject(v);
+      }
+    }
+    return res;
+  }
+  return val;
+}
+
 /**
  * Log an audit action into Firestore collection `audit_logs`
  * Non-blocking, fails gracefully
@@ -87,7 +130,7 @@ export function formatAuditDate(ts: number): string {
 export async function logAuditEvent(entry: {
   actionType: AuditActionType;
   actorName: string;
-  actorRole?: "admin" | "facilitator" | "specialist" | "operator";
+  actorRole?: AuditActorRole;
   facilitatorName?: string;
   facilitatorRep?: string;
   facilitatorPhone?: string;
@@ -98,6 +141,15 @@ export async function logAuditEvent(entry: {
   quoteId?: string;
   totalAmount?: number;
   itemsCount?: number;
+  supplierId?: string;
+  supplierName?: string;
+  supplierCode?: string;
+  productId?: string;
+  productName?: string;
+  productCode?: string;
+  oldPrice?: number;
+  newPrice?: number;
+  diffAmount?: number;
   details: string;
   metadata?: Record<string, any>;
 }): Promise<string | null> {
@@ -120,7 +172,7 @@ export async function logAuditEvent(entry: {
       }
     }
 
-    const fullEntry: AuditLogEntry = {
+    const rawEntry: AuditLogEntry = {
       id,
       timestamp: now,
       dateFormatted: formatAuditDate(now),
@@ -137,10 +189,21 @@ export async function logAuditEvent(entry: {
       quoteId: entry.quoteId?.trim() || undefined,
       totalAmount: entry.totalAmount !== undefined ? Number(entry.totalAmount.toFixed(2)) : undefined,
       itemsCount: entry.itemsCount !== undefined ? Number(entry.itemsCount) : undefined,
+      supplierId: entry.supplierId?.trim() || undefined,
+      supplierName: entry.supplierName?.trim() || undefined,
+      supplierCode: entry.supplierCode?.trim() || undefined,
+      productId: entry.productId?.trim() || undefined,
+      productName: entry.productName?.trim() || undefined,
+      productCode: entry.productCode?.trim() || undefined,
+      oldPrice: entry.oldPrice !== undefined ? Number(entry.oldPrice) : undefined,
+      newPrice: entry.newPrice !== undefined ? Number(entry.newPrice) : undefined,
+      diffAmount: entry.diffAmount !== undefined ? Number(entry.diffAmount) : undefined,
       details: entry.details,
       metadata: meta,
       sessionToken,
     };
+
+    const fullEntry = cleanAuditObject(rawEntry);
 
     // Save to Firestore
     await setDoc(doc(db, "audit_logs", id), fullEntry);

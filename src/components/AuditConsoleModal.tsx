@@ -37,6 +37,11 @@ import {
   Check,
   Fingerprint,
   HardDrive,
+  LogIn,
+  LogOut,
+  Plus,
+  Store,
+  Tag,
 } from "lucide-react";
 import {
   AuditLogEntry,
@@ -271,7 +276,32 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
               return false;
             }
           } else if (selectedActionType === "SECURITY_ALL") {
-            if (log.actionType !== "ADMIN_LOGIN" && log.actionType !== "USER_LOGIN" && log.actionType !== "UPDATE_DICTIONARY") {
+            if (!log.actionType.includes("LOGIN") && !log.actionType.includes("LOGOUT") && log.actionType !== "UPDATE_DICTIONARY" && log.actionType !== "SECURITY_AUDIT") {
+              return false;
+            }
+          } else if (selectedActionType === "SESSIONS_ALL") {
+            if (!log.actionType.includes("LOGIN") && !log.actionType.includes("LOGOUT") && log.actionType !== "FACILITATOR_SWITCH") {
+              return false;
+            }
+          } else if (selectedActionType === "SUPPLIERS_ALL") {
+            if (log.actorRole !== "supplier" && !log.actionType.startsWith("SUPPLIER_") && log.actionType !== "UPDATE_PRICE_EXCEL") {
+              return false;
+            }
+          } else if (selectedActionType === "SUPPLIER_PRICES_ALL") {
+            if (
+              log.actionType !== "SUPPLIER_UPDATE_PRICE" &&
+              log.actionType !== "SUPPLIER_BATCH_PRICE_UPDATE" &&
+              log.actionType !== "SUPPLIER_CLEAR_PRICES" &&
+              log.actionType !== "UPDATE_PRICE_EXCEL"
+            ) {
+              return false;
+            }
+          } else if (selectedActionType === "SUPPLIER_PRODUCTS_ALL") {
+            if (
+              log.actionType !== "SUPPLIER_ADD_PRODUCT" &&
+              log.actionType !== "SUPPLIER_EDIT_PRODUCT" &&
+              log.actionType !== "SUPPLIER_DELETE_PRODUCT"
+            ) {
               return false;
             }
           } else if (log.actionType !== selectedActionType) {
@@ -300,11 +330,29 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           const inDetails = (log.details || "").toLowerCase().includes(q);
           const inActor = (log.actorName || "").toLowerCase().includes(q);
           const inFacilitator = (log.facilitatorName || "").toLowerCase().includes(q);
+          const inSupplierName = (log.supplierName || "").toLowerCase().includes(q);
+          const inSupplierCode = (log.supplierCode || "").toLowerCase().includes(q);
+          const inProductName = (log.productName || "").toLowerCase().includes(q);
+          const inProductCode = (log.productCode || "").toLowerCase().includes(q);
           const inDistrict = (log.district || "").toLowerCase().includes(q);
           const inFp = (log.metadata?.deviceFingerprintId || "").toLowerCase().includes(q);
           const inDeviceSummary = (log.metadata?.deviceSummary || "").toLowerCase().includes(q);
 
-          if (!inBeneficiary && !inBeneficiaryId && !inQuoteId && !inDetails && !inActor && !inFacilitator && !inDistrict && !inFp && !inDeviceSummary) {
+          if (
+            !inBeneficiary &&
+            !inBeneficiaryId &&
+            !inQuoteId &&
+            !inDetails &&
+            !inActor &&
+            !inFacilitator &&
+            !inDistrict &&
+            !inFp &&
+            !inDeviceSummary &&
+            !inSupplierName &&
+            !inSupplierCode &&
+            !inProductName &&
+            !inProductCode
+          ) {
             return false;
           }
         }
@@ -337,6 +385,10 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     const tabletsCount = filteredLogs.filter((l) => l.metadata?.deviceAudit?.deviceType === "Планшет" || (l.metadata?.deviceSummary || "").toLowerCase().includes("планшет")).length;
     const pcsCount = filteredLogs.filter((l) => l.metadata?.deviceAudit?.deviceType === "ПК / Ноутбук" || (l.metadata?.deviceSummary || "").toLowerCase().includes("пк") || (l.metadata?.deviceSummary || "").toLowerCase().includes("ноутбук")).length;
     const phonesCount = filteredLogs.filter((l) => l.metadata?.deviceAudit?.deviceType === "Смартфон" || (l.metadata?.deviceSummary || "").toLowerCase().includes("смартфон")).length;
+    const supplierActionsCount = filteredLogs.filter((l) => l.actorRole === "supplier" || l.actionType.startsWith("SUPPLIER_")).length;
+    const supplierDeletesCount = filteredLogs.filter((l) => l.actionType === "SUPPLIER_DELETE_PRODUCT").length;
+    const supplierPriceUpdatesCount = filteredLogs.filter((l) => l.actionType === "SUPPLIER_UPDATE_PRICE" || l.actionType === "SUPPLIER_BATCH_PRICE_UPDATE").length;
+    const sessionsCount = filteredLogs.filter((l) => l.actionType.includes("LOGIN") || l.actionType.includes("LOGOUT") || l.actionType === "FACILITATOR_SWITCH").length;
 
     return { 
       total, 
@@ -350,6 +402,10 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
       tabletsCount,
       pcsCount,
       phonesCount,
+      supplierActionsCount,
+      supplierDeletesCount,
+      supplierPriceUpdatesCount,
+      sessionsCount,
     };
   }, [filteredLogs]);
 
@@ -509,7 +565,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
             <AlertTriangle className="w-3 h-3 text-rose-600" />
-            Удаление
+            Удаление КП
           </span>
         );
       case "PRINT_CART":
@@ -526,11 +582,102 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
             Печать Каталога
           </span>
         );
+      case "SUPPLIER_UPDATE_PRICE":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+            <ArrowUpDown className="w-3 h-3 text-amber-600" />
+            Изменение цены
+          </span>
+        );
+      case "SUPPLIER_BATCH_PRICE_UPDATE":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-violet-100 text-violet-900 border border-violet-300">
+            <CheckCircle2 className="w-3 h-3 text-violet-600" />
+            Пакетное обновление цен
+          </span>
+        );
+      case "SUPPLIER_ADD_PRODUCT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+            <Plus className="w-3 h-3 text-emerald-600" />
+            Новый товар (Поставщик)
+          </span>
+        );
+      case "SUPPLIER_EDIT_PRODUCT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-100 text-sky-900 border border-sky-300">
+            <Pencil className="w-3 h-3 text-sky-600" />
+            Правка товара (Поставщик)
+          </span>
+        );
+      case "SUPPLIER_DELETE_PRODUCT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-900 border border-rose-400 animate-pulse">
+            <Trash2 className="w-3 h-3 text-rose-600" />
+            УДАЛЕНИЕ ТОВАРА (Поставщик)
+          </span>
+        );
+      case "SUPPLIER_IMPORT_EXCEL":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-teal-100 text-teal-900 border border-teal-300">
+            <FileSpreadsheet className="w-3 h-3 text-teal-600" />
+            Импорт Excel (Поставщик)
+          </span>
+        );
+      case "SUPPLIER_EXPORT_EXCEL":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-900 border border-cyan-300">
+            <Download className="w-3 h-3 text-cyan-600" />
+            Экспорт Excel (Поставщик)
+          </span>
+        );
+      case "SUPPLIER_CLEAR_PRICES":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-900 border border-red-300">
+            <AlertTriangle className="w-3 h-3 text-red-600" />
+            Обнуление цен
+          </span>
+        );
+      case "SUPPLIER_LOGIN":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-900 border border-purple-300">
+            <LogIn className="w-3 h-3 text-purple-600" />
+            Вход Поставщика
+          </span>
+        );
+      case "SUPPLIER_LOGOUT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-800 border border-slate-300">
+            <LogOut className="w-3 h-3 text-slate-600" />
+            Выход Поставщика
+          </span>
+        );
       case "ADMIN_LOGIN":
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 border border-purple-200">
             <Shield className="w-3 h-3 text-purple-600" />
             Вход Администратора
+          </span>
+        );
+      case "ADMIN_LOGOUT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-800 border border-slate-300">
+            <LogOut className="w-3 h-3 text-slate-600" />
+            Выход Администратора
+          </span>
+        );
+      case "FACILITATOR_LOGIN":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+            <LogIn className="w-3 h-3 text-indigo-600" />
+            Вход Фасилитатора
+          </span>
+        );
+      case "FACILITATOR_LOGOUT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-800 border border-slate-300">
+            <LogOut className="w-3 h-3 text-slate-600" />
+            Выход Фасилитатора
           </span>
         );
       case "USER_LOGIN":
@@ -580,6 +727,13 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
       "Действие",
       "Исполнитель",
       "Роль",
+      "Поставщик",
+      "Код поставщика",
+      "Товар",
+      "Код товара",
+      "Старая цена",
+      "Новая цена",
+      "Разница (TJS)",
       "Фасилитатор",
       "Регион",
       "Район",
@@ -598,6 +752,13 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
       `"${l.actionType}"`,
       `"${l.actorName || ""}"`,
       `"${l.actorRole || ""}"`,
+      `"${l.supplierName || ""}"`,
+      `"${l.supplierCode || ""}"`,
+      `"${l.productName || ""}"`,
+      `"${l.productCode || ""}"`,
+      l.oldPrice !== undefined ? l.oldPrice : "",
+      l.newPrice !== undefined ? l.newPrice : "",
+      l.diffAmount !== undefined ? l.diffAmount : "",
       `"${l.facilitatorName || ""}"`,
       `"${l.region || ""}"`,
       `"${l.district || ""}"`,
@@ -767,20 +928,48 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                 <select
                   value={selectedActionType}
                   onChange={(e) => setSelectedActionType(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm font-medium"
                 >
                   <option value="">Все операции (Сплошной аудит)</option>
-                  <option value="QUOTES_ALL">Все действия с КП (создание, правка, удаление)</option>
-                  <option value="CREATE_QUOTE">Оформление спецификаций</option>
-                  <option value="EDIT_QUOTE">Корректировки / Изменения спецификаций</option>
-                  <option value="DELETE_QUOTE">Удаления спецификаций</option>
-                  <option value="PRINT_ALL">Факты печати (акты и каталоги)</option>
-                  <option value="PRINT_CART">Печать Актов приема / КП</option>
-                  <option value="PRINT_CATALOG">Печать Каталога цен</option>
-                  <option value="EXPORT_EXCEL">Экспорт в Excel</option>
-                  <option value="SECURITY_ALL">Безопасность (входы, смены паролей, справочники)</option>
-                  <option value="ADMIN_LOGIN">Вход Администратора</option>
-                  <option value="UPDATE_PRICE_EXCEL">Импорт Excel-прайсов</option>
+                  <optgroup label="⭐ ДЕЙСТВИЯ ПОСТАВЩИКОВ">
+                    <option value="SUPPLIERS_ALL">⭐ Все действия Поставщиков</option>
+                    <option value="SUPPLIER_PRICES_ALL">📈 Изменения цен (одиночные и пакетные)</option>
+                    <option value="SUPPLIER_UPDATE_PRICE">Изменение цены товара</option>
+                    <option value="SUPPLIER_BATCH_PRICE_UPDATE">Пакетное сохранение цен</option>
+                    <option value="SUPPLIER_PRODUCTS_ALL">📦 Все операции с товарами</option>
+                    <option value="SUPPLIER_DELETE_PRODUCT">⚠️ УДАЛЕНИЕ ТОВАРОВ ИЗ КАТАЛОГА</option>
+                    <option value="SUPPLIER_ADD_PRODUCT">Добавление новых товаров</option>
+                    <option value="SUPPLIER_EDIT_PRODUCT">Редактирование карточек товаров</option>
+                    <option value="SUPPLIER_IMPORT_EXCEL">Импорт Excel-прайсов</option>
+                    <option value="SUPPLIER_EXPORT_EXCEL">Экспорт прайсов в Excel</option>
+                    <option value="SUPPLIER_CLEAR_PRICES">Обнуление цен</option>
+                  </optgroup>
+                  <optgroup label="🔑 СЕССИИ (ВХОДЫ И ВЫХОДЫ)">
+                    <option value="SESSIONS_ALL">🔑 Все сессии (Входы и Выходы)</option>
+                    <option value="SUPPLIER_LOGIN">Вход Поставщика</option>
+                    <option value="SUPPLIER_LOGOUT">Выход Поставщика</option>
+                    <option value="ADMIN_LOGIN">Вход Администратора</option>
+                    <option value="ADMIN_LOGOUT">Выход Администратора</option>
+                    <option value="FACILITATOR_LOGIN">Вход Фасилитатора</option>
+                    <option value="FACILITATOR_LOGOUT">Выход Фасилитатора</option>
+                  </optgroup>
+                  <optgroup label="📋 СПЕЦИФИКАЦИИ И КП (ФАСИЛИТАТОРЫ)">
+                    <option value="QUOTES_ALL">Все действия с КП</option>
+                    <option value="CREATE_QUOTE">Оформление спецификаций</option>
+                    <option value="EDIT_QUOTE">Корректировки спецификаций</option>
+                    <option value="DELETE_QUOTE">Удаления спецификаций</option>
+                  </optgroup>
+                  <optgroup label="🖨️ ПЕЧАТЬ И ВЫГРУЗКИ">
+                    <option value="PRINT_ALL">Факты печати (акты и каталоги)</option>
+                    <option value="PRINT_CART">Печать Актов приема / КП</option>
+                    <option value="PRINT_CATALOG">Печать Каталога цен</option>
+                    <option value="EXPORT_EXCEL">Экспорт в Excel</option>
+                  </optgroup>
+                  <optgroup label="🛡️ БЕЗОПАСНОСТЬ">
+                    <option value="SECURITY_ALL">Все события безопасности</option>
+                    <option value="UPDATE_PRICE_EXCEL">Импорт Excel цен</option>
+                    <option value="UPDATE_DICTIONARY">Изменение справочников</option>
+                  </optgroup>
                 </select>
               </div>
 
@@ -1022,6 +1211,33 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   </span>
                 </div>
               )}
+              {stats.supplierActionsCount > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Поставщики:</span>
+                  <span className="font-extrabold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 shadow-sm flex items-center gap-1">
+                    <Store className="w-3 h-3 text-amber-600" />
+                    {stats.supplierActionsCount} действий
+                  </span>
+                </div>
+              )}
+              {stats.supplierDeletesCount > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Удалений товаров:</span>
+                  <span className="font-extrabold text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-300 shadow-sm flex items-center gap-1">
+                    <Trash2 className="w-3 h-3 text-rose-600" />
+                    {stats.supplierDeletesCount} шт.
+                  </span>
+                </div>
+              )}
+              {stats.sessionsCount > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Сессий:</span>
+                  <span className="font-extrabold text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200 shadow-sm flex items-center gap-1">
+                    <LogIn className="w-3 h-3 text-purple-600" />
+                    {stats.sessionsCount} входов/выходов
+                  </span>
+                </div>
+              )}
               {stats.edits > 0 && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-500">Корректировок:</span>
@@ -1193,22 +1409,57 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                               </td>
                               <td className="p-3 leading-tight">
                                 <div className="font-bold text-slate-900 truncate max-w-[180px]">
-                                  {log.facilitatorName || log.actorName}
+                                  {log.supplierName || log.facilitatorName || log.actorName}
                                 </div>
                                 <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                                  <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                                  <span className="truncate">
-                                    {log.district ? `${log.district}` : log.region || "Не указан"}
-                                  </span>
+                                  {log.actorRole === "supplier" ? (
+                                    <>
+                                      <Store className="w-3 h-3 text-amber-600 shrink-0" />
+                                      <span className="truncate">
+                                        {log.supplierCode ? `[${log.supplierCode}] ` : ""}
+                                        {log.region || "Все регионы"}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                      <span className="truncate">
+                                        {log.district ? `${log.district}` : log.region || "Не указан"}
+                                      </span>
+                                    </>
+                                  )}
                                 </div>
                               </td>
                               <td className="p-3 leading-tight">
-                                <div className="font-bold text-slate-900 truncate max-w-[190px]">
-                                  {log.beneficiaryName || "—"}
-                                </div>
-                                {log.quoteId && (
-                                  <div className="text-[10px] font-mono font-semibold text-indigo-700 mt-0.5">
-                                    № {log.quoteId}
+                                {log.productName ? (
+                                  <div>
+                                    <div className="font-bold text-slate-900 truncate max-w-[190px]" title={log.productName}>
+                                      {log.productName}
+                                    </div>
+                                    <div className="text-[10px] font-mono font-semibold text-indigo-700 mt-0.5 flex items-center gap-1">
+                                      <Tag className="w-2.5 h-2.5 text-indigo-500" />
+                                      <span>Код: {log.productCode || log.productId}</span>
+                                    </div>
+                                  </div>
+                                ) : log.actionType.includes("LOGIN") || log.actionType.includes("LOGOUT") ? (
+                                  <div>
+                                    <div className="font-bold text-slate-900 truncate max-w-[190px]">
+                                      {log.actionType.includes("LOGIN") ? "🟢 Авторизация входа" : "⚪ Завершение сеанса"}
+                                    </div>
+                                    <div className="text-[10px] font-mono text-slate-500 mt-0.5 uppercase">
+                                      Роль: {log.actorRole}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <div className="font-bold text-slate-900 truncate max-w-[190px]">
+                                      {log.beneficiaryName || "—"}
+                                    </div>
+                                    {log.quoteId && (
+                                      <div className="text-[10px] font-mono font-semibold text-indigo-700 mt-0.5">
+                                        № {log.quoteId}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </td>
@@ -1218,7 +1469,16 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                 </div>
                               </td>
                               <td className="p-3 text-right font-mono font-bold text-slate-900 whitespace-nowrap">
-                                {log.totalAmount !== undefined && log.totalAmount > 0 ? (
+                                {log.diffAmount !== undefined ? (
+                                  <div>
+                                    <span className={log.diffAmount >= 0 ? "text-emerald-600 font-bold" : "text-rose-600 font-bold"}>
+                                      {log.diffAmount > 0 ? `+${log.diffAmount}` : log.diffAmount} с.
+                                    </span>
+                                    <div className="text-[10px] text-slate-500 font-normal">
+                                      нов: {log.newPrice} с.
+                                    </div>
+                                  </div>
+                                ) : log.totalAmount !== undefined && log.totalAmount > 0 ? (
                                   <span>{log.totalAmount.toLocaleString("ru-RU")} с.</span>
                                 ) : (
                                   <span className="text-slate-400 font-normal">—</span>
@@ -1261,8 +1521,15 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                                       <div>
-                                        <div className="text-[10px] uppercase text-slate-400 font-bold">Исполнитель</div>
-                                        <div className="font-semibold text-slate-800">{log.actorName} ({log.actorRole})</div>
+                                        <div className="text-[10px] uppercase text-slate-400 font-bold">Исполнитель / Субъект</div>
+                                        <div className="font-semibold text-slate-800">
+                                          {log.supplierName || log.actorName} ({log.actorRole})
+                                        </div>
+                                        {log.supplierCode && (
+                                          <div className="text-[11px] text-amber-700 font-mono font-bold">
+                                            Код поставщика: {log.supplierCode}
+                                          </div>
+                                        )}
                                         {log.facilitatorRep && (
                                           <div className="text-[11px] text-slate-500">Представитель: {log.facilitatorRep}</div>
                                         )}
@@ -1272,24 +1539,154 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                       </div>
 
                                       <div>
-                                        <div className="text-[10px] uppercase text-slate-400 font-bold">Бенефициар</div>
-                                        <div className="font-semibold text-slate-800">{log.beneficiaryName || "Не указан"}</div>
+                                        <div className="text-[10px] uppercase text-slate-400 font-bold">
+                                          {log.productName ? "Товар / Объект" : "Бенефициар"}
+                                        </div>
+                                        <div className="font-semibold text-slate-800">
+                                          {log.productName || log.beneficiaryName || "—"}
+                                        </div>
+                                        {log.productCode && (
+                                          <div className="text-[11px] text-indigo-700 font-mono">Артикул: {log.productCode}</div>
+                                        )}
                                         {log.beneficiaryId && (
-                                          <div className="text-[11px] text-slate-500">Код: {log.beneficiaryId}</div>
+                                          <div className="text-[11px] text-slate-500">Код бенефициара: {log.beneficiaryId}</div>
                                         )}
                                         <div className="text-[11px] text-slate-500">
-                                          Локация: {log.region || "—"}, район: {log.district || "—"}
+                                          Локация: {log.region || "Все регионы"}, район: {log.district || "—"}
                                         </div>
                                       </div>
 
                                       <div>
                                         <div className="text-[10px] uppercase text-slate-400 font-bold">Параметры операции</div>
                                         <div className="font-semibold text-slate-800">
-                                          Сумма: {log.totalAmount ? `${log.totalAmount.toLocaleString("ru-RU")} с.` : "0 с."}
+                                          {log.diffAmount !== undefined ? (
+                                            <span className={log.diffAmount >= 0 ? "text-emerald-700" : "text-rose-700"}>
+                                              Дельта: {log.diffAmount >= 0 ? `+${log.diffAmount}` : log.diffAmount} с. (нов: {log.newPrice} с.)
+                                            </span>
+                                          ) : log.totalAmount ? (
+                                            `Сумма: ${log.totalAmount.toLocaleString("ru-RU")} с.`
+                                          ) : (
+                                            "—"
+                                          )}
                                         </div>
-                                        <div className="text-[11px] text-slate-500">Позиций товаров: {log.itemsCount || 0} шт.</div>
+                                        <div className="text-[11px] text-slate-500">
+                                          {log.itemsCount !== undefined ? `Позиций: ${log.itemsCount} шт.` : ""}
+                                        </div>
                                       </div>
                                     </div>
+
+                                    {/* Product Deletion Detailed Audit Card */}
+                                    {(log.actionType === "SUPPLIER_DELETE_PRODUCT" || log.metadata?.deletedProduct) && (
+                                      <div className="mt-3 p-3.5 bg-rose-50 border border-rose-300 rounded-xl space-y-2">
+                                        <div className="flex items-center gap-2 text-rose-900 font-bold text-xs uppercase tracking-wide">
+                                          <AlertTriangle className="w-4 h-4 text-rose-600" />
+                                          <span>ДЕТАЛИ УДАЛЕННОГО ИЗ КАТАЛОГА ТОВАРА</span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs bg-white p-3 rounded-lg border border-rose-200">
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Наименование товара</span>
+                                            <span className="font-extrabold text-slate-900 text-sm block">
+                                              {log.productName || log.metadata?.deletedProduct?.name}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Артикул / Код товара</span>
+                                            <span className="font-mono font-bold text-indigo-700 block">
+                                              {log.productCode || log.metadata?.deletedProduct?.code || log.productId || "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Сферы / Категории</span>
+                                            <span className="font-semibold text-slate-800 block">
+                                              {log.metadata?.deletedProduct?.spheres?.join(", ") || log.metadata?.deletedProduct?.category || "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Базовая цена и единица</span>
+                                            <span className="font-mono font-bold text-slate-900 block">
+                                              {log.metadata?.deletedProduct?.price ? `${log.metadata.deletedProduct.price} с.` : "0 с."} / {log.metadata?.deletedProduct?.unit || "шт."}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Supplier Price Change Detailed Card */}
+                                    {(log.oldPrice !== undefined || log.actionType === "SUPPLIER_UPDATE_PRICE") && (
+                                      <div className="mt-3 p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                          <div className="flex items-center gap-1.5 font-bold text-amber-900 uppercase tracking-wide">
+                                            <ArrowUpDown className="w-4 h-4 text-amber-600" />
+                                            <span>Детализация изменения цены товара</span>
+                                          </div>
+                                          <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">
+                                            Регион: {log.region || "Все регионы"}
+                                          </span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs bg-white p-3 rounded-lg border border-amber-200">
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Товар</span>
+                                            <span className="font-bold text-slate-900 block truncate" title={log.productName}>
+                                              {log.productName || "—"}
+                                            </span>
+                                            <span className="font-mono text-[10px] text-slate-500 block">
+                                              Код: {log.productCode || log.productId || "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Прежняя цена</span>
+                                            <span className="font-mono font-bold text-slate-600 line-through block text-sm">
+                                              {log.oldPrice !== undefined ? `${log.oldPrice} с.` : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Новая утвержденная цена</span>
+                                            <span className="font-mono font-bold text-emerald-700 block text-sm">
+                                              {log.newPrice !== undefined ? `${log.newPrice} с.` : "—"}
+                                            </span>
+                                          </div>
+                                          <div>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 block">Дельта изменения</span>
+                                            <span className={`font-mono font-extrabold block text-sm ${
+                                              (log.diffAmount || 0) >= 0 ? "text-emerald-600" : "text-rose-600"
+                                            }`}>
+                                              {log.diffAmount !== undefined
+                                                ? `${log.diffAmount >= 0 ? `+${log.diffAmount}` : log.diffAmount} с.`
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Supplier Batch Update Sample Items */}
+                                    {log.metadata?.sampleUpdates && Array.isArray(log.metadata.sampleUpdates) && log.metadata.sampleUpdates.length > 0 && (
+                                      <div className="mt-3 p-3.5 bg-violet-50/70 border border-violet-200 rounded-xl space-y-2">
+                                        <div className="flex items-center justify-between text-xs">
+                                          <div className="flex items-center gap-1.5 font-bold text-violet-900 uppercase tracking-wide">
+                                            <CheckCircle2 className="w-4 h-4 text-violet-600" />
+                                            <span>Пакетное сохранение: измененные товары (всего {log.itemsCount || log.metadata.itemsCount} шт.)</span>
+                                          </div>
+                                          <span className="text-[11px] text-violet-700 font-semibold">
+                                            Регион: {log.region || "Все регионы"}
+                                          </span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                                          {log.metadata.sampleUpdates.map((it: any, i: number) => (
+                                            <div key={i} className="p-2 bg-white border border-violet-200 rounded-lg text-[11px] flex justify-between items-center">
+                                              <div className="truncate pr-2">
+                                                <div className="font-medium text-slate-900 truncate" title={it.name}>{it.name}</div>
+                                                <div className="font-mono text-[9px] text-slate-500">Код: {it.code || it.id}</div>
+                                              </div>
+                                              <div className="font-mono text-right shrink-0">
+                                                <span className="text-slate-400 line-through text-[10px] mr-1">{it.oldPrice} с.</span>
+                                                <span className="font-bold text-violet-900">{it.newPrice} с.</span>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
 
                                     {/* Items snapshot if available */}
                                     {log.metadata?.items && Array.isArray(log.metadata.items) && log.metadata.items.length > 0 && (
@@ -1514,15 +1911,35 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-200/60">
                               <span>
-                                <strong>Исполнитель:</strong> {log.actorName} ({log.facilitatorName || "—"})
+                                <strong>Субъект:</strong> {log.supplierName || log.actorName} ({log.actorRole})
                               </span>
+                              {log.supplierCode && (
+                                <span className="text-amber-800 font-mono font-bold">
+                                  [{log.supplierCode}]
+                                </span>
+                              )}
+                              {log.productName && (
+                                <span>
+                                  <strong>Товар:</strong> {log.productName} (код: {log.productCode || log.productId || "—"})
+                                </span>
+                              )}
+                              {log.diffAmount !== undefined && (
+                                <span className={`font-mono font-bold ${log.diffAmount >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                                  Дельта: {log.diffAmount >= 0 ? `+${log.diffAmount}` : log.diffAmount} с. (нов: {log.newPrice} с.)
+                                </span>
+                              )}
                               {log.beneficiaryName && (
                                 <span>
                                   <strong>Бенефициар:</strong> {log.beneficiaryName}
                                 </span>
                               )}
+                              {log.region && (
+                                <span>
+                                  <strong>Регион:</strong> {log.region}
+                                </span>
+                              )}
                               {log.totalAmount !== undefined && log.totalAmount > 0 && (
-                                <span className="text-emerald-700 font-bold">
+                                <span className="font-mono font-bold text-emerald-700">
                                   Сумма: {log.totalAmount.toLocaleString("ru-RU")} с.
                                 </span>
                               )}

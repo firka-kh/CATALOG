@@ -11,39 +11,51 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        devOptions: { enabled: false },
+        includeAssets: ['logo.png', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
-          name: 'Региональный Каталог',
-          short_name: 'Каталог',
-          description: 'Управление каталогом поставщиков',
-          theme_color: '#ffffff',
+          id: '/',
+          name: 'SPMEI — Каталог и Мониторинг Цен',
+          short_name: 'SPMEI',
+          description: 'Рабочее место специалиста по мониторингу цен и региональный каталог оборудования',
+          theme_color: '#0f172a',
+          background_color: '#0f172a',
           display: 'standalone',
+          start_url: '/',
+          scope: '/',
           icons: [
             {
-              src: '192x192.png',
+              src: '/pwa-192x192.png',
               sizes: '192x192',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any'
             },
             {
-              src: '512x512.png',
+              src: '/pwa-512x512.png',
               sizes: '512x512',
-              type: 'image/png'
+              type: 'image/png',
+              purpose: 'any'
+            },
+            {
+              src: '/pwa-maskable-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'maskable'
             }
           ],
           shortcuts: [
             {
-              name: "Открыть корзину",
-              short_name: "Корзина",
-              description: "Перейти в корзину покупок",
-              url: "/?action=cart",
-              icons: [{ src: "192x192.png", sizes: "192x192", type: "image/png" }]
+              name: "Панель мониторинга",
+              short_name: "Мониторинг",
+              description: "Открыть окно мониторинга и аномалий цен без бокового меню",
+              url: "/?view=monitoring",
+              icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }]
             },
             {
-              name: "Добавить товар",
-              short_name: "Новый товар",
-              description: "Добавить новый товар вручную",
-              url: "/?action=add-product",
-              icons: [{ src: "192x192.png", sizes: "192x192", type: "image/png" }]
+              name: "Каталог товаров",
+              short_name: "Каталог",
+              description: "Открыть каталог оборудования и поставщиков",
+              url: "/",
+              icons: [{ src: "/pwa-192x192.png", sizes: "192x192", type: "image/png" }]
             }
           ]
         },
@@ -52,6 +64,10 @@ export default defineConfig(() => {
           clientsClaim: true,
           globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
           maximumFileSizeToCacheInBytes: 10 * 1024 * 1024 // 10 MB
+        },
+        devOptions: {
+          enabled: true,
+          type: 'module'
         }
       })
     ],

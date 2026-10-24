@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
+import { PWAInstallButton } from "./components/PWAInstallButton";
 import { AuditConsoleModal } from "./components/AuditConsoleModal";
 import { AnimatedLoginScreen } from "./components/AnimatedLoginScreen";
 import { logAuditEvent } from "./lib/auditLogger";
@@ -3631,6 +3632,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     <ShieldAlert className="w-5 h-5 text-indigo-400" />
                     Аудит & Слепки оборудования
                   </a>
+                  <div className="pt-1 border-t border-slate-800/60 mt-1">
+                    <PWAInstallButton variant="sidebar" />
+                  </div>
                 </>
               )}
             </nav>
@@ -3799,6 +3803,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <span className="hidden sm:inline">Аудит & Слепки</span>
                 <span className="sm:hidden">Аудит</span>
               </button>
+              <PWAInstallButton variant="header" />
               {isTabletMode && (
                 <button
                   onClick={() => setIsCartOpen(true)}

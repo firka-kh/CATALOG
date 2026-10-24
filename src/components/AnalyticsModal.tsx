@@ -50,6 +50,7 @@ import { db } from "../lib/firebase";
 import Workbook from "exceljs";
 import { saveAs } from "file-saver";
 import { DISTRICTS_BY_REGION } from "../App";
+import { PWAInstallButton } from "./PWAInstallButton";
 
 interface AnalyticsModalProps {
   isOpen: boolean;
@@ -1063,6 +1064,9 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
                 </>
               )}
             </button>
+
+            {/* Install on PC button */}
+            <PWAInstallButton variant="monitoring" />
 
             {/* Standalone toggle button in modal mode */}
             {!isStandalone && (

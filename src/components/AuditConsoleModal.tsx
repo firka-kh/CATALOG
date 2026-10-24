@@ -57,6 +57,52 @@ import {
 import { DeviceAuditInfo, captureDeviceAudit } from "../lib/deviceFingerprint";
 import { PrintAuditProtocolView } from "./PrintAuditProtocolView";
 
+// Robust Region Matching Helper (handles regional aliases like Бохтар / Хатлон 1, etc.)
+export const isMatchingRegion = (logRegion?: string, targetRegion?: string): boolean => {
+  if (!logRegion || !targetRegion) return false;
+  const l = logRegion.trim().toLowerCase();
+  const t = targetRegion.trim().toLowerCase();
+  if (l === t) return true;
+  if (l.includes(t) || t.includes(l)) return true;
+
+  if (
+    (l.includes("бохтар") || l.includes("хатлон 1")) &&
+    (t.includes("бохтар") || t.includes("хатлон 1"))
+  ) return true;
+  if (
+    (l.includes("куляб") || l.includes("кулоб") || l.includes("хатлон 2")) &&
+    (t.includes("куляб") || t.includes("кулоб") || t.includes("хатлон 2"))
+  ) return true;
+  if (
+    (l.includes("согд") || l.includes("суғд") || l.includes("сугд")) &&
+    (t.includes("согд") || t.includes("суғд") || t.includes("сугд"))
+  ) return true;
+  if (l.includes("душанбе") && t.includes("душанбе")) return true;
+  if (l.includes("ррп") && t.includes("ррп")) return true;
+  if (l.includes("гбао") && t.includes("гбао")) return true;
+
+  return false;
+};
+
+// Robust Facilitator Identity Matching Helper
+export const isMatchingFacilitator = (
+  name?: string,
+  targetName?: string,
+  targetLegal?: string
+): boolean => {
+  if (!name) return false;
+  const n = name.trim().toLowerCase();
+  if (targetName) {
+    const tn = targetName.trim().toLowerCase();
+    if (n === tn || n.includes(tn) || tn.includes(n)) return true;
+  }
+  if (targetLegal) {
+    const tl = targetLegal.trim().toLowerCase();
+    if (n === tl || n.includes(tl) || tl.includes(n)) return true;
+  }
+  return false;
+};
+
 interface AuditConsoleModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -65,6 +111,9 @@ interface AuditConsoleModalProps {
   districtsByRegion?: Record<string, string[]>;
   currentFacilitatorName?: string;
   adminPassword?: string;
+  isFacilitator?: boolean;
+  facilitatorRegion?: string | null;
+  facilitatorLegalName?: string;
 }
 
 export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
@@ -75,6 +124,9 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   districtsByRegion = {},
   currentFacilitatorName,
   adminPassword = "020779",
+  isFacilitator = false,
+  facilitatorRegion = null,
+  facilitatorLegalName,
 }) => {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -155,6 +207,21 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
       unsubscribe();
     };
   }, [isOpen]);
+
+  // When modal is opened by a facilitator, automatically bind their assigned region and operator name
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (isFacilitator) {
+      if (facilitatorRegion) {
+        setSelectedRegion(facilitatorRegion);
+      }
+      if (currentFacilitatorName) {
+        setSelectedFacilitator(currentFacilitatorName);
+      }
+      setSelectedDistrict("");
+    }
+  }, [isOpen, isFacilitator, facilitatorRegion, currentFacilitatorName]);
 
   const handleCopyCurrentDeviceFp = () => {
     if (!currentDevice) return;
@@ -240,17 +307,91 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     return { start: 0, end: Infinity };
   }, [datePreset, customStartDate, customEndDate]);
 
+  // Effective region for district resolution
+  const effectiveRegion = isFacilitator && facilitatorRegion ? facilitatorRegion : selectedRegion;
+
+  // Available districts for the effective region
+  const availableDistricts = useMemo(() => {
+    if (!effectiveRegion) return [];
+    if (districtsByRegion[effectiveRegion]) {
+      return districtsByRegion[effectiveRegion];
+    }
+    for (const [rKey, distList] of Object.entries(districtsByRegion)) {
+      if (isMatchingRegion(rKey, effectiveRegion)) {
+        return distList;
+      }
+    }
+    return [];
+  }, [effectiveRegion, districtsByRegion]);
+
+  // Deduplicated lists for filter dropdowns to prevent duplicate keys
+  const uniqueFacilitators = useMemo(() => {
+    if (isFacilitator && currentFacilitatorName) {
+      return [currentFacilitatorName];
+    }
+    return Array.from(new Set(facilitators.filter(Boolean)));
+  }, [isFacilitator, currentFacilitatorName, facilitators]);
+
+  const uniqueRegionsList = useMemo(() => {
+    if (isFacilitator && facilitatorRegion) {
+      return [facilitatorRegion];
+    }
+    return Array.from(new Set(regions.filter(Boolean)));
+  }, [isFacilitator, facilitatorRegion, regions]);
+
+  const uniqueDistrictsList = useMemo(() => {
+    return Array.from(new Set(availableDistricts.filter(Boolean)));
+  }, [availableDistricts]);
+
   // Filtered logs
   const filteredLogs = useMemo(() => {
+    const targetRegion = isFacilitator && facilitatorRegion ? facilitatorRegion : selectedRegion;
+
     return logs
       .filter((log) => {
+        // Strict boundary for Facilitator: only see assigned region, districts, and own operations
+        if (isFacilitator) {
+          const facMatches =
+            isMatchingFacilitator(log.facilitatorName, currentFacilitatorName, facilitatorLegalName) ||
+            isMatchingFacilitator(log.actorName, currentFacilitatorName, facilitatorLegalName);
+
+          const regionMatches = targetRegion
+            ? isMatchingRegion(log.region, targetRegion) ||
+              (Boolean(log.district) &&
+                availableDistricts.some(
+                  (d) =>
+                    d.toLowerCase() === (log.district || "").toLowerCase() ||
+                    (log.district && d.toLowerCase().includes(log.district.toLowerCase())) ||
+                    (log.district && log.district.toLowerCase().includes(d.toLowerCase()))
+                ))
+            : false;
+
+          // If the log is explicitly for another facilitator, reject
+          if (log.facilitatorName && !facMatches) {
+            const isOtherFacilitator = facilitators.some(
+              (f) => f && f !== currentFacilitatorName && isMatchingFacilitator(log.facilitatorName, f)
+            );
+            if (isOtherFacilitator) return false;
+          }
+
+          // If the log is explicitly for another region, reject
+          if (log.region && targetRegion && !isMatchingRegion(log.region, targetRegion)) {
+            return false;
+          }
+
+          // If neither facilitator matches nor region matches: reject
+          if (!facMatches && !regionMatches) {
+            return false;
+          }
+        }
+
         // Date filter
         if (log.timestamp < dateRange.start || log.timestamp > dateRange.end) {
           return false;
         }
 
-        // Facilitator filter
-        if (selectedFacilitator) {
+        // Facilitator filter (for admin)
+        if (!isFacilitator && selectedFacilitator) {
           const matchFac =
             log.facilitatorName === selectedFacilitator ||
             log.actorName === selectedFacilitator ||
@@ -258,14 +399,18 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           if (!matchFac) return false;
         }
 
-        // Region filter
-        if (selectedRegion && log.region && !log.region.toLowerCase().includes(selectedRegion.toLowerCase())) {
+        // Region filter (for admin)
+        if (!isFacilitator && selectedRegion && log.region && !log.region.toLowerCase().includes(selectedRegion.toLowerCase())) {
           return false;
         }
 
         // District filter
-        if (selectedDistrict && log.district && !log.district.toLowerCase().includes(selectedDistrict.toLowerCase())) {
-          return false;
+        if (selectedDistrict) {
+          const targetD = selectedDistrict.toLowerCase();
+          const logD = (log.district || "").toLowerCase();
+          if (!logD || (!logD.includes(targetD) && !targetD.includes(logD))) {
+            return false;
+          }
         }
 
         // Action type filter
@@ -364,6 +509,12 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   }, [
     logs,
     dateRange,
+    isFacilitator,
+    facilitatorRegion,
+    currentFacilitatorName,
+    facilitatorLegalName,
+    facilitators,
+    availableDistricts,
     selectedFacilitator,
     selectedRegion,
     selectedDistrict,
@@ -410,30 +561,16 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     };
   }, [filteredLogs]);
 
-  // Available districts for selected region
-  const availableDistricts = useMemo(() => {
-    if (!selectedRegion) return [];
-    return districtsByRegion[selectedRegion] || [];
-  }, [selectedRegion, districtsByRegion]);
-
-  // Deduplicated lists for filter dropdowns to prevent duplicate keys
-  const uniqueFacilitators = useMemo(() => {
-    return Array.from(new Set(facilitators.filter(Boolean)));
-  }, [facilitators]);
-
-  const uniqueRegionsList = useMemo(() => {
-    return Array.from(new Set(regions.filter(Boolean)));
-  }, [regions]);
-
-  const uniqueDistrictsList = useMemo(() => {
-    return Array.from(new Set(availableDistricts.filter(Boolean)));
-  }, [availableDistricts]);
-
   // Reset filters
   const resetFilters = () => {
     setSearchQuery("");
-    setSelectedFacilitator("");
-    setSelectedRegion("");
+    if (isFacilitator) {
+      setSelectedRegion(facilitatorRegion || "");
+      setSelectedFacilitator(currentFacilitatorName || "");
+    } else {
+      setSelectedFacilitator("");
+      setSelectedRegion("");
+    }
     setSelectedDistrict("");
     setSelectedActionType("");
     setDeviceFilter("all");
@@ -444,8 +581,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
   const hasActiveFilters =
     searchQuery ||
-    selectedFacilitator ||
-    selectedRegion ||
+    (!isFacilitator && (selectedFacilitator || selectedRegion)) ||
     selectedDistrict ||
     selectedActionType ||
     deviceFilter !== "all" ||
@@ -807,15 +943,26 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                     Live
                   </span>
+                  {isFacilitator && facilitatorRegion && (
+                    <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/40">
+                      Регион: {facilitatorRegion}
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Сплошной мониторинг действий фасилитаторов, сессий, изменений спецификаций и фактов печати
-                </p>
+                {isFacilitator ? (
+                  <p className="text-xs text-indigo-300 mt-0.5">
+                    Журнал аудита закрепленного региона: <strong className="text-white">{facilitatorRegion || "Регион"}</strong> ({currentFacilitatorName})
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Сплошной мониторинг действий фасилитаторов, сессий, изменений спецификаций и фактов печати
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {selectedLogIds.length > 0 && (
+              {!isFacilitator && selectedLogIds.length > 0 && (
                 <button
                   onClick={handlePromptDeleteSelected}
                   className="flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer animate-in fade-in"
@@ -826,15 +973,17 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                 </button>
               )}
 
-              <button
-                onClick={handlePromptDeleteFiltered}
-                disabled={filteredLogs.length === 0}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-rose-950/70 hover:border-rose-700/50 hover:text-rose-300 disabled:opacity-40 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition-colors"
-                title="Очистить записи текущей выборки по паролю администратора"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-                <span className="hidden xl:inline">Очистить выборку</span>
-              </button>
+              {!isFacilitator && (
+                <button
+                  onClick={handlePromptDeleteFiltered}
+                  disabled={filteredLogs.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-rose-950/70 hover:border-rose-700/50 hover:text-rose-300 disabled:opacity-40 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition-colors"
+                  title="Очистить записи текущей выборки по паролю администратора"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="hidden xl:inline">Очистить выборку</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setIsPrintingProtocol(true)}
@@ -855,15 +1004,17 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                 <span className="hidden sm:inline">CSV</span>
               </button>
 
-              <button
-                onClick={handleSyncHistorical}
-                disabled={isSyncing}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition-colors"
-                title="Синхронизировать существующие спецификации в журнал аудита"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin text-indigo-400" : ""}`} />
-                <span className="hidden md:inline">Синхронизировать архив</span>
-              </button>
+              {!isFacilitator && (
+                <button
+                  onClick={handleSyncHistorical}
+                  disabled={isSyncing}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-xl border border-slate-700 transition-colors"
+                  title="Синхронизировать существующие спецификации в журнал аудита"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? "animate-spin text-indigo-400" : ""}`} />
+                  <span className="hidden md:inline">Синхронизировать архив</span>
+                </button>
+              )}
 
               <button
                 onClick={onClose}
@@ -976,18 +1127,32 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
               {/* Facilitator Filter */}
               <div>
-                <select
-                  value={selectedFacilitator}
-                  onChange={(e) => setSelectedFacilitator(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-                >
-                  <option value="">Все фасилитаторы</option>
-                  {uniqueFacilitators.map((f, idx) => (
-                    <option key={`fac-${f}-${idx}`} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
+                {isFacilitator ? (
+                  <div className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl flex items-center justify-between gap-1.5 shadow-sm">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <User className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span className="font-semibold text-slate-800 truncate" title={currentFacilitatorName || "Фасилитатор"}>
+                        {currentFacilitatorName || "Мой профиль"}
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded border border-indigo-200 shrink-0">
+                      Оператор
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedFacilitator}
+                    onChange={(e) => setSelectedFacilitator(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+                  >
+                    <option value="">Все фасилитаторы</option>
+                    {uniqueFacilitators.map((f, idx) => (
+                      <option key={`fac-${f}-${idx}`} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Quick Date Presets */}
@@ -1044,31 +1209,44 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
             <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
               <div className="flex flex-wrap items-center gap-2 flex-1">
                 {/* Region */}
-                <select
-                  value={selectedRegion}
-                  onChange={(e) => {
-                    setSelectedRegion(e.target.value);
-                    setSelectedDistrict("");
-                  }}
-                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm min-w-[160px]"
-                >
-                  <option value="">Все регионы</option>
-                  {uniqueRegionsList.map((r, idx) => (
-                    <option key={`reg-${r}-${idx}`} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
+                {isFacilitator && facilitatorRegion ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-indigo-50 border border-indigo-200 text-indigo-900 rounded-lg font-bold shadow-xs min-w-[160px]">
+                    <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span className="truncate" title={facilitatorRegion}>
+                      Регион: {facilitatorRegion}
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedRegion}
+                    onChange={(e) => {
+                      setSelectedRegion(e.target.value);
+                      setSelectedDistrict("");
+                    }}
+                    className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm min-w-[160px]"
+                  >
+                    <option value="">Все регионы</option>
+                    {uniqueRegionsList.map((r, idx) => (
+                      <option key={`reg-${r}-${idx}`} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 {/* District */}
                 <select
                   value={selectedDistrict}
                   onChange={(e) => setSelectedDistrict(e.target.value)}
-                  disabled={!selectedRegion || uniqueDistrictsList.length === 0}
-                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm min-w-[160px] disabled:opacity-60 disabled:bg-slate-100"
+                  disabled={(!isFacilitator && !selectedRegion) || uniqueDistrictsList.length === 0}
+                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm min-w-[160px] disabled:opacity-60 disabled:bg-slate-100 font-medium"
                 >
                   <option value="">
-                    {selectedRegion ? "Все районы региона" : "Сначала выберите регион"}
+                    {isFacilitator && facilitatorRegion
+                      ? `Все районы (${facilitatorRegion})`
+                      : selectedRegion
+                      ? "Все районы региона"
+                      : "Сначала выберите регион"}
                   </option>
                   {uniqueDistrictsList.map((d, idx) => (
                     <option key={`dist-${d}-${idx}`} value={d}>
@@ -1289,24 +1467,26 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   <table className="w-full text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-bold uppercase tracking-wider text-[10px]">
-                        <th className="p-3 w-10 text-center">
-                          <button
-                            type="button"
-                            onClick={toggleSelectAll}
-                            className="p-1 hover:text-indigo-600 transition-colors cursor-pointer"
-                            title={isAllSelected ? "Снять выбор со всех" : "Выбрать все записи в таблице"}
-                          >
-                            {isAllSelected ? (
-                              <CheckSquare className="w-4 h-4 text-indigo-600" />
-                            ) : isSomeSelected ? (
-                              <div className="w-4 h-4 rounded border-2 border-indigo-600 flex items-center justify-center bg-indigo-50">
-                                <div className="w-2 h-0.5 bg-indigo-600" />
-                              </div>
-                            ) : (
-                              <Square className="w-4 h-4 text-slate-400" />
-                            )}
-                          </button>
-                        </th>
+                        {!isFacilitator && (
+                          <th className="p-3 w-10 text-center">
+                            <button
+                              type="button"
+                              onClick={toggleSelectAll}
+                              className="p-1 hover:text-indigo-600 transition-colors cursor-pointer"
+                              title={isAllSelected ? "Снять выбор со всех" : "Выбрать все записи в таблице"}
+                            >
+                              {isAllSelected ? (
+                                <CheckSquare className="w-4 h-4 text-indigo-600" />
+                              ) : isSomeSelected ? (
+                                <div className="w-4 h-4 rounded border-2 border-indigo-600 flex items-center justify-center bg-indigo-50">
+                                  <div className="w-2 h-0.5 bg-indigo-600" />
+                                </div>
+                              ) : (
+                                <Square className="w-4 h-4 text-slate-400" />
+                              )}
+                            </button>
+                          </th>
+                        )}
                         <th className="p-3 w-10 text-center">#</th>
                         <th className="p-3 w-32">Время (TJT)</th>
                         <th className="p-3 w-36">Действие</th>
@@ -1316,7 +1496,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                         <th className="p-3">Описание операции</th>
                         <th className="p-3 w-28 text-right">Сумма (TJS)</th>
                         <th className="p-3 w-10 text-center">Инфо</th>
-                        <th className="p-3 w-10 text-center">Удалить</th>
+                        {!isFacilitator && <th className="p-3 w-10 text-center">Удалить</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -1337,20 +1517,22 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                   : "bg-white"
                               }`}
                             >
-                              <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={(e) => toggleSelectRow(log.id, e)}
-                                  className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
-                                  title={isSelected ? "Снять выбор" : "Выбрать запись"}
-                                >
-                                  {isSelected ? (
-                                    <CheckSquare className="w-4 h-4 text-indigo-600" />
-                                  ) : (
-                                    <Square className="w-4 h-4 text-slate-300 hover:text-slate-400" />
-                                  )}
-                                </button>
-                              </td>
+                              {!isFacilitator && (
+                                <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => toggleSelectRow(log.id, e)}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 transition-colors cursor-pointer"
+                                    title={isSelected ? "Снять выбор" : "Выбрать запись"}
+                                  >
+                                    {isSelected ? (
+                                      <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                    ) : (
+                                      <Square className="w-4 h-4 text-slate-300 hover:text-slate-400" />
+                                    )}
+                                  </button>
+                                </td>
+                              )}
                               <td className="p-3 text-center text-slate-400 font-mono text-[11px]">
                                 {idx + 1}
                               </td>
@@ -1492,22 +1674,24 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                   <ChevronDown className="w-4 h-4 text-slate-400 inline" />
                                 )}
                               </td>
-                              <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={(e) => handlePromptDeleteSingle(log, e)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                                  title="Удалить запись по паролю администратора"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </td>
+                              {!isFacilitator && (
+                                <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handlePromptDeleteSingle(log, e)}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Удалить запись по паролю администратора"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </td>
+                              )}
                             </tr>
 
                             {/* Expanded Details Row */}
                             {isExpanded && (
                               <tr className="bg-indigo-50/20 border-b border-indigo-100">
-                                <td colSpan={11} className="p-4 pl-12">
+                                <td colSpan={isFacilitator ? 9 : 11} className="p-4 pl-12">
                                   <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm space-y-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 text-xs">
                                       <div className="flex items-center gap-3">
@@ -1819,14 +2003,16 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                       <span className="text-[11px] text-slate-400">
                                         Запись зафиксирована в неизменяемом журнале
                                       </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => handlePromptDeleteSingle(log)}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                        <span>Удалить запись (по паролю админа)</span>
-                                      </button>
+                                      {!isFacilitator && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handlePromptDeleteSingle(log)}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          <span>Удалить запись (по паролю админа)</span>
+                                        </button>
+                                      )}
                                     </div>
                                   </div>
                                 </td>
@@ -2440,8 +2626,8 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
               : undefined
           }
           endDate={datePreset === "custom" && customEndDate ? customEndDate : undefined}
-          facilitatorFilter={selectedFacilitator}
-          regionFilter={selectedRegion}
+          facilitatorFilter={isFacilitator && currentFacilitatorName ? currentFacilitatorName : selectedFacilitator}
+          regionFilter={isFacilitator && facilitatorRegion ? facilitatorRegion : selectedRegion}
           districtFilter={selectedDistrict}
           actionFilter={selectedActionType}
           auditorName={currentFacilitatorName || "Инспектор группы внутреннего аудита"}

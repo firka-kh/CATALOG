@@ -4656,9 +4656,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
             <section
               onDrop={onDrop}
               onDragOver={onDragOver}
-              className="h-auto min-h-32 bg-white border-t border-slate-200 p-6 flex flex-col gap-4 shrink-0 relative"
+              className="bg-white border-t border-slate-200 px-6 py-2.5 flex flex-col gap-2 shrink-0 relative"
             >
-              <div className="flex items-stretch gap-8 w-full h-24">
+              <div className="flex items-stretch gap-4 w-full min-h-[96px] h-auto">
                 <input
                   type="file"
                   multiple
@@ -4670,7 +4670,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isParsing || isUploadBlocked}
-                  className={`flex-1 h-full border-2 border-dashed ${isUploadBlocked ? "border-slate-200 bg-slate-100 opacity-60 cursor-not-allowed" : isParsing ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:border-indigo-400"} rounded-xl flex items-center justify-center group transition-colors`}
+                  className={`flex-1 min-h-[96px] border-2 border-dashed ${isUploadBlocked ? "border-slate-200 bg-slate-100 opacity-60 cursor-not-allowed" : isParsing ? "border-indigo-300 bg-indigo-50" : "border-slate-200 bg-slate-50 hover:border-indigo-400"} rounded-xl flex items-center justify-center group transition-colors p-3`}
                 >
                   <div className="flex items-center gap-4 text-left">
                     <div
@@ -4706,7 +4706,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     setAiSpheresSearch("");
                     setIsAiSpheresModalOpen(true);
                   }}
-                  className="w-72 h-full border border-slate-200 rounded-xl p-3 bg-slate-50 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all text-left flex flex-col justify-between shrink-0 cursor-pointer group"
+                  className="w-72 min-h-[96px] border border-slate-200 rounded-xl p-2.5 bg-slate-50 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all text-left flex flex-col justify-between shrink-0 cursor-pointer group"
                 >
                   <div className="w-full flex justify-between items-center select-none">
                     <span className="text-xs font-bold text-slate-700">Сферы для ИИ-импорта</span>
@@ -4742,7 +4742,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     setAiRegionsSearch("");
                     setIsAiRegionsModalOpen(true);
                   }}
-                  className="w-72 h-full border border-slate-200 rounded-xl p-3 bg-slate-50 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all text-left flex flex-col justify-between shrink-0 cursor-pointer group"
+                  className="w-72 min-h-[96px] border border-slate-200 rounded-xl p-2.5 bg-slate-50 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all text-left flex flex-col justify-between shrink-0 cursor-pointer group"
                 >
                   <div className="w-full flex justify-between items-center select-none">
                     <span className="text-xs font-bold text-slate-700">Регионы для ИИ-импорта</span>
@@ -4771,7 +4771,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   </div>
                 </button>
 
-                <div className="w-80 h-full relative flex flex-col justify-between p-2.5 bg-slate-50 border border-slate-200 rounded-xl shadow-xs shrink-0">
+                <div className="w-80 min-h-[96px] relative flex flex-col justify-between p-2 bg-slate-50 border border-slate-200 rounded-xl shadow-xs shrink-0">
                   <div className="flex items-center justify-between gap-1 mb-1">
                     <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                       <Download className="w-3.5 h-3.5 text-emerald-600" />
@@ -4802,7 +4802,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           | "region_supplier_sphere",
                       )
                     }
-                    className="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs bg-white text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 shadow-xs cursor-pointer"
+                    className="w-full border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white text-slate-800 font-medium focus:outline-none focus:ring-1 focus:ring-emerald-500 shadow-xs cursor-pointer"
                   >
                     <option value="all">
                       Полный дамп (все сферы, товары и 6 фасилитаторов)
@@ -4811,70 +4811,52 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       Текущий экран каталога ({displayProducts.length} поз., фильтры)
                     </option>
                     <option value="sphere">
-                      По сфере: {selectedSphere || "Все сферы (фильтр не задан)"}
+                      По сфере: {selectedSphere || "Все сферы"}
                     </option>
                     <option value="region_sphere">
                       Регион + Сфера: {selectedRegion || "Душанбе"} / {selectedSphere || "Все"}
                     </option>
                     <option value="supplier_sphere">
-                      Поставщик: {selectedSupplier && selectedSupplier !== "all" ? getSupplierLabel(selectedSupplier) : "Все поставщики"}
+                      Поставщик: {selectedSupplier && selectedSupplier !== "all" ? getSupplierLabel(selectedSupplier) : "Все"}
                     </option>
                     <option value="region_supplier_sphere">
-                      Регион + Поставщик: {selectedRegion || "Душанбе"} • {selectedSupplier && selectedSupplier !== "all" ? getSupplierLabel(selectedSupplier) : "Все"}
+                      Регион + Поставщик: {selectedRegion || "Душанбе"}
                     </option>
                   </select>
 
-                  <div className="mt-1.5 text-[11px] leading-tight">
+                  <div className="text-[10px] text-slate-500 truncate my-0.5 leading-tight">
                     {exportScope === "all" && (
-                      <div className="text-emerald-800 bg-emerald-50/90 border border-emerald-200/80 rounded px-2 py-1 flex items-center gap-1.5">
-                        <CheckCircle className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                        <span className="truncate">Все товары ({products.length}) + лист 6 фасилитаторов</span>
-                      </div>
+                      <span className="text-emerald-700 font-medium">Все товары ({products.length} поз.) • 6 фасилитаторов • поставщики</span>
                     )}
                     {exportScope === "current_view" && (
-                      <div className="text-indigo-800 bg-indigo-50 border border-indigo-200/80 rounded px-2 py-1 flex items-center gap-1.5">
-                        <Package className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                        <span className="truncate">Товары на экране ({displayProducts.length} поз.) с ценами</span>
-                      </div>
+                      <span className="text-indigo-700 font-medium">Товары на экране ({displayProducts.length} поз.) с ценами</span>
                     )}
                     {exportScope === "sphere" && (
-                      <div className="text-slate-700 bg-slate-100 border border-slate-200/80 rounded px-2 py-1 truncate">
-                        {selectedSphere ? (
-                          <span>Сфера: <strong>{selectedSphere}</strong></span>
-                        ) : (
-                          <span className="text-amber-700 font-medium">Сфера вверху не выбрана (выгрузка всех сфер)</span>
-                        )}
-                      </div>
+                      <span>Сфера: <strong>{selectedSphere || "Все сферы"}</strong></span>
                     )}
                     {exportScope === "region_sphere" && (
-                      <div className="text-slate-700 bg-slate-100 border border-slate-200/80 rounded px-2 py-1 truncate">
-                        <span>Цены: <strong>{selectedRegion || "Душанбе"}</strong> • Сфера: <strong>{selectedSphere || "Все"}</strong></span>
-                      </div>
+                      <span>Цены: <strong>{selectedRegion || "Душанбе"}</strong> • <strong>{selectedSphere || "Все"}</strong></span>
                     )}
                     {exportScope === "supplier_sphere" && (
-                      <div className="text-slate-700 bg-slate-100 border border-slate-200/80 rounded px-2 py-1 truncate">
-                        <span>Поставщик: <strong>{selectedSupplier && selectedSupplier !== "all" ? getSupplierLabel(selectedSupplier) : "Все"}</strong></span>
-                      </div>
+                      <span>Поставщик: <strong>{selectedSupplier && selectedSupplier !== "all" ? getSupplierLabel(selectedSupplier) : "Все поставщики"}</strong></span>
                     )}
                     {exportScope === "region_supplier_sphere" && (
-                      <div className="text-slate-700 bg-slate-100 border border-slate-200/80 rounded px-2 py-1 truncate">
-                        <span>Регион: <strong>{selectedRegion || "Душанбе"}</strong> • <strong>{selectedSupplier && selectedSupplier !== "all" ? getSupplierLabel(selectedSupplier) : "Все"}</strong></span>
-                      </div>
+                      <span>Регион: <strong>{selectedRegion || "Душанбе"}</strong></span>
                     )}
                   </div>
 
                   <button
                     onClick={handleExport}
                     disabled={isExporting || products.length === 0}
-                    className="w-full mt-2 py-2 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold px-3 rounded-lg shadow-sm shadow-emerald-600/20 transition-all text-xs tracking-wide uppercase cursor-pointer disabled:cursor-not-allowed group"
+                    className="w-full py-1.5 px-3 flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold rounded-lg shadow-sm transition-all text-xs tracking-wide uppercase cursor-pointer disabled:cursor-not-allowed group shrink-0"
                   >
                     {isExporting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
-                      <Download className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                      <Download className="w-3.5 h-3.5 group-hover:-translate-y-0.5 transition-transform" />
                     )}
                     <span>
-                      {exportScope === "all" ? "СКАЧАТЬ ПОЛНЫЙ ДАМП EXCEL" : "СКАЧАТЬ ВЫБОРКУ EXCEL"}
+                      {exportScope === "all" ? "СКАЧАТЬ ПОЛНЫЙ ДАМП" : "СКАЧАТЬ ВЫБОРКУ"}
                     </span>
                   </button>
                 </div>
@@ -6941,6 +6923,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         districtsByRegion={globalDict.districtsByRegion || DISTRICTS_BY_REGION}
         currentFacilitatorName={getFacilitatorName()}
         adminPassword={globalDict.adminPassword || "020779"}
+        isFacilitator={!isReallyAdmin && (currentRole === 'facilitator' || !!portalFacilitator || isFacilitatorMode || isFacilitatorAuthenticated)}
+        facilitatorRegion={facilitatorRegion}
+        facilitatorLegalName={resolvedFacilitator.legalName}
       />
 
       {isSwitchLoginOpen && (

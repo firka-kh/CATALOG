@@ -2805,29 +2805,20 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           : (selectedRegion || "Душанбе");
 
       const mappedProducts = exportProducts.map((p) => {
-        return {
-          ...p,
-          priceSupplier1: getProductPriceForSupplierAndRegion(
+        const prodData: any = { ...p };
+        availableSupplierKeys.forEach((supKey) => {
+          const pr = getProductPriceForSupplierAndRegion(
             p,
-            "supplier1",
+            supKey as any,
             effectiveRegion,
-          ),
-          priceSupplier2: getProductPriceForSupplierAndRegion(
-            p,
-            "supplier2",
-            effectiveRegion,
-          ),
-          priceSupplier3: getProductPriceForSupplierAndRegion(
-            p,
-            "supplier3",
-            effectiveRegion,
-          ),
-          priceSupplier4: getProductPriceForSupplierAndRegion(
-            p,
-            "supplier4",
-            effectiveRegion,
-          ),
-        };
+          );
+          prodData[`price_${supKey}`] = pr;
+          if (supKey === "supplier1") prodData.priceSupplier1 = pr;
+          if (supKey === "supplier2") prodData.priceSupplier2 = pr;
+          if (supKey === "supplier3") prodData.priceSupplier3 = pr;
+          if (supKey === "supplier4") prodData.priceSupplier4 = pr;
+        });
+        return prodData;
       });
 
       const supplierScope =
@@ -2842,7 +2833,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         mappedProducts,
         globalDict.suppliers,
         supplierScope as any,
-        exportScope === "all" || isReallyAdmin ? globalDict : undefined,
+        globalDict,
       );
 
       logAuditEvent({

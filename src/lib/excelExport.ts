@@ -74,27 +74,138 @@ async function processImageForExcel(dataUrl: string): Promise<{ base64: string; 
   });
 }
 
+function getColumnLetter(colIndex: number): string {
+  let temp: number;
+  let letter = '';
+  while (colIndex > 0) {
+    temp = (colIndex - 1) % 26;
+    letter = String.fromCharCode(temp + 65) + letter;
+    colIndex = Math.floor((colIndex - temp - 1) / 26);
+  }
+  return letter;
+}
+
 export async function downloadCatalogExcel(
   products: Product[],
   suppliers?: string[],
-  selectedSupplierScope?: 'supplier2' | 'supplier3' | 'supplier4',
+  selectedSupplierScope?: string,
   globalDict?: any
 ) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AI Catalog Creator';
   workbook.created = new Date();
 
-  const getSupLabel = (sup: 'supplier2' | 'supplier3' | 'supplier4', withCurrency = false) => {
+  // 1. Gather all suppliers configured in the system (not just 2, 3, 4)
+  const allSupplierKeys = Array.from(new Set([
+    'supplier2',
+    'supplier3',
+    'supplier4',
+    ...(suppliers || []).map((_, i) => `supplier${i + 2}`),
+    ...Object.keys(globalDict?.supplierAssignedCodes || {}).filter(k => k.startsWith('supplier') && k !== 'supplier1'),
+    ...Object.keys(globalDict?.supplierLegalNames || {}).filter(k => k.startsWith('supplier') && k !== 'supplier1'),
+    ...Object.keys(globalDict?.supplierSpheres || {}).filter(k => k.startsWith('supplier') && k !== 'supplier1'),
+  ])).sort((a, b) => {
+    const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+    const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+    return numA - numB;
+  });
+
+  const getSupLabel = (supKey: string, withCurrency = false) => {
     const suffix = withCurrency ? ' (с.)' : '';
-    const list = suppliers || [];
-    const idx = sup === 'supplier2' ? 0 : sup === 'supplier3' ? 1 : 2;
-    const code = formatSupplierCode(sup, list[idx], idx);
+    const numIdx = parseInt(supKey.replace(/\D/g, ''), 10) - 2;
+    const assignedCode = globalDict?.supplierAssignedCodes?.[supKey];
+    const legalName = globalDict?.supplierLegalNames?.[supKey];
+    const listName = (suppliers && numIdx >= 0 && numIdx < suppliers.length) ? suppliers[numIdx] : undefined;
+    const code = formatSupplierCode(supKey, assignedCode || legalName || listName, numIdx >= 0 ? numIdx : undefined);
     return `${code}${suffix}`;
   };
 
-  const activeSuppliers = selectedSupplierScope 
-     ? [selectedSupplierScope] 
-     : ['supplier2', 'supplier3', 'supplier4'] as const;
+  const getProductPrice = (p: Product, supKey: string): number | string => {
+    const dyn = (p as any)[`price_${supKey}`];
+    if (typeof dyn === 'number' && dyn > 0) return dyn;
+    if (typeof dyn === 'string' && parseFloat(dyn) > 0) return parseFloat(dyn);
+
+    const mapId = supKey === 'supplier2' ? 'priceSupplier2' : supKey === 'supplier3' ? 'priceSupplier3' : supKey === 'supplier4' ? 'priceSupplier4' : undefined;
+    if (mapId && (p as any)[mapId] !== undefined) {
+      const val = (p as any)[mapId];
+      if (typeof val === 'number' && val > 0) return val;
+      if (typeof val === 'string' && parseFloat(val) > 0) return parseFloat(val);
+    }
+
+    if (p.prices && p.prices[supKey]) {
+      const regPrices = p.prices[supKey];
+      if (regPrices) {
+        for (const [_, pr] of Object.entries(regPrices)) {
+          if (typeof pr === 'number' && pr > 0) return pr;
+          if (typeof pr === 'string' && parseFloat(pr) > 0) return parseFloat(pr);
+        }
+      }
+    }
+    return '—';
+  };
+
+  // Determines suppliers that:
+  // 1) Have this sphere attached in globalDict (or no restrictions)
+  // 2) Have at least one product price > 0 in this sphere
+  const getRelevantSuppliersForSphere = (sphereName: string, sphereProds: Product[]): string[] => {
+    if (selectedSupplierScope) {
+      return [selectedSupplierScope];
+    }
+
+    const sNameNorm = (sphereName || '').trim().toLowerCase();
+
+    const filtered = allSupplierKeys.filter((supKey) => {
+      // Check attached spheres
+      const assignedSpheres = globalDict?.supplierSpheres?.[supKey];
+      let sphereMatches = true;
+      if (Array.isArray(assignedSpheres) && assignedSpheres.length > 0) {
+        sphereMatches = assignedSpheres.some((s: string) => {
+          const sNorm = String(s).trim().toLowerCase();
+          return sNorm === sNameNorm || sNorm.includes(sNameNorm) || sNameNorm.includes(sNorm);
+        });
+      }
+
+      if (!sphereMatches) {
+        return false;
+      }
+
+      // Check non-zero price exists for this supplier in this sphere
+      const hasPriceInSphere = sphereProds.some((p) => {
+        const pr = getProductPrice(p, supKey);
+        return typeof pr === 'number' && pr > 0;
+      });
+
+      return hasPriceInSphere;
+    });
+
+    if (filtered.length === 0) {
+      // Fallback if none matched both: suppliers attached to sphere
+      const sphereOnly = allSupplierKeys.filter((supKey) => {
+        const assignedSpheres = globalDict?.supplierSpheres?.[supKey];
+        if (Array.isArray(assignedSpheres) && assignedSpheres.length > 0) {
+          return assignedSpheres.some((s: string) => {
+            const sNorm = String(s).trim().toLowerCase();
+            return sNorm === sNameNorm || sNorm.includes(sNameNorm) || sNameNorm.includes(sNorm);
+          });
+        }
+        return false;
+      });
+      if (sphereOnly.length > 0) return sphereOnly;
+
+      // Or suppliers with prices
+      const priceOnly = allSupplierKeys.filter((supKey) => {
+        return sphereProds.some((p) => {
+          const pr = getProductPrice(p, supKey);
+          return typeof pr === 'number' && pr > 0;
+        });
+      });
+      if (priceOnly.length > 0) return priceOnly;
+
+      return allSupplierKeys.slice(0, 3);
+    }
+
+    return filtered;
+  };
 
   // Create Summary Sheet First
   const summaryWs = workbook.addWorksheet('Сводная таблица');
@@ -102,12 +213,9 @@ export async function downloadCatalogExcel(
   summaryWs.getColumn(1).width = 8;   // ID/No
   summaryWs.getColumn(2).width = 40;  // Name
   summaryWs.getColumn(3).width = 12;  // Unit
-  
-  let colIdx = 4;
-  activeSuppliers.forEach(() => {
-     summaryWs.getColumn(colIdx).width = 15;
-     colIdx++;
-  });
+  for (let c = 4; c <= 30; c++) {
+    summaryWs.getColumn(c).width = 16; // Price columns
+  }
 
   const summaryProductsGrouped: Record<string, Product[]> = {};
   for (const p of products) {
@@ -123,10 +231,11 @@ export async function downloadCatalogExcel(
 
   let rowCounter = 1;
 
-  const numCols = 3 + activeSuppliers.length;
-  const colLetter = String.fromCharCode(64 + numCols);
-
   for (const [groupName, groupProds] of Object.entries(summaryProductsGrouped)) {
+      const groupSuppliers = getRelevantSuppliersForSphere(groupName, groupProds);
+      const numCols = 3 + groupSuppliers.length;
+      const colLetter = getColumnLetter(numCols);
+
       // Title row
       const titleRow = summaryWs.addRow([groupName]);
       summaryWs.mergeCells(`A${rowCounter}:${colLetter}${rowCounter}`);
@@ -141,7 +250,7 @@ export async function downloadCatalogExcel(
       rowCounter++;
 
       // Header row
-      const headers = ['№', 'Наименование', 'Ед. изм.', ...activeSuppliers.map(s => getSupLabel(s, true))];
+      const headers = ['№', 'Наименование', 'Ед. изм.', ...groupSuppliers.map(s => getSupLabel(s, true))];
       const headerRow = summaryWs.addRow(headers);
       headerRow.font = { bold: true, color: { argb: 'FF004B87' } }; // Blue text
       headerRow.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -151,7 +260,7 @@ export async function downloadCatalogExcel(
       
       rowCounter++;
 
-      // Empty gap row with borders (as seen in screenshot)
+      // Empty gap row with borders
       const gapRow = summaryWs.addRow(Array(numCols).fill(''));
       gapRow.eachCell(cell => {
           cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
@@ -166,11 +275,7 @@ export async function downloadCatalogExcel(
             p.code || (i + 1), 
             p.name, 
             p.unit || 'шт.', 
-            ...activeSuppliers.map(s => {
-                const mapId = s === 'supplier2' ? 'priceSupplier2' : s === 'supplier3' ? 'priceSupplier3' : 'priceSupplier4';
-                const val = p[mapId as keyof Product];
-                return val !== undefined ? val : '—';
-            })
+            ...groupSuppliers.map(s => getProductPrice(p, s))
           ];
           const dataRow = summaryWs.addRow(rowData);
           dataRow.getCell(1).alignment = { horizontal: 'right', vertical: 'middle' };
@@ -201,7 +306,7 @@ export async function downloadCatalogExcel(
   }
 
   for (const [sphere, prods] of Object.entries(groupedProducts)) {
-    // Sheet names can't exceed 31 characters
+    const sphereSuppliers = getRelevantSuppliersForSphere(sphere, prods);
     const safeSphereName = sphere.substring(0, 31).replace(/[\\/*?:\[\]]/g, '');
     const ws = workbook.addWorksheet(safeSphereName);
 
@@ -209,15 +314,15 @@ export async function downloadCatalogExcel(
     const titleRow = ws.addRow([`Сфера: ${sphere}`]);
     titleRow.font = { bold: true, size: 12 };
     
-    const numCols = 4 + activeSuppliers.length;
-    const colLetter = String.fromCharCode(64 + numCols);
+    const numCols = 4 + sphereSuppliers.length;
+    const colLetter = getColumnLetter(numCols);
     ws.mergeCells(`A1:${colLetter}1`);
 
     // Row 2: Empty
     ws.addRow([]);
 
     // Row 3: Headers
-    const headers = ['№', 'Фото', 'Наименование', 'Ед. изм.', ...activeSuppliers.map(s => getSupLabel(s, true))];
+    const headers = ['№', 'Фото', 'Наименование', 'Ед. изм.', ...sphereSuppliers.map(s => getSupLabel(s, true))];
     const headerRow = ws.addRow(headers);
     headerRow.font = { bold: true, color: { argb: 'FF333333' } };
     headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -242,8 +347,8 @@ export async function downloadCatalogExcel(
     ws.getColumn(4).width = 10; // Unit
     
     let cIdx = 5;
-    activeSuppliers.forEach(() => {
-        ws.getColumn(cIdx).width = 15;
+    sphereSuppliers.forEach(() => {
+        ws.getColumn(cIdx).width = 16;
         cIdx++;
     });
 
@@ -257,11 +362,7 @@ export async function downloadCatalogExcel(
             '', // Image goes here
             p.name + (p.description ? `\n\n${p.description}` : ''),
             p.unit || 'шт.',
-            ...activeSuppliers.map(s => {
-                const mapId = s === 'supplier2' ? 'priceSupplier2' : s === 'supplier3' ? 'priceSupplier3' : 'priceSupplier4';
-                const val = p[mapId as keyof Product];
-                return val !== undefined ? val : '—';
-            })
+            ...sphereSuppliers.map(s => getProductPrice(p, s))
         ];
         const row = ws.addRow(rowData);
         
@@ -453,6 +554,88 @@ export async function downloadCatalogExcel(
           c.alignment = { horizontal: 'center', vertical: 'middle' };
         } else {
           c.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+      });
+    });
+
+    // Also append the complete Suppliers Registry sheet
+    const suppWs = workbook.addWorksheet('Реестр поставщиков');
+    suppWs.mergeCells('A1:I1');
+    const sTitle = suppWs.getCell('A1');
+    sTitle.value = 'РЕЕСТР ПОСТАВЩИКОВ • ТАБЛИЦА СООТВЕТСТВИЯ КОДОВ И ЮРИДИЧЕСКИХ НАЗВАНИЙ';
+    sTitle.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+    sTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    sTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+    suppWs.getRow(1).height = 30;
+
+    suppWs.mergeCells('A2:I2');
+    const sSub = suppWs.getCell('A2');
+    sSub.value = `Полный дамп системы • Всего поставщиков: ${allSupplierKeys.length} • Дата выгрузки: ${new Date().toLocaleString('ru-RU')}`;
+    sSub.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+    sSub.alignment = { vertical: 'middle', horizontal: 'center' };
+    suppWs.getRow(2).height = 20;
+
+    const sHeaders = [
+      '№',
+      'Код в системе',
+      'Юридическое (реальное) название',
+      'Телефон',
+      'Сферы деятельности',
+      'Охват регионов',
+      'Районы',
+      'Ссылка на портал',
+      'PIN-код'
+    ];
+    const sHeaderRow = suppWs.addRow(sHeaders);
+    sHeaderRow.height = 26;
+    sHeaderRow.eachCell((cell) => {
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4338CA' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+    });
+
+    suppWs.getColumn(1).width = 6;
+    suppWs.getColumn(2).width = 16;
+    suppWs.getColumn(3).width = 38;
+    suppWs.getColumn(4).width = 20;
+    suppWs.getColumn(5).width = 32;
+    suppWs.getColumn(6).width = 28;
+    suppWs.getColumn(7).width = 34;
+    suppWs.getColumn(8).width = 46;
+    suppWs.getColumn(9).width = 14;
+
+    allSupplierKeys.forEach((k, idx) => {
+      const numIdx = parseInt(k.replace(/\D/g, ''), 10) - 2;
+      const assigned = globalDict.supplierAssignedCodes?.[k];
+      const legal = globalDict.supplierLegalNames?.[k] || (suppliers && numIdx >= 0 ? suppliers[numIdx] : k);
+      const phone = globalDict.supplierPhones?.[k] || '—';
+      const spheres = (globalDict.supplierSpheres?.[k] || []).join(', ') || 'Все сферы';
+      const allRegs = globalDict.supplierAllRegions?.[k];
+      const regions = allRegs ? 'Все регионы' : (globalDict.supplierRegions?.[k] || []).join(', ') || 'Все регионы';
+      const districts = (globalDict.supplierDistricts?.[k] || []).join(', ') || 'Все районы';
+      const portalUrl = `${baseOrigin}/?portal=${k}`;
+      const pin = globalDict.supplierCodes?.[k] || '—';
+
+      const row = suppWs.addRow([
+        idx + 1,
+        assigned || k,
+        legal,
+        phone,
+        spheres,
+        regions,
+        districts,
+        portalUrl,
+        pin
+      ]);
+      row.height = 24;
+      row.eachCell((cell, colNum) => {
+        cell.font = { name: 'Arial', size: 10 };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        if (colNum === 1 || colNum === 2 || colNum === 4 || colNum === 9) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
         }
       });
     });

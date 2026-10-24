@@ -14,6 +14,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { fetchQuotesHistory } from "./quotesHistory";
+import { captureDeviceAudit, getQuickDeviceSnapshot } from "./deviceFingerprint";
 
 export type AuditActionType =
   | "USER_LOGIN"
@@ -27,6 +28,7 @@ export type AuditActionType =
   | "UPDATE_PRICE_EXCEL"
   | "EXPORT_EXCEL"
   | "UPDATE_DICTIONARY"
+  | "SECURITY_AUDIT"
   | "CLEAR_CART";
 
 export interface AuditLogEntry {
@@ -104,6 +106,20 @@ export async function logAuditEvent(entry: {
     const id = `LOG-${now}-${Math.floor(Math.random() * 10000).toString().padStart(4, "0")}`;
     const sessionToken = getSessionToken();
 
+    let meta = { ...(entry.metadata || {}) };
+    if (!meta.deviceAudit) {
+      try {
+        const snap = await captureDeviceAudit();
+        meta.deviceAudit = snap;
+        meta.deviceFingerprintId = snap.fingerprintId;
+        meta.deviceSummary = snap.summary;
+      } catch {
+        const quick = getQuickDeviceSnapshot();
+        meta.deviceSummary = quick.summary;
+        meta.deviceFingerprintId = quick.fingerprintId;
+      }
+    }
+
     const fullEntry: AuditLogEntry = {
       id,
       timestamp: now,
@@ -122,7 +138,7 @@ export async function logAuditEvent(entry: {
       totalAmount: entry.totalAmount !== undefined ? Number(entry.totalAmount.toFixed(2)) : undefined,
       itemsCount: entry.itemsCount !== undefined ? Number(entry.itemsCount) : undefined,
       details: entry.details,
-      metadata: entry.metadata || {},
+      metadata: meta,
       sessionToken,
     };
 

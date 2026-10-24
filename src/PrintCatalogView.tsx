@@ -104,13 +104,13 @@ export const PrintCatalogView = ({
           .print-cover-page {
             page-break-after: always;
             break-after: page;
-            height: 270mm;
+            height: 265mm;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             align-items: center;
             box-sizing: border-box;
-            padding: 20mm 10mm;
+            padding: 16mm 10mm;
           }
 
           /* Separate Region Intro Page centered exactly */
@@ -153,8 +153,8 @@ export const PrintCatalogView = ({
         }
       `}</style>
 
-      {/* Page 1: Elegant Cover Page */}
-      <div className="print-cover-page border-[6px] border-double border-slate-900 rounded-lg m-1">
+      {/* Page 1: Elegant Cover Page (без громоздкой рамки) */}
+      <div className="print-cover-page">
         <div className="text-center w-full mt-8 border-b-2 border-slate-100 pb-8">
           <span className="text-xs font-bold uppercase tracking-[0.4em] text-slate-400 block mb-2">
             Каталог Товарных Категорий

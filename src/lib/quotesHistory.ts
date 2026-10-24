@@ -12,6 +12,7 @@ import {
 import { db } from "./firebase";
 import { Product } from "../types";
 import { logAuditEvent } from "./auditLogger";
+import { captureDeviceAudit, DeviceAuditInfo } from "./deviceFingerprint";
 
 export interface QuoteItem {
   product: Product;
@@ -36,6 +37,8 @@ export interface QuoteRevision {
   removedItems?: string[];
   modifiedItems?: string[];
   items?: QuoteItem[];
+  deviceAudit?: DeviceAuditInfo;
+  deviceAuditSummary?: string;
 }
 
 export interface QuoteRecord {
@@ -60,6 +63,8 @@ export interface QuoteRecord {
   items: QuoteItem[];
   totalAmount: number;
   revisions?: QuoteRevision[];
+  deviceAudit?: DeviceAuditInfo;
+  deviceAuditSummary?: string;
 }
 
 export async function saveQuoteToHistory(data: {
@@ -114,6 +119,18 @@ export async function saveQuoteToHistory(data: {
     };
   });
 
+  // Capture hardware / device digital fingerprint snapshot quietly
+  let deviceAudit: DeviceAuditInfo | undefined;
+  try {
+    deviceAudit = await captureDeviceAudit();
+  } catch (e) {
+    console.warn("Failed to capture device audit:", e);
+  }
+
+  const deviceAuditSummary = deviceAudit
+    ? `Купон № ${quoteId} создан с: ${deviceAudit.summary}`
+    : undefined;
+
   const record: QuoteRecord = {
     id: quoteId,
     clientName: (data.clientName || "").trim() || "Заказчик не указан",
@@ -139,6 +156,8 @@ export async function saveQuoteToHistory(data: {
     logisticsCost: Number(data.logisticsCost) || 0,
     items: itemsSnapshot,
     totalAmount: Number(totalAmount.toFixed(2)),
+    deviceAudit,
+    deviceAuditSummary,
   };
 
   try {
@@ -169,6 +188,9 @@ export async function saveQuoteToHistory(data: {
       itemsCount: itemsSnapshot.length,
       details: `Оформлена спецификация КП на ${itemsSnapshot.length} товаров на сумму ${totalAmount.toLocaleString("ru-RU")} сомони (Бенефициар: ${data.clientName || "Не указан"})`,
       metadata: {
+        deviceAudit,
+        deviceFingerprintId: deviceAudit?.fingerprintId,
+        deviceSummary: deviceAudit?.summary,
         items: itemsSnapshot.map((it) => ({
           name: it.product.name,
           qty: it.quantity,
@@ -334,6 +356,18 @@ export async function updateQuoteInHistory(
     summaryParts.push(`• Специалист: ${data.specialistName}`);
   }
 
+  // Capture hardware / device digital fingerprint snapshot quietly on update
+  let deviceAudit: DeviceAuditInfo | undefined;
+  try {
+    deviceAudit = await captureDeviceAudit();
+  } catch (e) {
+    console.warn("Failed to capture device audit on edit:", e);
+  }
+
+  const deviceAuditSummary = deviceAudit
+    ? `Изменено с: ${deviceAudit.summary}`
+    : undefined;
+
   const newRevision: QuoteRevision = {
     id: `rev-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     timestamp: now.getTime(),
@@ -350,6 +384,8 @@ export async function updateQuoteInHistory(
     removedItems,
     modifiedItems,
     items: itemsSnapshot,
+    deviceAudit,
+    deviceAuditSummary,
   };
 
   revisionsList.unshift(newRevision); // Most recent revision at top
@@ -373,6 +409,8 @@ export async function updateQuoteInHistory(
     items: itemsSnapshot,
     totalAmount,
     revisions: revisionsList,
+    deviceAudit: deviceAudit || existingData.deviceAudit,
+    deviceAuditSummary: deviceAudit ? `Купон № ${quoteId} обновлен с: ${deviceAudit.summary}` : existingData.deviceAuditSummary,
   };
 
   try {
@@ -403,6 +441,9 @@ export async function updateQuoteInHistory(
         addedItems,
         removedItems,
         modifiedItems,
+        deviceAudit,
+        deviceFingerprintId: deviceAudit?.fingerprintId,
+        deviceSummary: deviceAudit?.summary,
       },
     }).catch((err) => console.warn("Audit log error:", err));
 

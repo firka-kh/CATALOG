@@ -28,6 +28,14 @@ import {
   Building2,
   QrCode,
   ShieldCheck,
+  Cpu,
+  Monitor,
+  Smartphone,
+  Tablet,
+  Copy,
+  Check,
+  HardDrive,
+  Fingerprint,
 } from 'lucide-react';
 import { QuoteRecord, fetchQuotesHistory, deleteQuoteFromHistory, deleteAllQuotesFromHistory } from '../lib/quotesHistory';
 import { downloadCartExcel, downloadQuotesRegistryExcel } from '../lib/excelExport';
@@ -92,8 +100,9 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
   const [expandedQuoteId, setExpandedQuoteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [cardTab, setCardTab] = useState<Record<string, "items" | "revisions">>({});
+  const [cardTab, setCardTab] = useState<Record<string, "items" | "revisions" | "device">>({});
   const [expandedRevisionId, setExpandedRevisionId] = useState<string | null>(null);
+  const [copiedFpId, setCopiedFpId] = useState<string | null>(null);
 
   // States for Delete All with Admin Password confirmation
   const [isDeleteAllModalOpen, setIsDeleteAllModalOpen] = useState<boolean>(false);
@@ -520,6 +529,47 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                             )}
                           </span>
                         )}
+                        {quote.deviceAudit ? (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedQuoteId(quote.id);
+                              setCardTab((prev) => ({ ...prev, [quote.id]: "device" }));
+                            }}
+                            className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                            title={`Аппаратный слепок: ${quote.deviceAudit.summary}`}
+                          >
+                            <Cpu className="w-3 h-3 text-indigo-600 shrink-0" />
+                            <span>{quote.deviceAudit.deviceType}: {quote.deviceAudit.os}</span>
+                            <span className="text-[10px] text-indigo-600 font-bold hidden sm:inline">[{quote.deviceAudit.fingerprintId.slice(0, 8)}]</span>
+                          </span>
+                        ) : quote.deviceAuditSummary ? (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedQuoteId(quote.id);
+                              setCardTab((prev) => ({ ...prev, [quote.id]: "device" }));
+                            }}
+                            className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                            title={quote.deviceAuditSummary}
+                          >
+                            <Cpu className="w-3 h-3 text-slate-600 shrink-0" />
+                            <span>Слепок оборудования</span>
+                          </span>
+                        ) : (
+                          <span 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedQuoteId(quote.id);
+                              setCardTab((prev) => ({ ...prev, [quote.id]: "device" }));
+                            }}
+                            className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-300 flex items-center gap-1.5 cursor-pointer transition-colors shadow-2xs"
+                            title="Слепок оборудования (нажмите для просмотра)"
+                          >
+                            <Cpu className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span>Слепок оборудования</span>
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-y-1 gap-x-4 text-xs text-slate-600">
@@ -669,12 +719,32 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                               </span>
                             )}
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setCardTab((prev) => ({ ...prev, [quote.id]: "device" }))}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                              cardTab[quote.id] === "device"
+                                ? "bg-indigo-600 text-white shadow-xs"
+                                : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                            }`}
+                          >
+                            <Cpu className="w-3.5 h-3.5" />
+                            <span>Слепок оборудования</span>
+                            {quote.deviceAudit && (
+                              <span className="bg-slate-100 text-slate-800 text-[10px] font-mono px-1.5 py-0.2 rounded-full border border-slate-300">
+                                {quote.deviceAudit.deviceType}
+                              </span>
+                            )}
+                          </button>
                         </div>
 
                         <span className="text-[11px] text-slate-500 font-medium">
-                          {(cardTab[quote.id] || "items") === "items"
-                            ? `Цены зафиксированы на момент сохранения: ${quote.createdAt}`
-                            : `Полная хронология правок купона #${quote.id}`}
+                          {cardTab[quote.id] === "device"
+                            ? `Технический паспорт физического оборудования оформления`
+                            : cardTab[quote.id] === "revisions"
+                            ? `Полная хронология правок купона #${quote.id}`
+                            : `Цены зафиксированы на момент сохранения: ${quote.createdAt}`}
                         </span>
                       </div>
 
@@ -932,6 +1002,171 @@ export const QuotesHistoryModal: React.FC<QuotesHistoryModalProps> = ({
                                 <div className="text-slate-500 mt-0.5">
                                   Купон находится в исходной редакции. Нажмите кнопку <strong>«Изменить»</strong>, чтобы отредактировать состав товаров в корзине. При сохранении корзина автоматически очистится, а здесь появится пошаговая хронология всех изменений.
                                 </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tab 3: Device Hardware Audit Snapshot */}
+                      {cardTab[quote.id] === "device" && (
+                        <div className="py-2 space-y-3 animate-in fade-in duration-150">
+                          {quote.deviceAudit ? (
+                            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 flex items-center justify-center shrink-0">
+                                    <Cpu className="w-4 h-4" />
+                                  </div>
+                                  <div>
+                                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                                      Аппаратный слепок оборудования
+                                    </h4>
+                                    <p className="text-[11px] text-slate-500">
+                                      Фиксация физических параметров устройства в момент создания или обновления
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const textToCopy = `Купон: ${quote.id}\n${quote.deviceAuditSummary || quote.deviceAudit?.summary}\nХеш отпечатка: ${quote.deviceAudit?.fingerprintId}\nОС: ${quote.deviceAudit?.os}\nЭкран: ${quote.deviceAudit?.screenResolution}\nCPU: ${quote.deviceAudit?.cpuCores} ядер\nGPU: ${quote.deviceAudit?.gpuRenderer}\nCanvas FP: ${quote.deviceAudit?.canvasHash}\nIP: ${quote.deviceAudit?.ipAddress}\nДата/Время: ${quote.deviceAudit?.capturedAtFormatted || quote.createdAt}`;
+                                    if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                      navigator.clipboard.writeText(textToCopy);
+                                      setCopiedFpId(quote.id);
+                                      setTimeout(() => setCopiedFpId(null), 2500);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer"
+                                  title="Скопировать технический слепок для акта / экспертизы"
+                                >
+                                  {copiedFpId === quote.id ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span className="text-emerald-700">Скопировано!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                                      <span>Скопировать слепок для акта</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+
+                              {/* Technical Parameter Cards */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 text-xs">
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Тип устройства и ОС</span>
+                                  <span className="font-bold text-slate-900 mt-0.5 flex items-center gap-1">
+                                    {quote.deviceAudit.deviceType === "Планшет" ? (
+                                      <Tablet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    ) : quote.deviceAudit.deviceType === "Смартфон" ? (
+                                      <Smartphone className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    ) : (
+                                      <Monitor className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    )}
+                                    {quote.deviceAudit.deviceType}
+                                  </span>
+                                  <span className="text-[11px] text-slate-600 font-medium">{quote.deviceAudit.os}</span>
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Процессор и память</span>
+                                  <span className="font-bold text-slate-900 mt-0.5 block font-mono">
+                                    {quote.deviceAudit.cpuCores > 0 ? `${quote.deviceAudit.cpuCores} ядер CPU` : "CPU н/д"}
+                                  </span>
+                                  <span className="text-[11px] text-slate-600 font-mono">
+                                    {quote.deviceAudit.memoryGb ? `${quote.deviceAudit.memoryGb} ГБ RAM` : "RAM стандарт"}
+                                  </span>
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Экран и сенсор</span>
+                                  <span className="font-bold text-slate-900 mt-0.5 block font-mono truncate" title={quote.deviceAudit.screenResolution}>
+                                    {quote.deviceAudit.screenResolution}
+                                  </span>
+                                  <span className="text-[11px] text-slate-600">
+                                    {quote.deviceAudit.touchPoints > 0 ? `Тачскрин: ${quote.deviceAudit.touchPoints} точек` : "Клавиатура/мышь"}
+                                  </span>
+                                </div>
+
+                                <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Сетевой IP и зона</span>
+                                  <span className="font-bold text-slate-900 mt-0.5 block font-mono text-[11px] truncate" title={quote.deviceAudit.ipAddress}>
+                                    {quote.deviceAudit.ipAddress || "Локальная сеть"}
+                                  </span>
+                                  <span className="text-[11px] text-slate-600 truncate block" title={quote.deviceAudit.timezone}>
+                                    {quote.deviceAudit.timezone}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* GPU & Canvas Graphics Fingerprint */}
+                              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2 text-xs">
+                                <div>
+                                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Графический видеопроцессор (GPU WebGL):</span>
+                                  <span className="font-mono text-slate-800 font-semibold break-all text-[11px]">
+                                    {quote.deviceAudit.gpuRenderer} ({quote.deviceAudit.gpuVendor})
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-slate-200 text-[11px]">
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Хеш субпиксельного рендеринга (Canvas 2D):</span>
+                                    <span className="font-mono text-indigo-700 font-bold">{quote.deviceAudit.canvasHash}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Уникальный ID отпечатка оборудования:</span>
+                                    <span className="font-mono text-emerald-700 font-black">{quote.deviceAudit.fingerprintId}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Forensic Audit Record Quote Line */}
+                              <div className="p-3 bg-indigo-50/50 border border-indigo-200/60 rounded-lg text-xs space-y-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-800 block">
+                                  Зафиксированная строка аудита в базе данных:
+                                </span>
+                                <p className="font-mono text-[11px] text-slate-800 bg-white p-2 rounded border border-indigo-100 select-all break-all">
+                                  {quote.deviceAuditSummary || `Купон № ${quote.id} создан с: ${quote.deviceAudit.summary}`}
+                                </p>
+                              </div>
+                            </div>
+                          ) : quote.deviceAuditSummary ? (
+                            <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
+                              <div className="flex items-center gap-2 text-slate-800 font-bold text-xs">
+                                <Cpu className="w-4 h-4 text-indigo-600" />
+                                <span>Зафиксированная строка аудита оборудования</span>
+                              </div>
+                              <p className="font-mono text-xs text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-200 select-all">
+                                {quote.deviceAuditSummary}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="p-4 bg-white rounded-xl border border-slate-200 text-xs text-slate-600 space-y-3">
+                              <div className="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+                                <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center shrink-0">
+                                  <Cpu className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <div className="font-bold text-slate-800 text-sm">Слепок оборудования для купона #{quote.id}</div>
+                                  <div className="text-[11px] text-slate-500">
+                                    Историческая спецификация (оформлена до активации модуля аппаратных отпечатков)
+                                  </div>
+                                </div>
+                              </div>
+                              <p className="text-slate-600 leading-relaxed text-xs">
+                                Данная подборка создана в архивном периоде. Система гарантирует целостность зафиксированных цен и товарных позиций.
+                                <br />
+                                <strong>Как привязать слепок к этому купону:</strong> Нажмите кнопку <strong>«Изменить»</strong> на карточке купона — при сохранении корзины система автоматически привяжет к купону полный технический отпечаток вашего физического устройства (ОС, ядра CPU, видеочип GPU, Canvas 2D, разрешение экрана, IP-адрес).
+                              </p>
+                              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
+                                <span>Все новые и редактируемые купоны фиксируют аппаратный слепок автоматически</span>
+                                <span className="font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 text-[10px]">
+                                  Модуль DFP v2.0 активен
+                                </span>
                               </div>
                             </div>
                           )}

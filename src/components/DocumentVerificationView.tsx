@@ -24,6 +24,7 @@ import {
   RefreshCw,
   QrCode,
   Lock,
+  Cpu,
 } from "lucide-react";
 import { QuoteRecord, fetchQuoteById } from "../lib/quotesHistory";
 
@@ -468,6 +469,83 @@ export const DocumentVerificationView: React.FC<Props> = ({
                 </div>
               </div>
             </div>
+
+            {/* Device Hardware Forensic Proof Badge */}
+            {quote.deviceAudit || quote.deviceAuditSummary ? (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-400/40 text-indigo-400 flex items-center justify-center shrink-0">
+                      <Cpu className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                        Аппаратная фиксация оформления (Цифровой слепок)
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Технический отпечаток физического оборудования оператора в момент регистрации
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-mono px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 self-start sm:self-auto">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                    Отпечаток зафиксирован в реестре
+                  </span>
+                </div>
+
+                {quote.deviceAudit ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Тип устройства</span>
+                      <span className="font-bold text-white mt-0.5 block">{quote.deviceAudit.deviceType}</span>
+                      <span className="text-[10px] text-slate-400 font-medium truncate block">{quote.deviceAudit.os}</span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">Аппаратные данные</span>
+                      <span className="font-mono font-semibold text-slate-200 mt-0.5 block">
+                        {quote.deviceAudit.cpuCores > 0 ? `${quote.deviceAudit.cpuCores} ядер CPU` : "Стандарт"}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono truncate block">
+                        {quote.deviceAudit.screenResolution}
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">GPU & Рендерер</span>
+                      <span className="font-mono text-slate-300 mt-0.5 block truncate text-[11px]" title={quote.deviceAudit.gpuRenderer}>
+                        {quote.deviceAudit.gpuRenderer}
+                      </span>
+                      <span className="text-[10px] text-indigo-400 font-mono">
+                        FP: {quote.deviceAudit.canvasHash}
+                      </span>
+                    </div>
+
+                    <div className="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-500 block">ID отпечатка (DFP)</span>
+                      <span className="font-mono font-bold text-emerald-400 mt-0.5 block text-[11px] truncate select-all">
+                        {quote.deviceAudit.fingerprintId}
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate block">
+                        {quote.deviceAudit.timezone}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="font-mono text-xs text-slate-300 bg-slate-950 p-3 rounded-xl border border-slate-800 select-all">
+                    {quote.deviceAuditSummary}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 flex items-center gap-3 text-xs text-slate-400">
+                <Cpu className="w-5 h-5 text-slate-500 shrink-0" />
+                <div>
+                  <span className="font-bold text-slate-300 block">Электронная фиксация в архивном реестре</span>
+                  <span>Купон зарегистрирован в базе данных до внедрения глубокого аппаратного слепка. Целостность зафиксированных цен подтверждена.</span>
+                </div>
+              </div>
+            )}
 
             {/* Official Digital Stamp & Legal Verification Footer */}
             <div className="pt-4 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-6 bg-slate-900/50 p-5 rounded-2xl">

@@ -29,6 +29,14 @@ import {
   Eye,
   EyeOff,
   Lock,
+  Cpu,
+  Tablet,
+  Smartphone,
+  Monitor,
+  Copy,
+  Check,
+  Fingerprint,
+  HardDrive,
 } from "lucide-react";
 import {
   AuditLogEntry,
@@ -38,7 +46,9 @@ import {
   syncHistoricalQuotesToAudit,
   deleteAuditLog,
   deleteBulkAuditLogs,
+  logAuditEvent,
 } from "../lib/auditLogger";
+import { DeviceAuditInfo, captureDeviceAudit } from "../lib/deviceFingerprint";
 import { PrintAuditProtocolView } from "./PrintAuditProtocolView";
 
 interface AuditConsoleModalProps {
@@ -71,10 +81,17 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   const [selectedRegion, setSelectedRegion] = useState<string>("");
   const [selectedDistrict, setSelectedDistrict] = useState<string>("");
   const [selectedActionType, setSelectedActionType] = useState<string>("");
+  const [deviceFilter, setDeviceFilter] = useState<"all" | "tablet" | "pc" | "phone" | "with_fp">("all");
   const [datePreset, setDatePreset] = useState<"all" | "today" | "3days" | "week" | "month" | "custom">("all");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+
+  // Current physical device forensics state
+  const [currentDevice, setCurrentDevice] = useState<DeviceAuditInfo | null>(null);
+  const [copiedFpId, setCopiedFpId] = useState<string | null>(null);
+  const [isTestingDeviceFp, setIsTestingDeviceFp] = useState<boolean>(false);
+  const [testDeviceFeedback, setTestDeviceFeedback] = useState<string | null>(null);
 
   // Expanded row details
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
@@ -83,7 +100,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   const [isPrintingProtocol, setIsPrintingProtocol] = useState<boolean>(false);
 
   // Active tab
-  const [activeTab, setActiveTab] = useState<"table" | "timeline">("table");
+  const [activeTab, setActiveTab] = useState<"table" | "timeline" | "devices">("table");
 
   // Selection & Deletion state
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
@@ -116,6 +133,11 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    // Capture live device hardware profile of current operator
+    captureDeviceAudit().then((fp) => {
+      setCurrentDevice(fp);
+    }).catch(console.warn);
+
     // Set up real-time listener so events appear instantly
     setLoading(true);
     const unsubscribe = subscribeToAuditLogs((liveLogs) => {
@@ -127,6 +149,44 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
       unsubscribe();
     };
   }, [isOpen]);
+
+  const handleCopyCurrentDeviceFp = () => {
+    if (!currentDevice) return;
+    const textToCopy = `ТЕХНИЧЕСКИЙ СЛЕПОК ОБОРУДОВАНИЯ:\n${currentDevice.summary}\nID отпечатка: ${currentDevice.fingerprintId}\nТип: ${currentDevice.deviceType}\nОС: ${currentDevice.os}\nБраузер: ${currentDevice.browser}\nРазрешение: ${currentDevice.screenResolution}\nCPU: ${currentDevice.cpuCores} ядер\nRAM: ${currentDevice.memoryGb ? currentDevice.memoryGb + " ГБ" : "н/д"}\nGPU: ${currentDevice.gpuRenderer} (${currentDevice.gpuVendor})\nCanvas 2D Hash: ${currentDevice.canvasHash}\nTouch: ${currentDevice.touchPoints} точек\nIP: ${currentDevice.ipAddress}\nТаймзона: ${currentDevice.timezone}\nВремя фиксации: ${currentDevice.capturedAtFormatted}`;
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(textToCopy);
+      setCopiedFpId("CURRENT_DEVICE");
+      setTimeout(() => setCopiedFpId(null), 2500);
+    }
+  };
+
+  const handleTestDeviceSnapshot = async () => {
+    setIsTestingDeviceFp(true);
+    setTestDeviceFeedback(null);
+    try {
+      const fp = await captureDeviceAudit({ forceRefresh: true });
+      setCurrentDevice(fp);
+      await logAuditEvent({
+        actionType: "SECURITY_AUDIT",
+        actorName: currentFacilitatorName || "Администратор",
+        actorRole: "admin",
+        facilitatorName: currentFacilitatorName,
+        details: `Контрольная аппаратная фиксация оборудования: ${fp.deviceType} (${fp.os}, ${fp.screenResolution}, CPU: ${fp.cpuCores} ядер, GPU: ${fp.gpuRenderer.slice(0, 30)}, IP: ${fp.ipAddress})`,
+        metadata: {
+          testAudit: true,
+          deviceAudit: fp,
+          deviceFingerprintId: fp.fingerprintId,
+          deviceSummary: fp.summary,
+        },
+      });
+      setTestDeviceFeedback(`Контрольный слепок успешно зафиксирован в аудите! (ID: ${fp.fingerprintId})`);
+      setTimeout(() => setTestDeviceFeedback(null), 5000);
+    } catch (e: any) {
+      setTestDeviceFeedback(`Ошибка фиксации: ${e?.message || "Сбой связи"}`);
+    } finally {
+      setIsTestingDeviceFp(false);
+    }
+  };
 
   const handleSyncHistorical = async () => {
     setIsSyncing(true);
@@ -219,6 +279,18 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           }
         }
 
+        // Device hardware filter
+        if (deviceFilter !== "all") {
+          const dType = log.metadata?.deviceAudit?.deviceType || "";
+          const dSum = (log.metadata?.deviceSummary || "").toLowerCase();
+          const hasFp = Boolean(log.metadata?.deviceAudit || log.metadata?.deviceFingerprintId || log.metadata?.deviceSummary);
+
+          if (deviceFilter === "with_fp" && !hasFp) return false;
+          if (deviceFilter === "tablet" && dType !== "Планшет" && !dSum.includes("планшет")) return false;
+          if (deviceFilter === "phone" && dType !== "Смартфон" && !dSum.includes("смартфон")) return false;
+          if (deviceFilter === "pc" && dType !== "ПК / Ноутбук" && !dSum.includes("пк") && !dSum.includes("ноутбук")) return false;
+        }
+
         // Search query
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase();
@@ -229,8 +301,10 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           const inActor = (log.actorName || "").toLowerCase().includes(q);
           const inFacilitator = (log.facilitatorName || "").toLowerCase().includes(q);
           const inDistrict = (log.district || "").toLowerCase().includes(q);
+          const inFp = (log.metadata?.deviceFingerprintId || "").toLowerCase().includes(q);
+          const inDeviceSummary = (log.metadata?.deviceSummary || "").toLowerCase().includes(q);
 
-          if (!inBeneficiary && !inBeneficiaryId && !inQuoteId && !inDetails && !inActor && !inFacilitator && !inDistrict) {
+          if (!inBeneficiary && !inBeneficiaryId && !inQuoteId && !inDetails && !inActor && !inFacilitator && !inDistrict && !inFp && !inDeviceSummary) {
             return false;
           }
         }
@@ -245,6 +319,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     selectedRegion,
     selectedDistrict,
     selectedActionType,
+    deviceFilter,
     searchQuery,
     sortOrder,
   ]);
@@ -258,8 +333,24 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     const edits = filteredLogs.filter((l) => l.actionType === "EDIT_QUOTE").length;
     const deletes = filteredLogs.filter((l) => l.actionType === "DELETE_QUOTE").length;
     const beneficiaries = new Set(filteredLogs.map((l) => l.beneficiaryName).filter(Boolean)).size;
+    const fpLogsCount = filteredLogs.filter((l) => Boolean(l.metadata?.deviceAudit || l.metadata?.deviceFingerprintId || l.metadata?.deviceSummary)).length;
+    const tabletsCount = filteredLogs.filter((l) => l.metadata?.deviceAudit?.deviceType === "Планшет" || (l.metadata?.deviceSummary || "").toLowerCase().includes("планшет")).length;
+    const pcsCount = filteredLogs.filter((l) => l.metadata?.deviceAudit?.deviceType === "ПК / Ноутбук" || (l.metadata?.deviceSummary || "").toLowerCase().includes("пк") || (l.metadata?.deviceSummary || "").toLowerCase().includes("ноутбук")).length;
+    const phonesCount = filteredLogs.filter((l) => l.metadata?.deviceAudit?.deviceType === "Смартфон" || (l.metadata?.deviceSummary || "").toLowerCase().includes("смартфон")).length;
 
-    return { total, quotesCount: quotes.length, totalAmount, prints, edits, deletes, beneficiaries };
+    return { 
+      total, 
+      quotesCount: quotes.length, 
+      totalAmount, 
+      prints, 
+      edits, 
+      deletes, 
+      beneficiaries,
+      fpLogsCount,
+      tabletsCount,
+      pcsCount,
+      phonesCount,
+    };
   }, [filteredLogs]);
 
   // Available districts for selected region
@@ -288,6 +379,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     setSelectedRegion("");
     setSelectedDistrict("");
     setSelectedActionType("");
+    setDeviceFilter("all");
     setDatePreset("all");
     setCustomStartDate("");
     setCustomEndDate("");
@@ -299,6 +391,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     selectedRegion ||
     selectedDistrict ||
     selectedActionType ||
+    deviceFilter !== "all" ||
     datePreset !== "all";
 
   // Checkbox Selection state
@@ -460,6 +553,13 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
             <Download className="w-3 h-3 text-emerald-600" />
             Экспорт в Excel
+          </span>
+        );
+      case "SECURITY_AUDIT":
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+            <Shield className="w-3 h-3 text-indigo-600" />
+            Аппаратный аудит
           </span>
         );
       default:
@@ -787,6 +887,19 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   ))}
                 </select>
 
+                {/* Device Hardware Filter */}
+                <select
+                  value={deviceFilter}
+                  onChange={(e) => setDeviceFilter(e.target.value as any)}
+                  className="px-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm min-w-[170px]"
+                >
+                  <option value="all">Все устройства (Аудит)</option>
+                  <option value="tablet">📱 Только Планшеты</option>
+                  <option value="pc">💻 Только ПК / Ноутбуки</option>
+                  <option value="phone">📲 Только Смартфоны</option>
+                  <option value="with_fp">🛡️ Только с отпечатком DFP</option>
+                </select>
+
                 {/* Custom Date Pickers */}
                 {datePreset === "custom" && (
                   <div className="flex items-center gap-1.5 bg-white border border-slate-300 px-2 py-1 rounded-lg text-xs shadow-sm">
@@ -820,11 +933,11 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
               {/* Sort & Tabs */}
               <div className="flex items-center gap-2">
-                <div className="flex items-center bg-white border border-slate-300 p-0.5 rounded-lg text-xs">
+                <div className="flex items-center bg-white border border-slate-300 p-0.5 rounded-lg text-xs shadow-xs">
                   <button
                     onClick={() => setActiveTab("table")}
                     className={`px-3 py-1 rounded font-medium transition-all ${
-                      activeTab === "table" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+                      activeTab === "table" ? "bg-slate-900 text-white shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     Таблица
@@ -832,10 +945,29 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   <button
                     onClick={() => setActiveTab("timeline")}
                     className={`px-3 py-1 rounded font-medium transition-all ${
-                      activeTab === "timeline" ? "bg-slate-900 text-white" : "text-slate-600 hover:text-slate-900"
+                      activeTab === "timeline" ? "bg-slate-900 text-white shadow-xs font-bold" : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     Хронология сессий
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("devices")}
+                    className={`px-3 py-1 rounded font-medium transition-all flex items-center gap-1.5 ${
+                      activeTab === "devices"
+                        ? "bg-indigo-600 text-white shadow-xs font-bold"
+                        : "text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/50"
+                    }`}
+                    title="Аппаратный реестр и цифровые слепки оборудования"
+                  >
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span>Слепки оборудования</span>
+                    {stats.fpLogsCount > 0 && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
+                        activeTab === "devices" ? "bg-white text-indigo-700" : "bg-indigo-100 text-indigo-800"
+                      }`}>
+                        {stats.fpLogsCount}
+                      </span>
+                    )}
                   </button>
                 </div>
 
@@ -878,6 +1010,18 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   {stats.prints}
                 </span>
               </div>
+              {stats.fpLogsCount > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-slate-500">Слепки DFP:</span>
+                  <span className="font-extrabold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200 shadow-sm flex items-center gap-1">
+                    <Cpu className="w-3 h-3 text-indigo-600" />
+                    {stats.fpLogsCount} шт.
+                    <span className="font-normal text-[10px] text-slate-500 ml-0.5">
+                      (📱 {stats.tabletsCount} / 💻 {stats.pcsCount})
+                    </span>
+                  </span>
+                </div>
+              )}
               {stats.edits > 0 && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-slate-500">Корректировок:</span>
@@ -888,8 +1032,13 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
               )}
             </div>
 
-            <div className="text-[11px] text-slate-500">
-              База: <span className="font-mono text-slate-700">Firestore (SPMEI Project Audit)</span>
+            <div className="text-[11px] text-slate-500 flex items-center gap-2">
+              {currentDevice && (
+                <span className="font-mono text-slate-600 bg-white px-2 py-0.5 rounded border border-slate-200 hidden lg:inline">
+                  Текущий сеанс: <strong className="text-slate-900">{currentDevice.deviceType}</strong> [{currentDevice.fingerprintId.slice(0, 8)}]
+                </span>
+              )}
+              <span>База: <span className="font-mono text-slate-700">Firestore (SPMEI Project Audit)</span></span>
             </div>
           </div>
 
@@ -944,6 +1093,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                         <th className="p-3 w-10 text-center">#</th>
                         <th className="p-3 w-32">Время (TJT)</th>
                         <th className="p-3 w-36">Действие</th>
+                        <th className="p-3 w-48">Слепок устройства</th>
                         <th className="p-3 w-48">Фасилитатор / Район</th>
                         <th className="p-3 w-52">Бенефициар / КП</th>
                         <th className="p-3">Описание операции</th>
@@ -993,6 +1143,53 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                               </td>
                               <td className="p-3">
                                 {renderActionBadge(log.actionType)}
+                              </td>
+                              {/* Device Hardware Fingerprint Column */}
+                              <td className="p-3 leading-tight" onClick={(e) => e.stopPropagation()}>
+                                {log.metadata?.deviceAudit ? (
+                                  <div 
+                                    onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                                    className="cursor-pointer group"
+                                    title={log.metadata.deviceSummary || log.metadata.deviceAudit.summary}
+                                  >
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-800 text-[11px] group-hover:text-indigo-600 transition-colors">
+                                      {log.metadata.deviceAudit.deviceType === "Планшет" ? (
+                                        <Tablet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                      ) : log.metadata.deviceAudit.deviceType === "Смартфон" ? (
+                                        <Smartphone className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                      ) : (
+                                        <Monitor className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                      )}
+                                      <span className="truncate max-w-[130px]">{log.metadata.deviceAudit.deviceType}</span>
+                                    </div>
+                                    <div className="text-[10px] font-mono text-slate-500 mt-0.5 truncate max-w-[140px]">
+                                      {log.metadata.deviceAudit.os}
+                                    </div>
+                                    {log.metadata.deviceFingerprintId && (
+                                      <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded bg-indigo-50 border border-indigo-200/80 text-indigo-700 text-[9px] font-mono font-bold tracking-tight">
+                                        {log.metadata.deviceFingerprintId.slice(0, 12)}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : log.metadata?.deviceSummary ? (
+                                  <div 
+                                    onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                                    className="cursor-pointer text-[11px] font-medium text-slate-700 truncate max-w-[140px]"
+                                    title={log.metadata.deviceSummary}
+                                  >
+                                    <div className="flex items-center gap-1 text-slate-800 font-bold">
+                                      <Cpu className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                      <span>Оборудование</span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 truncate">
+                                      {log.metadata.deviceSummary.split("(")[0]}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic">
+                                    До внедрения
+                                  </span>
+                                )}
                               </td>
                               <td className="p-3 leading-tight">
                                 <div className="font-bold text-slate-900 truncate max-w-[180px]">
@@ -1049,7 +1246,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                             {/* Expanded Details Row */}
                             {isExpanded && (
                               <tr className="bg-indigo-50/20 border-b border-indigo-100">
-                                <td colSpan={10} className="p-4 pl-12">
+                                <td colSpan={11} className="p-4 pl-12">
                                   <div className="bg-white border border-indigo-100 rounded-xl p-4 shadow-sm space-y-3">
                                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 text-xs">
                                       <div className="flex items-center gap-3">
@@ -1118,6 +1315,107 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                                       </div>
                                     )}
 
+                                    {/* Device Hardware Fingerprint in Audit Log */}
+                                    {(log.metadata?.deviceAudit || log.metadata?.deviceSummary) ? (
+                                      <div className="mt-2 pt-2 border-t border-slate-100 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                          <div className="text-[10px] uppercase text-slate-500 font-bold flex items-center gap-1.5">
+                                            <Cpu className="w-3.5 h-3.5 text-indigo-600" />
+                                            <span>Аппаратный слепок оборудования (Цифровое доказательство):</span>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const textToCopy = `АУДИТ ОПЕРАЦИИ #${log.id}\nДействие: ${log.actionType} (${log.dateFormatted})\n${log.metadata?.deviceSummary || log.metadata?.deviceAudit?.summary}\nID отпечатка: ${log.metadata?.deviceFingerprintId || log.metadata?.deviceAudit?.fingerprintId}\nОС: ${log.metadata?.deviceAudit?.os || "н/д"}\nCPU: ${log.metadata?.deviceAudit?.cpuCores || "н/д"} ядер\nGPU: ${log.metadata?.deviceAudit?.gpuRenderer || "н/д"}\nCanvas 2D FP: ${log.metadata?.deviceAudit?.canvasHash || "н/д"}\nIP: ${log.metadata?.deviceAudit?.ipAddress || "н/д"}`;
+                                              if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                                navigator.clipboard.writeText(textToCopy);
+                                                setCopiedFpId(log.id);
+                                                setTimeout(() => setCopiedFpId(null), 2500);
+                                              }
+                                            }}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-300 transition-colors cursor-pointer"
+                                            title="Скопировать технический слепок для акта / экспертизы"
+                                          >
+                                            {copiedFpId === log.id ? (
+                                              <>
+                                                <Check className="w-3 h-3 text-emerald-600" />
+                                                <span className="text-emerald-700">Скопировано!</span>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Copy className="w-3 h-3 text-slate-500" />
+                                                <span>Скопировать слепок для экспертизы</span>
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+
+                                        {log.metadata.deviceAudit ? (
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+                                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Тип и ОС</span>
+                                              <span className="font-bold text-slate-900 mt-0.5 flex items-center gap-1">
+                                                {log.metadata.deviceAudit.deviceType === "Планшет" ? (
+                                                  <Tablet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                ) : log.metadata.deviceAudit.deviceType === "Смартфон" ? (
+                                                  <Smartphone className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                ) : (
+                                                  <Monitor className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                                )}
+                                                {log.metadata.deviceAudit.deviceType}
+                                              </span>
+                                              <span className="text-[11px] text-slate-600 block">{log.metadata.deviceAudit.os}</span>
+                                            </div>
+
+                                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Процессор / Память</span>
+                                              <span className="font-bold text-slate-900 mt-0.5 font-mono block">
+                                                {log.metadata.deviceAudit.cpuCores > 0 ? `${log.metadata.deviceAudit.cpuCores} ядер CPU` : "н/д"}
+                                              </span>
+                                              <span className="text-[11px] text-slate-600 font-mono block">
+                                                {log.metadata.deviceAudit.memoryGb ? `${log.metadata.deviceAudit.memoryGb} ГБ RAM` : "Стандарт"}
+                                              </span>
+                                            </div>
+
+                                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                              <span className="text-[10px] uppercase font-bold text-slate-400 block">Экран / Сенсор</span>
+                                              <span className="font-bold text-slate-900 mt-0.5 font-mono text-[11px] truncate block" title={log.metadata.deviceAudit.screenResolution}>
+                                                {log.metadata.deviceAudit.screenResolution}
+                                              </span>
+                                              <span className="text-[11px] text-slate-600 block">
+                                                {log.metadata.deviceAudit.touchPoints > 0 ? `Тач: ${log.metadata.deviceAudit.touchPoints} точек` : "Клавиатура/мышь"}
+                                              </span>
+                                            </div>
+
+                                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2">
+                                              <span className="text-[10px] uppercase font-bold text-slate-400 block">IP / Отпечаток</span>
+                                              <span className="font-bold text-indigo-900 mt-0.5 font-mono text-[11px] truncate block" title={log.metadata.deviceAudit.ipAddress}>
+                                                {log.metadata.deviceAudit.ipAddress || "Локальная сеть"}
+                                              </span>
+                                              <span className="font-mono text-[10px] text-emerald-700 font-extrabold truncate block">
+                                                {log.metadata.deviceFingerprintId || log.metadata.deviceAudit.fingerprintId}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-700 flex flex-wrap items-center justify-between gap-2">
+                                            <span className="truncate" title={log.metadata.deviceSummary}>
+                                              {log.metadata.deviceSummary}
+                                            </span>
+                                            {log.metadata.deviceFingerprintId && (
+                                              <span className="px-2 py-0.5 rounded bg-indigo-50 border border-indigo-200 text-indigo-800 font-bold text-[10px] shrink-0">
+                                                FP: {log.metadata.deviceFingerprintId}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="mt-2 pt-2 border-t border-slate-100 text-xs text-slate-400 italic">
+                                        Запись зафиксирована до внедрения модуля сквозного аппаратного отпечатка.
+                                      </div>
+                                    )}
+
                                     {/* Actions in expanded row */}
                                     <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                                       <span className="text-[11px] text-slate-400">
@@ -1143,7 +1441,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                   </table>
                 </div>
               </div>
-            ) : (
+            ) : activeTab === "timeline" ? (
               /* Timeline View (grouped by session and facilitator) */
               <div className="space-y-6">
                 {(
@@ -1193,6 +1491,27 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
                             <p className="font-semibold text-slate-800 mt-1">{log.details}</p>
 
+                            {/* Device Hardware Pill in Timeline */}
+                            {(log.metadata?.deviceAudit || log.metadata?.deviceSummary) && (
+                              <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-700 bg-white p-2 rounded-lg border border-slate-200 mt-2">
+                                <Cpu className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                <span className="font-bold text-slate-900">
+                                  {log.metadata?.deviceAudit ? `${log.metadata.deviceAudit.deviceType} (${log.metadata.deviceAudit.os})` : log.metadata?.deviceSummary}
+                                </span>
+                                {log.metadata?.deviceAudit?.screenResolution && (
+                                  <span className="text-slate-500 text-[10px]">• {log.metadata.deviceAudit.screenResolution}</span>
+                                )}
+                                {log.metadata?.deviceAudit?.ipAddress && (
+                                  <span className="text-slate-500 text-[10px]">• IP: {log.metadata.deviceAudit.ipAddress}</span>
+                                )}
+                                {log.metadata?.deviceFingerprintId && (
+                                  <span className="ml-auto text-[10px] text-indigo-700 font-bold bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
+                                    {log.metadata.deviceFingerprintId}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-200/60">
                               <span>
                                 <strong>Исполнитель:</strong> {log.actorName} ({log.facilitatorName || "—"})
@@ -1219,6 +1538,316 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                     </div>
                   </div>
                 ))}
+              </div>
+            ) : (
+              /* Dedicated Hardware Forensics Tab ("devices") */
+              <div className="space-y-6">
+                {/* Live Current Device Card */}
+                <div className="bg-white rounded-2xl border border-indigo-200 shadow-md overflow-hidden">
+                  <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-400/40 text-indigo-300 flex items-center justify-center shrink-0">
+                        <Fingerprint className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-extrabold text-base sm:text-lg text-white">
+                            Текущее физическое оборудование оператора
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-bold uppercase tracking-wider">
+                            Онлайн отпечаток
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-0.5">
+                          Объективный цифровой слепок физического устройства, используемого прямо сейчас в этой сессии
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCopyCurrentDeviceFp}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow transition-all active:scale-95 cursor-pointer"
+                        title="Скопировать технический паспорт устройства для акта ревизии"
+                      >
+                        {copiedFpId === "CURRENT_DEVICE" ? (
+                          <>
+                            <Check className="w-4 h-4 text-emerald-300" />
+                            <span>Слепок скопирован!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4 text-indigo-200" />
+                            <span>Скопировать слепок устройства</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleTestDeviceSnapshot}
+                        disabled={isTestingDeviceFp}
+                        className="flex items-center gap-1.5 px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-medium rounded-xl border border-white/20 transition-all cursor-pointer disabled:opacity-50"
+                        title="Зафиксировать контрольную точку аудита для проверки записи в Firestore"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${isTestingDeviceFp ? "animate-spin text-indigo-400" : ""}`} />
+                        <span>Контрольная фиксация в аудите</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {testDeviceFeedback && (
+                    <div className="bg-emerald-50 border-b border-emerald-200 text-emerald-800 px-5 py-2.5 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>{testDeviceFeedback}</span>
+                    </div>
+                  )}
+
+                  {currentDevice ? (
+                    <div className="p-5 space-y-4">
+                      {/* Grid of hardware parameters */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                        {/* 1. Device & OS */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                            Тип оборудования & ОС
+                          </span>
+                          <div className="font-bold text-slate-900 text-sm mt-1 flex items-center gap-2">
+                            {currentDevice.deviceType === "Планшет" ? (
+                              <Tablet className="w-4 h-4 text-indigo-600 shrink-0" />
+                            ) : currentDevice.deviceType === "Смартфон" ? (
+                              <Smartphone className="w-4 h-4 text-indigo-600 shrink-0" />
+                            ) : (
+                              <Monitor className="w-4 h-4 text-indigo-600 shrink-0" />
+                            )}
+                            <span>{currentDevice.deviceType}</span>
+                          </div>
+                          <div className="text-slate-600 mt-1 font-medium">{currentDevice.os}</div>
+                          <div className="text-slate-400 text-[11px] truncate mt-0.5">{currentDevice.browser}</div>
+                        </div>
+
+                        {/* 2. CPU & RAM */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                            Вычислительные ядра & Память
+                          </span>
+                          <div className="font-mono font-bold text-slate-900 text-sm mt-1">
+                            {currentDevice.cpuCores > 0 ? `${currentDevice.cpuCores} ядер CPU` : "CPU: стандарт"}
+                          </div>
+                          <div className="font-mono text-slate-600 text-xs mt-1">
+                            {currentDevice.memoryGb ? `${currentDevice.memoryGb} ГБ оперативной памяти (RAM)` : "RAM: динамическое выделение"}
+                          </div>
+                          <div className="text-slate-400 text-[11px] mt-0.5 font-mono">
+                            Глубина цвета: {currentDevice.colorDepth}-бит
+                          </div>
+                        </div>
+
+                        {/* 3. Screen & Touch */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                            Дисплей & Сенсорный ввод
+                          </span>
+                          <div className="font-mono font-bold text-slate-900 text-sm mt-1">
+                            {currentDevice.screenResolution}
+                          </div>
+                          <div className="text-slate-600 text-xs mt-1">
+                            {currentDevice.touchPoints > 0 
+                              ? `Сенсорный экран: ${currentDevice.touchPoints} точек мультитач` 
+                              : "Физическая мышь / манипулятор (без сенсора)"}
+                          </div>
+                          <div className="text-slate-400 text-[11px] mt-0.5">
+                            Язык окружения: {currentDevice.language}
+                          </div>
+                        </div>
+
+                        {/* 4. GPU 3D WebGL */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 sm:col-span-2">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                            Графический 3D-видеопроцессор (WebGL Renderer)
+                          </span>
+                          <div className="font-mono font-bold text-indigo-900 text-xs mt-1 break-all">
+                            {currentDevice.gpuRenderer}
+                          </div>
+                          <div className="text-slate-500 text-[11px] mt-1 font-medium">
+                            Производитель чипа (Vendor): {currentDevice.gpuVendor}
+                          </div>
+                        </div>
+
+                        {/* 5. Subpixel Canvas Hash */}
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                            Хеш субпиксельного сглаживания (Canvas 2D)
+                          </span>
+                          <div className="font-mono font-extrabold text-indigo-700 text-xs mt-1">
+                            {currentDevice.canvasHash}
+                          </div>
+                          <div className="text-slate-400 text-[11px] mt-1">
+                            Уникален для связки шрифтового движка и видеодрайвера
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Fingerprint ID Bar */}
+                      <div className="p-3 bg-slate-900 text-white rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400 uppercase text-[10px] font-bold">Идентификатор отпечатка:</span>
+                          <span className="font-black text-emerald-400 text-sm tracking-wide select-all">
+                            {currentDevice.fingerprintId}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-4 text-slate-300 text-[11px]">
+                          <span>IP: <strong className="text-white">{currentDevice.ipAddress}</strong></span>
+                          <span>Зона: <strong className="text-white">{currentDevice.timezone}</strong></span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center text-slate-400 text-xs">
+                      <RefreshCw className="w-6 h-6 animate-spin mx-auto text-indigo-600 mb-2" />
+                      Определение параметров физического оборудования...
+                    </div>
+                  )}
+                </div>
+
+                {/* Operations with Fingerprint Registry */}
+                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <Cpu className="w-4 h-4 text-indigo-600" />
+                        <span>Журнал операций с аппаратной фиксацией оборудования ({stats.fpLogsCount} записей)</span>
+                      </h4>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Все факты создания, изменения спецификаций и печати с привязкой к конкретному оборудованию
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 font-bold">
+                        📱 Планшеты: {stats.tabletsCount}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-300 text-slate-800 font-bold">
+                        💻 ПК / Ноутбуки: {stats.pcsCount}
+                      </span>
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold">
+                        📲 Смартфоны: {stats.phonesCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  {filteredLogs.filter((l) => Boolean(l.metadata?.deviceAudit || l.metadata?.deviceFingerprintId || l.metadata?.deviceSummary)).length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 text-xs">
+                      В текущей выборке нет записей со слепками оборудования. Нажмите кнопку <strong>«Контрольная фиксация в аудите»</strong> выше, чтобы создать тестовую отметку, либо оформите новую спецификацию.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[10px] uppercase">
+                            <th className="p-2.5">Время</th>
+                            <th className="p-2.5">Операция & Объект</th>
+                            <th className="p-2.5">Фасилитатор</th>
+                            <th className="p-2.5">Устройство & ОС</th>
+                            <th className="p-2.5">Спецификация железа</th>
+                            <th className="p-2.5">IP Адрес</th>
+                            <th className="p-2.5">ID Слепка (DFP)</th>
+                            <th className="p-2.5 text-center">Акт</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredLogs
+                            .filter((l) => Boolean(l.metadata?.deviceAudit || l.metadata?.deviceFingerprintId || l.metadata?.deviceSummary))
+                            .map((log) => (
+                              <tr key={log.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="p-2.5 font-mono text-slate-600 whitespace-nowrap">
+                                  {log.dateFormatted}
+                                </td>
+                                <td className="p-2.5">
+                                  <div className="font-bold text-slate-900">{log.actionType}</div>
+                                  {log.quoteId && (
+                                    <span className="font-mono text-[10px] text-indigo-700 font-semibold">
+                                      КП № {log.quoteId}
+                                    </span>
+                                  )}
+                                  {log.beneficiaryName && (
+                                    <div className="text-[11px] text-slate-500 truncate max-w-[150px]">
+                                      {log.beneficiaryName}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-2.5 font-medium text-slate-800">
+                                  {log.facilitatorName || log.actorName}
+                                </td>
+                                <td className="p-2.5">
+                                  <div className="font-bold text-slate-900 flex items-center gap-1">
+                                    {log.metadata?.deviceAudit?.deviceType === "Планшет" ? (
+                                      <Tablet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    ) : log.metadata?.deviceAudit?.deviceType === "Смартфон" ? (
+                                      <Smartphone className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    ) : (
+                                      <Monitor className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                    )}
+                                    <span>{log.metadata?.deviceAudit?.deviceType || "Устройство"}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-500 font-mono">
+                                    {log.metadata?.deviceAudit?.os || log.metadata?.deviceSummary?.split("(")[0]}
+                                  </div>
+                                </td>
+                                <td className="p-2.5 font-mono text-[11px] text-slate-600 max-w-[200px] truncate" title={log.metadata?.deviceSummary}>
+                                  {log.metadata?.deviceAudit ? (
+                                    <span>
+                                      {log.metadata.deviceAudit.cpuCores} CPU • {log.metadata.deviceAudit.screenResolution}
+                                    </span>
+                                  ) : (
+                                    <span>{log.metadata?.deviceSummary}</span>
+                                  )}
+                                </td>
+                                <td className="p-2.5 font-mono text-[11px] text-slate-700 whitespace-nowrap">
+                                  {log.metadata?.deviceAudit?.ipAddress || "—"}
+                                </td>
+                                <td className="p-2.5 font-mono font-bold text-indigo-700 whitespace-nowrap text-[11px]">
+                                  {log.metadata?.deviceFingerprintId || log.metadata?.deviceAudit?.fingerprintId || "—"}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const text = `АУДИТ ОПЕРАЦИИ: ${log.actionType} (${log.dateFormatted})\nКупон: ${log.quoteId || "—"}\nФасилитатор: ${log.facilitatorName || log.actorName}\n${log.metadata?.deviceSummary || log.metadata?.deviceAudit?.summary}\nID отпечатка: ${log.metadata?.deviceFingerprintId || log.metadata?.deviceAudit?.fingerprintId}`;
+                                      if (typeof navigator !== "undefined" && navigator.clipboard) {
+                                        navigator.clipboard.writeText(text);
+                                        setCopiedFpId(log.id);
+                                        setTimeout(() => setCopiedFpId(null), 2500);
+                                      }
+                                    }}
+                                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Скопировать технический слепок для акта"
+                                  >
+                                    {copiedFpId === log.id ? (
+                                      <Check className="w-4 h-4 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-4 h-4" />
+                                    )}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Evidence Standard Notice */}
+                <div className="p-4 bg-slate-900 text-white rounded-xl text-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-bold text-indigo-300">
+                    <Shield className="w-4 h-4" />
+                    <span>Стандарт юридической и технической экспертизы SPMEI</span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed">
+                    Система фиксирует объективные физические характеристики вычислительного оборудования (GPU WebGL, субпиксельный рендеринг шрифтов Canvas 2D, физические ядра CPU, разрешение матрицы экрана, сетевой IP-адрес). Это обеспечивает объективное доказательство факта работы оператора на конкретном оборудовании при проверках ГРП и аудитах доноров.
+                  </p>
+                </div>
               </div>
             )}
           </div>

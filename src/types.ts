@@ -47,5 +47,6 @@ export interface GlobalDictionary {
     facilitatorEmails?: Record<string, string>;
     facilitatorRegions?: Record<string, string>;
     facilitatorCodes?: Record<string, string>;
-    adminPassword?: string;
 }
+
+export type { DeviceAuditInfo } from "./lib/deviceFingerprint";

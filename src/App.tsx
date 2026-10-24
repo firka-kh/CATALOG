@@ -3474,6 +3474,17 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     <TrendingUp className="w-5 h-5 text-rose-400" />
                     Аналитика и Аномалии цен
                   </a>
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsAuditModalOpen(true);
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 hover:text-white transition-colors rounded-md font-semibold"
+                  >
+                    <ShieldAlert className="w-5 h-5 text-indigo-400" />
+                    Аудит & Слепки оборудования
+                  </a>
                 </>
               )}
             </nav>
@@ -3619,23 +3630,12 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 </button>
               )}
               <button
-                onClick={() => {
-                  if (isReallyAdmin) {
-                    setIsAuditModalOpen(true);
-                  } else {
-                    const pass = prompt("Введите пароль доступа к Центру аудита и расследований:");
-                    if (pass === (globalDict.adminPassword || "020779")) {
-                      setIsAuditModalOpen(true);
-                    } else if (pass) {
-                      alert("Неверный пароль доступа!");
-                    }
-                  }
-                }}
+                onClick={() => setIsAuditModalOpen(true)}
                 className="flex items-center gap-1.5 text-xs bg-indigo-700 hover:bg-indigo-800 text-white px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-md font-semibold transition-all shadow-sm cursor-pointer"
-                title="Журнал аудита и расследований (GDPR / Логи действий)"
+                title="Центр аудита: цифровые слепки оборудования операторов, журнал действий, печать протокола"
               >
                 <ShieldAlert className="w-3.5 h-3.5 text-indigo-200" />
-                <span className="hidden sm:inline">Аудит</span>
+                <span className="hidden sm:inline">Аудит & Слепки</span>
                 <span className="sm:hidden">Аудит</span>
               </button>
               {isTabletMode && (
@@ -5128,14 +5128,11 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           className="mt-1 w-4 h-4 text-indigo-600 border-slate-300 focus:ring-indigo-500"
                         />
                         <div className="flex flex-col">
-                          <span className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-slate-900">
                             ПОЛНЫЙ КАТАЛОГ ТОВАРОВ
-                            <span className="bg-indigo-100 text-indigo-700 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                              Все 3 поставщика
-                            </span>
                           </span>
                           <span className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                            Печать всего ассортимента. На обложке выводится заголовок <strong>«ПОЛНЫЙ КАТАЛОГ ТОВАРОВ»</strong> и статус Проекта при МТМЗН РТ.
+                            Печать полного ассортимента. В каталоге выводятся только те поставщики, которые указали цены.
                           </span>
                         </div>
                       </label>
@@ -5249,8 +5246,8 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   </div>
                 </div>
 
-                {/* 3. Pricing Display Mode */}
-                <div>
+                {/* 3. Pricing Display Mode (скрыто в интерфейсе по требованию, функционал сохранен) */}
+                <div className="hidden">
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
                     3. Формат отображения цен:
                   </label>

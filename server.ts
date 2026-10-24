@@ -309,7 +309,7 @@ async function startServer() {
       ? path.join(process.cwd(), "build")
       : null;
 
-  const isProduction = process.env.NODE_ENV === "production" || !!distPath;
+  const isProduction = process.env.NODE_ENV === "production";
 
   if (!isProduction || !distPath) {
     const vite = await createViteServer({

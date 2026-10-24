@@ -84,7 +84,162 @@ export const isMatchingRegion = (logRegion?: string, targetRegion?: string): boo
   return false;
 };
 
-// Robust Facilitator Identity Matching Helper
+// Extract all aliases and tokens for a facilitator to ensure 100% match across keys, names, and logs
+export const getFacilitatorTokens = (
+  target: string,
+  facilitatorsList: string[] = [],
+  globalDict?: Record<string, any>
+): string[] => {
+  if (!target) return [];
+  const tokens = new Set<string>();
+  const cleanTarget = target.trim().toLowerCase();
+  tokens.add(cleanTarget);
+
+  // Remove common prefixes/suffixes for fuzzy matching
+  const stripped = cleanTarget
+    .replace(/^ооо\s+|^зао\s+|^оао\s+|^чп\s+|^ип\s+/i, "")
+    .trim();
+  if (stripped && stripped.length > 2) {
+    tokens.add(stripped);
+  }
+
+  // Check if target is a slot key like "facilitator2"
+  let matchedKey = "";
+  if (cleanTarget.startsWith("facilitator")) {
+    matchedKey = cleanTarget;
+    const idx = parseInt(cleanTarget.replace("facilitator", ""), 10) - 2;
+    if (idx >= 0 && facilitatorsList[idx]) {
+      const fn = facilitatorsList[idx].trim().toLowerCase();
+      tokens.add(fn);
+      const fnStrip = fn.replace(/^ооо\s+|^зао\s+|^оао\s+|^чп\s+|^ип\s+/i, "").trim();
+      if (fnStrip) tokens.add(fnStrip);
+    }
+    tokens.add(`фасилитатор ${idx + 2}`);
+    tokens.add(`фасилитатор${idx + 2}`);
+  }
+
+  // Check if target matches generic "фасилитатор X"
+  if (cleanTarget.startsWith("фасилитатор")) {
+    const num = cleanTarget.replace(/\D/g, "");
+    if (num) {
+      matchedKey = `facilitator${num}`;
+      tokens.add(matchedKey);
+      const idx = parseInt(num, 10) - 2;
+      if (idx >= 0 && facilitatorsList[idx]) {
+        tokens.add(facilitatorsList[idx].trim().toLowerCase());
+      }
+    }
+  }
+
+  // Check if target matches any name in facilitatorsList
+  const nameIdx = facilitatorsList.findIndex((f) => {
+    if (!f) return false;
+    const fLower = f.trim().toLowerCase();
+    return fLower === cleanTarget || fLower.includes(cleanTarget) || cleanTarget.includes(fLower);
+  });
+  if (nameIdx >= 0) {
+    matchedKey = `facilitator${nameIdx + 2}`;
+    tokens.add(matchedKey);
+    tokens.add(`фасилитатор ${nameIdx + 2}`);
+    tokens.add(`фасилитатор${nameIdx + 2}`);
+    if (facilitatorsList[nameIdx]) {
+      tokens.add(facilitatorsList[nameIdx].trim().toLowerCase());
+    }
+  }
+
+  // Check in globalDict
+  if (globalDict) {
+    // Check facilitatorLegalNames
+    if (globalDict.facilitatorLegalNames) {
+      for (const [k, lName] of Object.entries(globalDict.facilitatorLegalNames)) {
+        const ln = String(lName || "").trim().toLowerCase();
+        if (ln && (ln === cleanTarget || cleanTarget === k || (matchedKey && k === matchedKey) || ln.includes(cleanTarget) || cleanTarget.includes(ln))) {
+          if (!matchedKey) matchedKey = k;
+          tokens.add(k);
+          tokens.add(ln);
+          const idx = parseInt(k.replace("facilitator", ""), 10) - 2;
+          if (idx >= 0 && facilitatorsList[idx]) {
+            tokens.add(facilitatorsList[idx].trim().toLowerCase());
+          }
+          tokens.add(`фасилитатор ${idx + 2}`);
+        }
+      }
+    }
+
+    // Check facilitatorCodes
+    if (globalDict.facilitatorCodes && matchedKey) {
+      const code = globalDict.facilitatorCodes[matchedKey];
+      if (code) tokens.add(String(code).trim().toLowerCase());
+    }
+
+    // If we have matchedKey, add its legalName, rep, etc.
+    if (matchedKey) {
+      tokens.add(matchedKey);
+      if (globalDict.facilitatorLegalNames?.[matchedKey]) {
+        tokens.add(String(globalDict.facilitatorLegalNames[matchedKey]).trim().toLowerCase());
+      }
+      if (globalDict.facilitatorRepresentatives?.[matchedKey]) {
+        tokens.add(String(globalDict.facilitatorRepresentatives[matchedKey]).trim().toLowerCase());
+      }
+    }
+  }
+
+  return Array.from(tokens).filter(Boolean);
+};
+
+export const isLogMatchingFacilitator = (
+  log: AuditLogEntry,
+  targetFacilitator: string,
+  facilitatorsList: string[] = [],
+  globalDict?: Record<string, any>
+): boolean => {
+  if (!targetFacilitator) return true;
+  const tokens = getFacilitatorTokens(targetFacilitator, facilitatorsList, globalDict);
+  if (tokens.length === 0) return false;
+
+  const logFields = [
+    log.facilitatorName,
+    log.actorName,
+    log.metadata?.facilitatorKey,
+    log.metadata?.facilitatorName,
+    log.metadata?.facilitatorLegalName,
+    log.metadata?.actorName,
+    log.metadata?.supplierId, // sometimes key is stored here
+    log.facilitatorRep,
+  ]
+    .filter(Boolean)
+    .map((s) => String(s).trim().toLowerCase());
+
+  const detailsLower = (log.details || "").toLowerCase();
+
+  // 1. Direct field match against any token
+  for (const field of logFields) {
+    for (const token of tokens) {
+      if (field === token || field.includes(token) || token.includes(field)) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Details string check against any token
+  for (const token of tokens) {
+    if (token.length >= 2 && detailsLower.includes(token)) {
+      return true;
+    }
+  }
+
+  // 3. If action is facilitator login/logout/session and log.actorRole is facilitator
+  if (
+    (log.actionType.includes("FACILITATOR") || log.actorRole === "facilitator") &&
+    tokens.some((token) => detailsLower.includes(token) || logFields.some((f) => f.includes(token)))
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+// Legacy fallback
 export const isMatchingFacilitator = (
   name?: string,
   targetName?: string,
@@ -114,6 +269,16 @@ interface AuditConsoleModalProps {
   isFacilitator?: boolean;
   facilitatorRegion?: string | null;
   facilitatorLegalName?: string;
+  globalDict?: {
+    facilitators?: string[];
+    facilitatorLegalNames?: Record<string, string>;
+    facilitatorCodes?: Record<string, string>;
+    facilitatorRegions?: Record<string, string>;
+    facilitatorRepresentatives?: Record<string, string>;
+    facilitatorPhones?: Record<string, string>;
+    facilitatorEmails?: Record<string, string>;
+    [key: string]: any;
+  };
 }
 
 export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
@@ -127,6 +292,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   isFacilitator = false,
   facilitatorRegion = null,
   facilitatorLegalName,
+  globalDict,
 }) => {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -174,6 +340,28 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [deleteFeedback, setDeleteFeedback] = useState<string | null>(null);
   const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  // Friendly actor display resolver (converts raw keys like facilitator2 to human readable names)
+  const getLogActorDisplayName = (log: AuditLogEntry): string => {
+    if (log.supplierName) return log.supplierName;
+    const raw = log.facilitatorName || log.actorName;
+    if (!raw) return "—";
+    const lower = raw.trim().toLowerCase();
+    if (lower.startsWith("facilitator")) {
+      const idx = parseInt(lower.replace("facilitator", ""), 10) - 2;
+      if (idx >= 0 && facilitators[idx]) {
+        return `${facilitators[idx]} (${raw})`;
+      }
+      if (globalDict?.facilitatorLegalNames?.[raw]) {
+        return `${globalDict.facilitatorLegalNames[raw]} (${raw})`;
+      }
+      return `Фасилитатор ${idx >= 0 ? idx + 2 : raw}`;
+    }
+    if (log.metadata?.facilitatorLegalName && log.metadata?.facilitatorLegalName !== raw) {
+      return `${raw} [${log.metadata.facilitatorLegalName}]`;
+    }
+    return raw;
+  };
 
   // Fetch logs on open and subscribe to real-time updates
   const loadLogs = async () => {
@@ -352,8 +540,8 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
         // Strict boundary for Facilitator: only see assigned region, districts, and own operations
         if (isFacilitator) {
           const facMatches =
-            isMatchingFacilitator(log.facilitatorName, currentFacilitatorName, facilitatorLegalName) ||
-            isMatchingFacilitator(log.actorName, currentFacilitatorName, facilitatorLegalName);
+            isLogMatchingFacilitator(log, currentFacilitatorName || "", facilitators, globalDict) ||
+            (facilitatorLegalName ? isLogMatchingFacilitator(log, facilitatorLegalName, facilitators, globalDict) : false);
 
           const regionMatches = targetRegion
             ? isMatchingRegion(log.region, targetRegion) ||
@@ -369,7 +557,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           // If the log is explicitly for another facilitator, reject
           if (log.facilitatorName && !facMatches) {
             const isOtherFacilitator = facilitators.some(
-              (f) => f && f !== currentFacilitatorName && isMatchingFacilitator(log.facilitatorName, f)
+              (f) => f && f !== currentFacilitatorName && isLogMatchingFacilitator(log, f, facilitators, globalDict)
             );
             if (isOtherFacilitator) return false;
           }
@@ -392,15 +580,13 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
         // Facilitator filter (for admin)
         if (!isFacilitator && selectedFacilitator) {
-          const matchFac =
-            log.facilitatorName === selectedFacilitator ||
-            log.actorName === selectedFacilitator ||
-            (log.details && log.details.includes(selectedFacilitator));
-          if (!matchFac) return false;
+          if (!isLogMatchingFacilitator(log, selectedFacilitator, facilitators, globalDict)) {
+            return false;
+          }
         }
 
         // Region filter (for admin)
-        if (!isFacilitator && selectedRegion && log.region && !log.region.toLowerCase().includes(selectedRegion.toLowerCase())) {
+        if (!isFacilitator && selectedRegion && log.region && !isMatchingRegion(log.region, selectedRegion)) {
           return false;
         }
 
@@ -475,7 +661,9 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
           const inQuoteId = (log.quoteId || "").toLowerCase().includes(q);
           const inDetails = (log.details || "").toLowerCase().includes(q);
           const inActor = (log.actorName || "").toLowerCase().includes(q);
-          const inFacilitator = (log.facilitatorName || "").toLowerCase().includes(q);
+          const inFacilitator =
+            (log.facilitatorName || "").toLowerCase().includes(q) ||
+            (q.length >= 3 && isLogMatchingFacilitator(log, q, facilitators, globalDict));
           const inSupplierName = (log.supplierName || "").toLowerCase().includes(q);
           const inSupplierCode = (log.supplierCode || "").toLowerCase().includes(q);
           const inProductName = (log.productName || "").toLowerCase().includes(q);
@@ -514,6 +702,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
     currentFacilitatorName,
     facilitatorLegalName,
     facilitators,
+    globalDict,
     availableDistricts,
     selectedFacilitator,
     selectedRegion,
@@ -1592,7 +1781,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
                               </td>
                               <td className="p-3 leading-tight">
                                 <div className="font-bold text-slate-900 truncate max-w-[180px]">
-                                  {log.supplierName || log.facilitatorName || log.actorName}
+                                  {getLogActorDisplayName(log)}
                                 </div>
                                 <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
                                   {log.actorRole === "supplier" ? (
@@ -2098,7 +2287,7 @@ export const AuditConsoleModal: React.FC<AuditConsoleModalProps> = ({
 
                             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-200/60">
                               <span>
-                                <strong>Субъект:</strong> {log.supplierName || log.actorName} ({log.actorRole})
+                                <strong>Субъект:</strong> {getLogActorDisplayName(log)} ({log.actorRole})
                               </span>
                               {log.supplierCode && (
                                 <span className="text-amber-800 font-mono font-bold">

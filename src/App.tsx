@@ -36,6 +36,8 @@ import {
   Shield,
   UserCheck,
   ExternalLink,
+  Monitor,
+  Sparkles,
 } from "lucide-react";
 import { QuotesHistoryModal } from "./components/QuotesHistoryModal";
 import { AnalyticsModal } from "./components/AnalyticsModal";
@@ -3424,6 +3426,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         facilitators={globalDict.facilitators || []}
         facilitatorCodes={globalDict.facilitatorCodes || {}}
         facilitatorRegions={globalDict.facilitatorRegions || {}}
+        facilitatorLegalNames={globalDict.facilitatorLegalNames || {}}
         suppliers={globalDict.suppliers || []}
         supplierCodes={globalDict.supplierCodes || {}}
         supplierAssignedCodes={globalDict.supplierAssignedCodes || {}}
@@ -3443,6 +3446,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         facilitators={globalDict.facilitators || []}
         facilitatorCodes={globalDict.facilitatorCodes || {}}
         facilitatorRegions={globalDict.facilitatorRegions || {}}
+        facilitatorLegalNames={globalDict.facilitatorLegalNames || {}}
         suppliers={globalDict.suppliers || []}
         supplierCodes={globalDict.supplierCodes || {}}
         supplierAssignedCodes={globalDict.supplierAssignedCodes || {}}
@@ -3509,132 +3513,182 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   </div>
                 </div>
               )}
-              <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-2">
-                Управление
+              {/* SECTION: ОСНОВНОЕ */}
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 pt-2 pb-1">
+                Каталог и заказы
               </div>
+
+              {/* 1. Товары */}
               <a
                 href="#"
-                className="flex items-center gap-3 px-3 py-2 bg-slate-800 rounded-md text-white"
+                className="flex items-center gap-3 px-3 py-2 rounded-xl bg-indigo-600 text-white font-semibold shadow-md shadow-indigo-600/30 transition-all text-xs group cursor-pointer"
               >
-                <ListIcon className="w-5 h-5 opacity-70" />
-                Товары
+                <div className="w-7 h-7 rounded-lg bg-indigo-500/80 flex items-center justify-center shrink-0 text-white shadow-xs">
+                  <ListIcon className="w-4 h-4" />
+                </div>
+                <span className="truncate">Товары каталога</span>
               </a>
+
+              {/* 2. Корзина */}
               <a
                 href="#"
                 onClick={(e) => {
                   e.preventDefault();
                   setIsCartOpen(true);
                 }}
-                className="flex items-center justify-between px-3 py-2 text-slate-400 hover:bg-slate-800 transition-colors"
+                className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
               >
-                <div className="flex items-center gap-3">
-                  <ShoppingCart className="w-5 h-5 opacity-70" />
-                  Сформировать корзину
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+                    <ShoppingCart className="w-4 h-4" />
+                  </div>
+                  <span className="truncate">Корзина заказа</span>
                 </div>
                 {cart.length > 0 && (
-                  <span className="bg-indigo-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+                  <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
                     {cart.reduce((a, b) => a + b.quantity, 0)}
                   </span>
                 )}
               </a>
+
               {isReallyAdmin && (
                 <>
+                  {/* 3. Справочники */}
                   <a
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
                       setIsDictModalOpen(true);
                     }}
-                    className="flex items-center gap-3 px-3 py-2 text-slate-400 hover:bg-slate-800 transition-colors"
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
                   >
-                    <BookOpen className="w-5 h-5 opacity-70" />
-                    Справочники
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-cyan-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors">
+                      <BookOpen className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Справочники</span>
                   </a>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleNormalizeAllNames();
-                    }}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${isNormalizingState.active ? "text-indigo-500 cursor-not-allowed opacity-50" : "text-indigo-400 hover:bg-indigo-950/50 hover:text-indigo-300"}`}
-                  >
-                    {isNormalizingState.active ? (
-                      <Loader2 className="w-5 h-5 opacity-70 animate-spin" />
-                    ) : (
-                      <Wand2 className="w-5 h-5 opacity-70" />
-                    )}
-                    Нормализовать названия
-                  </a>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleOpenGenerateIdsModal();
-                    }}
-                    className="flex items-center gap-3 px-3 py-2 text-indigo-400 hover:bg-indigo-950/50 hover:text-indigo-300 transition-colors"
-                  >
-                    <Plus className="w-5 h-5 opacity-70" />
-                    Назначить ID товарам
-                  </a>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleDeleteAllProducts();
-                    }}
-                    className="flex items-center gap-3 px-3 py-2 text-red-500 hover:bg-red-950/50 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 className="w-5 h-5 opacity-70" />
-                    Очистить базу ({products.length})
-                  </a>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setIsQuotesHistoryOpen(true);
-                    }}
-                    className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 transition-colors rounded-md"
-                  >
-                    <Archive className="w-5 h-5 text-indigo-400" />
-                    История подборок (Архив КП)
-                  </a>
+
+                  {/* SECTION: МОНИТОРИНГ И АНАЛИТИКА */}
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 pt-3 pb-1">
+                    Мониторинг и аудит
+                  </div>
+
+                  {/* 4. Аналитика и Аномалии цен */}
                   <a
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
                       setIsAnalyticsModalOpen(true);
                     }}
-                    className="flex items-center gap-3 px-3 py-2 text-rose-400 hover:bg-slate-800 hover:text-rose-300 transition-colors rounded-md font-semibold"
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
                   >
-                    <TrendingUp className="w-5 h-5 text-rose-400" />
-                    Аналитика и Аномалии цен
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-rose-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Аналитика и Аномалии</span>
                   </a>
+
+                  {/* 5. Окно мониторинга (без меню) */}
                   <a
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
                       handleEnterMonitoringView();
                     }}
-                    className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 hover:text-indigo-200 transition-colors rounded-md font-medium text-xs ml-3 border-l-2 border-indigo-500/50"
-                    title="Открыть отдельную панель мониторинга без бокового меню для специалиста"
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
+                    title="Открыть отдельную панель мониторинга без бокового меню"
                   >
-                    <ExternalLink className="w-4 h-4 text-indigo-400" />
-                    Окно мониторинга (без меню)
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-emerald-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-emerald-500 group-hover:text-slate-950 transition-colors">
+                      <Monitor className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Окно мониторинга</span>
                   </a>
+
+                  {/* 6. Архив КП */}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsQuotesHistoryOpen(true);
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-indigo-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                      <Archive className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Архив КП (Подборки)</span>
+                  </a>
+
+                  {/* 7. Аудит & Слепки */}
                   <a
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
                       setIsAuditModalOpen(true);
                     }}
-                    className="flex items-center gap-3 px-3 py-2 text-indigo-300 hover:bg-slate-800 hover:text-white transition-colors rounded-md font-semibold"
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
                   >
-                    <ShieldAlert className="w-5 h-5 text-indigo-400" />
-                    Аудит & Слепки оборудования
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-violet-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-violet-500 group-hover:text-white transition-colors">
+                      <ShieldAlert className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Аудит & Слепки</span>
                   </a>
-                  <div className="pt-1 border-t border-slate-800/60 mt-1">
-                    <PWAInstallButton variant="sidebar" />
+
+                  {/* SECTION: СЕРВИС И БАЗА */}
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 pt-3 pb-1">
+                    Управление базой
                   </div>
+
+                  {/* 8. Нормализация названий */}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleNormalizeAllNames();
+                    }}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer ${
+                      isNormalizingState.active ? "opacity-50 pointer-events-none" : ""
+                    }`}
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-sky-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-sky-500 group-hover:text-slate-950 transition-colors">
+                      {isNormalizingState.active ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Wand2 className="w-4 h-4" />
+                      )}
+                    </div>
+                    <span className="truncate">Нормализация имён</span>
+                  </a>
+
+                  {/* 9. Назначить ID */}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleOpenGenerateIdsModal();
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/80 transition-all text-xs font-semibold group cursor-pointer"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-blue-400 flex items-center justify-center shrink-0 border border-slate-700/60 group-hover:bg-blue-500 group-hover:text-white transition-colors">
+                      <Plus className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Назначить ID товарам</span>
+                  </a>
+
+                  {/* 10. Очистить базу */}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      handleDeleteAllProducts();
+                    }}
+                    className="flex items-center gap-3 px-3 py-2 rounded-xl text-rose-400 hover:text-rose-200 hover:bg-rose-950/40 transition-all text-xs font-semibold group cursor-pointer mt-1"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-rose-950/60 text-rose-400 flex items-center justify-center shrink-0 border border-rose-800/50 group-hover:bg-rose-600 group-hover:text-white transition-colors">
+                      <Trash2 className="w-4 h-4" />
+                    </div>
+                    <span className="truncate">Очистить базу ({products.length})</span>
+                  </a>
                 </>
               )}
             </nav>
@@ -7008,6 +7062,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         isFacilitator={!isReallyAdmin && (currentRole === 'facilitator' || !!portalFacilitator || isFacilitatorMode || isFacilitatorAuthenticated)}
         facilitatorRegion={facilitatorRegion}
         facilitatorLegalName={resolvedFacilitator.legalName}
+        globalDict={globalDict}
       />
 
       {isSwitchLoginOpen && (
@@ -7018,6 +7073,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           facilitators={globalDict.facilitators || []}
           facilitatorCodes={globalDict.facilitatorCodes || {}}
           facilitatorRegions={globalDict.facilitatorRegions || {}}
+          facilitatorLegalNames={globalDict.facilitatorLegalNames || {}}
           suppliers={globalDict.suppliers || []}
           supplierCodes={globalDict.supplierCodes || {}}
           supplierAssignedCodes={globalDict.supplierAssignedCodes || {}}

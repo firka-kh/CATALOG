@@ -10,6 +10,7 @@ export interface AnimatedLoginScreenProps {
   facilitators?: string[];
   facilitatorCodes?: Record<string, string>;
   facilitatorRegions?: Record<string, string>;
+  facilitatorLegalNames?: Record<string, string>;
   suppliers?: string[];
   supplierCodes?: Record<string, string>;
   supplierAssignedCodes?: Record<string, string>;
@@ -27,6 +28,7 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
   facilitators = [],
   facilitatorCodes = {},
   facilitatorRegions = {},
+  facilitatorLegalNames = {},
   suppliers = [],
   supplierCodes = {},
   supplierAssignedCodes = {},
@@ -264,12 +266,21 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
           const normCode = String(codeVal).trim().toLowerCase().replace(/["'@\s]/g, "");
           if (normCode === lower) {
             const region = facilitatorRegions[key];
+            const idx = parseInt(key.replace("facilitator", ""), 10) - 2;
+            const facDisplayName = (idx >= 0 && facilitators[idx]) ? facilitators[idx] : `Фасилитатор ${idx >= 0 ? idx + 2 : ""}`;
+            const legalName = (facilitatorLegalNames && facilitatorLegalNames[key]) || facDisplayName;
             triggerSuccess(
               "facilitator",
-              key,
-              `Успешный вход фасилитатора: ${key}${region ? ` (${region})` : ""}`,
+              facDisplayName,
+              `Успешный вход фасилитатора: ${facDisplayName} [${key}]${region ? ` (${region})` : ""}`,
               () => onFacilitatorSuccess(key, region),
-              { facilitatorName: key, region }
+              {
+                facilitatorName: facDisplayName,
+                region,
+                supplierId: key, // preserve key
+                facilitatorKey: key,
+                facilitatorLegalName: legalName,
+              } as any
             );
             return;
           }

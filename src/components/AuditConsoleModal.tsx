@@ -40,6 +40,7 @@ import {
   LogIn,
   LogOut,
   Plus,
+  Pencil,
   Store,
   Tag,
 } from "lucide-react";

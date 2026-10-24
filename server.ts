@@ -5,7 +5,6 @@ import axios from "axios";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { bot } from "./bot.ts";
 import { searchImages } from "./src/lib/imageSearch.ts";
 
 dotenv.config();
@@ -15,9 +14,7 @@ process.on("uncaughtException", (err: any) => {
   if (
     msg.includes("ECONNRESET") ||
     msg.includes("ETIMEDOUT") ||
-    msg.includes("ESOCKETTIMEDOUT") ||
-    msg.includes("EFATAL") ||
-    msg.includes("EAI_AGAIN")
+    msg.includes("ESOCKETTIMEDOUT")
   ) {
     console.warn("Transient network connection reset (recovering):", msg);
     return;
@@ -30,9 +27,7 @@ process.on("unhandledRejection", (reason: any, promise) => {
   if (
     msg.includes("ECONNRESET") ||
     msg.includes("ETIMEDOUT") ||
-    msg.includes("ESOCKETTIMEDOUT") ||
-    msg.includes("EFATAL") ||
-    msg.includes("EAI_AGAIN")
+    msg.includes("ESOCKETTIMEDOUT")
   ) {
     console.warn("Transient network rejection (recovering):", msg);
     return;
@@ -47,33 +42,6 @@ const SERVER_BUILD_ID = Date.now().toString();
 app.get("/api/version", (req, res) => {
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.json({ buildId: SERVER_BUILD_ID });
-});
-
-// Webhook endpoint for Telegram
-app.post("/api/bot-webhook", express.json(), (req, res) => {
-  if (bot) {
-    bot.processUpdate(req.body);
-  }
-  res.sendStatus(200);
-});
-
-// Setup webhook URL (can be called manually when deploying to Cloud Run)
-app.get("/api/set-bot-webhook", (req, res) => {
-  const url = req.query.url;
-  if (!url || typeof url !== "string") {
-    res.status(400).send("Provide ?url=https://YOUR_DOMAIN/api/bot-webhook");
-    return;
-  }
-  if (bot) {
-    bot
-      .setWebHook(url)
-      .then(() => {
-        res.send(`Webhook set successfully to ${url}`);
-      })
-      .catch((err) => res.status(500).send(String(err)));
-  } else {
-    res.status(500).send("Bot not initialized");
-  }
 });
 
 // Increase limit to handle base64 images

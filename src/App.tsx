@@ -472,7 +472,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     const savedRole = sessionStorage.getItem("current_role");
     const isAdmin = savedRole === "admin" || sessionStorage.getItem("main_admin_auth") === "true";
     if (isAdmin) return undefined;
-    return portalFacilitator;
+    return portalFacilitator || sessionStorage.getItem("auth_facilitator_key") || undefined;
   });
 
   const [currentRole, setCurrentRole] = useState<'admin' | 'facilitator' | 'supplier' | null>(() => {
@@ -750,13 +750,47 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   };
 
   const resolvedFacilitator = getResolvedFacilitator();
-  const facilitatorRegion = resolvedFacilitator.region || null;
+
+  const isFacilitatorMode = Boolean(
+    currentRole !== 'admin' &&
+    sessionStorage.getItem("main_admin_auth") !== "true" && (
+      (portalFacilitator && portalFacilitator.startsWith('facilitator')) ||
+      (activePortalFacilitator && activePortalFacilitator.startsWith('facilitator')) ||
+      currentRole === 'facilitator' ||
+      isFacilitatorAuthenticated ||
+      sessionStorage.getItem("current_role") === "facilitator"
+    )
+  );
+
+  const effectiveFacilitatorKey =
+    (activePortalFacilitator && activePortalFacilitator.startsWith('facilitator') ? activePortalFacilitator : '') ||
+    (portalFacilitator && portalFacilitator.startsWith('facilitator') ? portalFacilitator : '') ||
+    (authenticatedFacilitatorKey && authenticatedFacilitatorKey.startsWith('facilitator') ? authenticatedFacilitatorKey : '') ||
+    (resolvedFacilitator.key && resolvedFacilitator.key.startsWith('facilitator') ? resolvedFacilitator.key : '');
+
+  const facilitatorRegion =
+    (effectiveFacilitatorKey ? globalDict.facilitatorRegions?.[effectiveFacilitatorKey] : "") ||
+    resolvedFacilitator.region ||
+    null;
 
   useEffect(() => {
-    if (resolvedFacilitator.region && (portalFacilitator || isFacilitatorAuthenticated)) {
-      setSelectedRegion(resolvedFacilitator.region);
+    if (facilitatorRegion && (isFacilitatorMode || isFacilitatorAuthenticated)) {
+      if (selectedRegion !== facilitatorRegion) {
+        setSelectedRegion(facilitatorRegion);
+      }
     }
-  }, [resolvedFacilitator.key, portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region]);
+  }, [facilitatorRegion, isFacilitatorMode, isFacilitatorAuthenticated, selectedRegion]);
+
+  // Keep portal parameter in URL so browser reload and bookmarks preserve facilitator session
+  useEffect(() => {
+    if (isFacilitatorMode && effectiveFacilitatorKey && effectiveFacilitatorKey.startsWith("facilitator")) {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("portal") !== effectiveFacilitatorKey) {
+        url.searchParams.set("portal", effectiveFacilitatorKey);
+        window.history.replaceState({}, "", url.toString());
+      }
+    }
+  }, [isFacilitatorMode, effectiveFacilitatorKey]);
 
   const getFacilitatorName = () => {
     return resolvedFacilitator.name || "Фасилитатор";
@@ -1516,7 +1550,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
         actorName: facName,
         actorRole: "facilitator",
         facilitatorName: facName,
-        facilitatorRep: resolvedFacilitator.rep,
+        facilitatorRep: resolvedFacilitator.representative,
         facilitatorPhone: resolvedFacilitator.phone,
         region: resolvedFacilitator.region,
         details: `Фасилитатор ${facName}${resolvedFacilitator.region ? ` (${resolvedFacilitator.region})` : ""} вышел из системы (завершение сеанса)`,
@@ -1604,9 +1638,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     if (region) setSelectedRegion(region);
 
     const url = new URL(window.location.href);
-    if (url.searchParams.has("portal")) {
-      url.searchParams.delete("portal");
-      window.history.replaceState({}, "", url.pathname);
+    if (url.searchParams.get("portal") !== facKey) {
+      url.searchParams.set("portal", facKey);
+      window.history.replaceState({}, "", url.toString());
     }
 
     setIsSwitchLoginOpen(false);
@@ -3144,7 +3178,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     }
   };
 
-  const uniqueRegions = portalFacilitator && isFacilitatorAuthenticated && facilitatorRegion
+  const uniqueRegions = (isFacilitatorMode && facilitatorRegion)
     ? [facilitatorRegion]
     : Array.from(new Set([...globalDict.regions])).sort();
   const uniqueSpheres = Array.from(
@@ -3405,7 +3439,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
             </div>
 
             <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-              {portalFacilitator && isFacilitatorAuthenticated && (
+              {(isFacilitatorMode || isFacilitatorAuthenticated) && (
                 <div className="mb-6 p-3 bg-indigo-950/40 rounded-lg border border-indigo-800/50">
                   <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider mb-1">
                     Профиль Фасилитатора
@@ -3718,7 +3752,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     <span className="hidden sm:inline">Выйти</span>
                   </button>
                 </div>
-              ) : (currentRole === 'facilitator' || portalFacilitator) ? (
+              ) : (currentRole === 'facilitator' || portalFacilitator || isFacilitatorMode) ? (
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setIsSwitchLoginOpen(true)}
@@ -3889,19 +3923,29 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 </select>
               )}
 
-              <select
-                value={selectedRegion}
-                onChange={(e) => setSelectedRegion(e.target.value)}
-                disabled={!!portalFacilitator}
-                className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-44 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50 font-medium"
-              >
-                <option value="">Выберите регион...</option>
-                {uniqueRegions.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
+              {isFacilitatorMode && facilitatorRegion ? (
+                <div
+                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-md text-xs font-semibold text-indigo-800 shadow-sm whitespace-nowrap cursor-default select-none h-[38px]"
+                  title={`Регион закреплён за профилем фасилитатора: ${facilitatorRegion}`}
+                >
+                  <Lock className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span>{facilitatorRegion}</span>
+                </div>
+              ) : (
+                <select
+                  value={selectedRegion}
+                  onChange={(e) => setSelectedRegion(e.target.value)}
+                  disabled={isFacilitatorMode && !!facilitatorRegion}
+                  className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 hover:border-indigo-400 transition-colors cursor-pointer w-44 disabled:opacity-75 disabled:cursor-not-allowed disabled:bg-slate-50 font-medium"
+                >
+                  <option value="">Выберите регион...</option>
+                  {uniqueRegions.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               <select
                 value={selectedSphere}
@@ -4168,39 +4212,30 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                           </div>
                         </div>
                       </th>
-                      <th className="px-4 py-2 w-36 text-left">
-                        <div className="flex flex-col gap-1.5">
+                      <th className="px-4 py-3 align-middle w-36 text-left">
+                        <div className="flex items-center gap-1.5">
                           <span>Регион</span>
-                          <select
-                            value={selectedRegion}
-                            onChange={(e) => setSelectedRegion(e.target.value)}
-                            disabled={!!portalFacilitator}
-                            className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] font-normal normal-case bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 font-sans disabled:opacity-75 disabled:cursor-not-allowed"
-                          >
-                            <option value="">Все регионы</option>
-                            {uniqueRegions.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
+                          {selectedRegion && (
+                            <span
+                              className="text-[10px] normal-case font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 truncate max-w-[110px]"
+                              title={selectedRegion}
+                            >
+                              {selectedRegion}
+                            </span>
+                          )}
                         </div>
                       </th>
-                      <th className="px-4 py-2 w-44 text-left">
-                        <div className="flex flex-col gap-1.5">
+                      <th className="px-4 py-3 align-middle w-40 text-left">
+                        <div className="flex items-center gap-1.5">
                           <span>Сфера</span>
-                          <select
-                            value={selectedSphere}
-                            onChange={(e) => setSelectedSphere(e.target.value)}
-                            className="w-full border border-slate-300 rounded px-2 py-1 text-[11px] font-normal normal-case bg-white shadow-sm focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer text-slate-700 font-sans"
-                          >
-                            <option value="">Все сферы</option>
-                            {uniqueSpheres.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
+                          {selectedSphere && (
+                            <span
+                              className="text-[10px] normal-case font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200 truncate max-w-[110px]"
+                              title={selectedSphere}
+                            >
+                              {selectedSphere}
+                            </span>
+                          )}
                         </div>
                       </th>
                       {isReallyAdmin && hasGkPrice && (
@@ -5151,7 +5186,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                 )}
 
                 {/* 1. Catalog Cover / Scope Choice */}
-                {!portalFacilitator && (
+                {!isFacilitatorMode && (
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">
                       1. Вариант обложки и объем каталога:
@@ -5226,7 +5261,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                       </label>
                       <select
                         value={printSelectedRegion}
-                        disabled={!!portalFacilitator}
+                        disabled={isFacilitatorMode}
                         onChange={(e) => {
                           setPrintSelectedRegion(e.target.value);
                           if (printCatalogType === "full") setPrintCatalogType("filtered");
@@ -5243,7 +5278,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                     </div>
 
                     {/* Supplier Select */}
-                    {!portalFacilitator && (
+                    {!isFacilitatorMode && (
                       <div>
                         <label className="block text-xs font-medium text-slate-600 mb-1">
                           Поставщик:
@@ -5342,7 +5377,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
                   const PROJECT_LABEL = "ПРОЕКТА МОДЕРНИЗАЦИИ СОЦИАЛЬНОЙ ЗАЩИТЫ И ЭКОНОМИЧЕСКОЙ ИНТЕГРАЦИИ ПРИ МТМЗН РТ";
                   let pStamp = PROJECT_LABEL;
 
-                  if (portalFacilitator) {
+                  if (isFacilitatorMode || portalFacilitator) {
                     pTitle = "КАТАЛОГ ТОВАРОВ";
                     pSub = "";
                     pStamp = printSelectedRegion ? `${PROJECT_LABEL} • ${printSelectedRegion.toUpperCase()}` : PROJECT_LABEL;
@@ -6453,7 +6488,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
           selectedSupplier={printCatalogType === "full" ? null : printSelectedSupplier}
           catalogType={printCatalogType}
           selectedSphere={printCatalogType === "full" ? "" : printSelectedSphere}
-          isFacilitator={!!portalFacilitator}
+          isFacilitator={isFacilitatorMode || !!portalFacilitator}
           products={(() => {
             let filtered = products;
 
@@ -6852,7 +6887,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
       {isSwitchLoginOpen && (
         <AnimatedLoginScreen
           isModal={true}
-          initialRole={isReallyAdmin ? "admin" : (currentRole === "facilitator" || portalFacilitator) ? "facilitator" : "admin"}
+          initialRole={isReallyAdmin ? "admin" : (currentRole === "facilitator" || portalFacilitator || isFacilitatorMode) ? "facilitator" : "admin"}
           adminPassword={globalDict.adminPassword || "020779"}
           facilitators={globalDict.facilitators || []}
           facilitatorCodes={globalDict.facilitatorCodes || {}}

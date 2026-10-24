@@ -24,11 +24,10 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import SupplierPortal from './SupplierPortal.tsx';
-import MiniApp from './MiniApp.tsx';
 import { DocumentVerificationView } from './components/DocumentVerificationView';
 import './index.css';
 
-// Clean up legacy Service Workers and CacheStorage to prevent Telegram Webview from serving stale cached app versions
+// Clean up legacy Service Workers and CacheStorage
 if (typeof window !== 'undefined') {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then((registrations) => {
@@ -63,22 +62,21 @@ const verifyParam =
 
 const verifyQuoteId = verifyParam && verifyParam.trim() ? verifyParam.trim() : null;
 
-// Check if specifically requested mini-app via path, query param, or Telegram WebApp hash
-const isMiniAppPath = pathname.startsWith('/mini-app') || params.get('miniapp') === '1';
-const isTelegramWebAppWithData = typeof window !== 'undefined' && Boolean(
-  ((window as any).Telegram?.WebApp?.initData && (window as any).Telegram.WebApp.initData.length > 0) ||
-  window.location.hash.includes('tgWebAppData') ||
-  window.location.search.includes('tgWebApp')
-);
-
-// Only route to MiniApp if explicitly requested via /mini-app, miniapp=1, or within Telegram mini-app context
-const isMiniApp = isMiniAppPath || (isTelegramWebAppWithData && isMiniAppPath);
-
 // Check if user is already authenticated as Administrator to prevent getting trapped in portal views
 const isMainAdminAuth = typeof window !== 'undefined' && (
   sessionStorage.getItem("main_admin_auth") === "true" ||
   sessionStorage.getItem("current_role") === "admin"
 );
+
+// Recover facilitator key from sessionStorage to protect against query param stripping on browser reload
+const savedFacilitatorKey = typeof window !== 'undefined' && !isMainAdminAuth && (
+  sessionStorage.getItem("current_role") === "facilitator"
+    ? (sessionStorage.getItem("auth_facilitator_key") || undefined)
+    : undefined
+);
+const effectivePortalFacilitator = (!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator'))
+  ? portalSupplier
+  : savedFacilitatorKey;
 
 // Immediately set document.title for clear browser tab visibility (ФАСИЛИТАТОР / ПОСТАВЩИК / АДМИНИСТРАТОР)
 if (typeof document !== 'undefined') {
@@ -86,9 +84,7 @@ if (typeof document !== 'undefined') {
     document.title = `ПРОВЕРКА КП #${verifyQuoteId} — Аудит`;
   } else if (!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('supplier')) {
     document.title = 'ПОСТАВЩИК — Региональный Каталог';
-  } else if (!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator')) {
-    document.title = 'ФАСИЛИТАТОР — Региональный Каталог';
-  } else if (isMiniApp) {
+  } else if (!isMainAdminAuth && effectivePortalFacilitator && effectivePortalFacilitator.startsWith('facilitator')) {
     document.title = 'ФАСИЛИТАТОР — Региональный Каталог';
   } else if (isMainAdminAuth) {
     document.title = 'АДМИНИСТРАТОР — Региональный Каталог';
@@ -113,10 +109,8 @@ createRoot(document.getElementById('root')!).render(
       />
     ) : !isMainAdminAuth && portalSupplier && portalSupplier.startsWith('supplier') ? (
       <SupplierPortal supplierId={portalSupplier as any} />
-    ) : isMiniApp ? (
-      <MiniApp portalFacilitator={!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator') ? portalSupplier : undefined} />
-    ) : !isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator') ? (
-      <App portalFacilitator={portalSupplier} />
+    ) : !isMainAdminAuth && effectivePortalFacilitator && effectivePortalFacilitator.startsWith('facilitator') ? (
+      <App portalFacilitator={effectivePortalFacilitator} />
     ) : (
       <App />
     )}

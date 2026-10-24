@@ -14,7 +14,6 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
-    "@types/node-telegram-bot-api": "^0.64.14",
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.17.0",
     "cheerio": "^1.2.0",
@@ -32,7 +31,6 @@
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
-    "node-telegram-bot-api": "^0.67.0",
     "pdfkit": "^0.18.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",

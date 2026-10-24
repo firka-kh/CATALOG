@@ -307,7 +307,7 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
                 name,
                 `Успешный вход поставщика по идентификатору: ${name} [${codeVal}]`,
                 () => onSupplierSuccess(key, name),
-                { supplierId: key, supplierName: name, supplierCode: codeVal }
+                { supplierId: key, supplierName: name, supplierCode: String(codeVal) }
               );
               return;
             }
@@ -328,7 +328,7 @@ export const AnimatedLoginScreen: React.FC<AnimatedLoginScreenProps> = ({
             name,
             `Успешный вход поставщика: ${name} (ключ: ${matchingKey})`,
             () => onSupplierSuccess(matchingKey, name),
-            { supplierId: matchingKey, supplierName: name, supplierCode: code }
+            { supplierId: matchingKey, supplierName: name, supplierCode: code ? String(code) : undefined }
           );
           return;
         }

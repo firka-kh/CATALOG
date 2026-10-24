@@ -80,6 +80,28 @@ const isMainAdminAuth = typeof window !== 'undefined' && (
   sessionStorage.getItem("current_role") === "admin"
 );
 
+// Immediately set document.title for clear browser tab visibility (ФАСИЛИТАТОР / ПОСТАВЩИК / АДМИНИСТРАТОР)
+if (typeof document !== 'undefined') {
+  if (verifyQuoteId) {
+    document.title = `ПРОВЕРКА КП #${verifyQuoteId} — Аудит`;
+  } else if (!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('supplier')) {
+    document.title = 'ПОСТАВЩИК — Региональный Каталог';
+  } else if (!isMainAdminAuth && portalSupplier && portalSupplier.startsWith('facilitator')) {
+    document.title = 'ФАСИЛИТАТОР — Региональный Каталог';
+  } else if (isMiniApp) {
+    document.title = 'ФАСИЛИТАТОР — Региональный Каталог';
+  } else if (isMainAdminAuth) {
+    document.title = 'АДМИНИСТРАТОР — Региональный Каталог';
+  } else {
+    const savedRole = sessionStorage.getItem("current_role");
+    if (savedRole === 'supplier') {
+      document.title = 'ПОСТАВЩИК — Региональный Каталог';
+    } else if (savedRole === 'facilitator') {
+      document.title = 'ФАСИЛИТАТОР — Региональный Каталог';
+    }
+  }
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {verifyQuoteId ? (

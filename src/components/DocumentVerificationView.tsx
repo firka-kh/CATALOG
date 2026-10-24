@@ -57,6 +57,9 @@ export const DocumentVerificationView: React.FC<Props> = ({
   const verificationUrl = typeof window !== "undefined"
     ? `${getPublicOrigin()}/?verify=${encodeURIComponent(quoteId)}`
     : "";
+  useEffect(() => {
+    document.title = `ПРОВЕРКА КП #${quoteId} — Аудит`;
+  }, [quoteId]);
 
   useEffect(() => {
     let isCancelled = false;

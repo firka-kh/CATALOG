@@ -211,6 +211,12 @@ export default function SupplierPortal({ supplierId }: SupplierPortalProps) {
 
   const currentSupplierLabel = getSupplierLabel(supplierId);
 
+  // Set browser tab title clearly for Supplier
+  useEffect(() => {
+    const label = currentSupplierLabel ? ` — ${currentSupplierLabel}` : ' — Региональный Каталог';
+    document.title = `ПОСТАВЩИК${label}`;
+  }, [currentSupplierLabel]);
+
   // Resolve slotKey (e.g. 'supplier2') even if supplierId is an assigned code (e.g. 'SPMEI-100')
   const resolveSlotKey = useCallback(() => {
     if (globalDict.supplierSpheres && globalDict.supplierSpheres[supplierId]) {

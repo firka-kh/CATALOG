@@ -14,6 +14,28 @@ import { Product } from "../types";
 import { logAuditEvent } from "./auditLogger";
 import { captureDeviceAudit, DeviceAuditInfo } from "./deviceFingerprint";
 
+/**
+ * Deeply strips undefined properties from an object so Firestore never rejects or stalls
+ */
+export function cleanUndefined<T>(val: T): T {
+  if (val === undefined || val === null) {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map(cleanUndefined) as unknown as T;
+  }
+  if (typeof val === "object" && !(val instanceof Date)) {
+    const res: any = {};
+    for (const [k, v] of Object.entries(val)) {
+      if (v !== undefined) {
+        res[k] = cleanUndefined(v);
+      }
+    }
+    return res;
+  }
+  return val;
+}
+
 export interface QuoteItem {
   product: Product;
   quantity: number;
@@ -94,11 +116,15 @@ export async function saveQuoteToHistory(data: {
   const totalAmount = cartLinesTotal + (data.cart.length > 0 ? data.logisticsCost : 0);
 
   // Sanitize products to make sure snapshot stores clean serializable product info
-  // Strip large imageBase64 strings (>30KB) to strictly avoid Firestore 1MB document limit
+  // Limit individual image size to 25KB and total image size across quote to 100KB to prevent document bloat
+  let totalImgBytes = 0;
   const itemsSnapshot: QuoteItem[] = data.cart.map((item) => {
     const rawImg = item.product?.imageBase64 || "";
-    // Preserve imageBase64 up to ~200KB to ensure print quality without hitting Firestore document limit
-    const cleanImg = rawImg.length > 0 && rawImg.length < 300000 ? rawImg : "";
+    let cleanImg = "";
+    if (rawImg && rawImg.length < 25000 && (totalImgBytes + rawImg.length) < 100000) {
+      cleanImg = rawImg;
+      totalImgBytes += rawImg.length;
+    }
 
     return {
       product: {
@@ -131,7 +157,7 @@ export async function saveQuoteToHistory(data: {
     ? `Купон № ${quoteId} создан с: ${deviceAudit.summary}`
     : undefined;
 
-  const record: QuoteRecord = {
+  const rawRecord: QuoteRecord = {
     id: quoteId,
     clientName: (data.clientName || "").trim() || "Заказчик не указан",
     beneficiaryId: (data.beneficiaryId || "").trim() || undefined,
@@ -160,13 +186,15 @@ export async function saveQuoteToHistory(data: {
     deviceAuditSummary,
   };
 
+  const record = cleanUndefined(rawRecord);
+
   try {
     const docRef = doc(db, "quotes_history", quoteId);
     
-    // Wrap setDoc with a 10 second timeout so the UI never hangs indefinitely
+    // Wrap setDoc with a 35 second timeout for slow mobile networks
     const savePromise = setDoc(docRef, record);
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Таймаут подключения к серверу (10 сек). Проверьте интернет-соединение.")), 10000)
+      setTimeout(() => reject(new Error("Таймаут подключения к серверу (35 сек). Проверьте интернет-соединение.")), 35000)
     );
 
     await Promise.race([savePromise, timeoutPromise]);
@@ -241,9 +269,14 @@ export async function updateQuoteInHistory(
   }, 0);
   const totalAmount = Number((cartLinesTotal + (data.cart.length > 0 ? data.logisticsCost : 0)).toFixed(2));
 
+  let totalImgBytes = 0;
   const itemsSnapshot: QuoteItem[] = data.cart.map((item) => {
     const rawImg = item.product?.imageBase64 || "";
-    const cleanImg = rawImg.length > 0 && rawImg.length < 300000 ? rawImg : "";
+    let cleanImg = "";
+    if (rawImg && rawImg.length < 25000 && (totalImgBytes + rawImg.length) < 100000) {
+      cleanImg = rawImg;
+      totalImgBytes += rawImg.length;
+    }
 
     return {
       product: {
@@ -267,8 +300,10 @@ export async function updateQuoteInHistory(
   const docRef = doc(db, "quotes_history", quoteId);
   let existingData: Partial<QuoteRecord> = {};
   try {
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
+    const docSnapPromise = getDoc(docRef);
+    const getTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000));
+    const docSnap = await Promise.race([docSnapPromise, getTimeout]);
+    if (docSnap && docSnap.exists()) {
       existingData = docSnap.data() as QuoteRecord;
     }
   } catch (e) {
@@ -290,7 +325,10 @@ export async function updateQuoteInHistory(
       itemsCount: existingData.items?.length || 0,
       totalAmount: existingData.totalAmount || 0,
       changeSummary: "Первоначальное сохранение купона в архив",
-      items: existingData.items || [],
+      items: (existingData.items || []).map((it) => ({
+        ...it,
+        product: { ...it.product, imageBase64: "" },
+      })),
     });
   }
 
@@ -368,6 +406,15 @@ export async function updateQuoteInHistory(
     ? `Изменено с: ${deviceAudit.summary}`
     : undefined;
 
+  // Ultra-lightweight revision item snapshot (NO base64 images in revisions)
+  const revisionItemsSnapshot: QuoteItem[] = itemsSnapshot.map((it) => ({
+    ...it,
+    product: {
+      ...it.product,
+      imageBase64: "",
+    },
+  }));
+
   const newRevision: QuoteRevision = {
     id: `rev-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     timestamp: now.getTime(),
@@ -383,16 +430,25 @@ export async function updateQuoteInHistory(
     addedItems,
     removedItems,
     modifiedItems,
-    items: itemsSnapshot,
+    items: revisionItemsSnapshot,
     deviceAudit,
     deviceAuditSummary,
   };
 
   revisionsList.unshift(newRevision); // Most recent revision at top
 
-  const updatedRecord: Partial<QuoteRecord> = {
+  // Keep latest 15 revisions without heavy images to strictly preserve document size
+  const sanitizedRevisions: QuoteRevision[] = revisionsList.slice(0, 15).map((rev) => ({
+    ...rev,
+    items: (rev.items || []).map((it) => ({
+      ...it,
+      product: { ...it.product, imageBase64: "" },
+    })),
+  }));
+
+  const rawUpdatedRecord: Partial<QuoteRecord> = {
     clientName: (data.clientName || "").trim() || existingData.clientName || "Заказчик не указан",
-    beneficiaryId: data.beneficiaryId !== undefined ? (data.beneficiaryId.trim() || undefined) : existingData.beneficiaryId,
+    beneficiaryId: (data.beneficiaryId || "").trim() || existingData.beneficiaryId || undefined,
     facilitatorName: (data.facilitatorName || "").trim() || existingData.facilitatorName || "Фасилитатор",
     facilitatorLegalName: (data.facilitatorLegalName || "").trim() || existingData.facilitatorLegalName || "",
     facilitatorRep: (data.facilitatorRep || "").trim() || existingData.facilitatorRep || "",
@@ -408,15 +464,17 @@ export async function updateQuoteInHistory(
     logisticsCost: Number(data.logisticsCost) || 0,
     items: itemsSnapshot,
     totalAmount,
-    revisions: revisionsList,
+    revisions: sanitizedRevisions,
     deviceAudit: deviceAudit || existingData.deviceAudit,
     deviceAuditSummary: deviceAudit ? `Купон № ${quoteId} обновлен с: ${deviceAudit.summary}` : existingData.deviceAuditSummary,
   };
 
+  const updatedRecord = cleanUndefined(rawUpdatedRecord);
+
   try {
     const savePromise = setDoc(docRef, updatedRecord, { merge: true });
     const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Таймаут подключения к серверу (10 сек). Проверьте интернет-соединение.")), 10000)
+      setTimeout(() => reject(new Error("Таймаут подключения к серверу (35 сек). Проверьте интернет-соединение.")), 35000)
     );
     await Promise.race([savePromise, timeoutPromise]);
 

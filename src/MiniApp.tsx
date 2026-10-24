@@ -137,7 +137,9 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
   }, [search, sphere, region]);
 
   useEffect(() => {
+    let previousTitle = document.title;
     const handleBeforePrint = () => {
+      previousTitle = document.title;
       const now = new Date();
       const datePart = now.toLocaleDateString("ru-RU", {
         day: "2-digit",
@@ -149,7 +151,7 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
     };
 
     const handleAfterPrint = () => {
-      document.title = "Региональный Каталог";
+      document.title = previousTitle || "ФАСИЛИТАТОР — Региональный Каталог";
     };
 
     window.addEventListener("beforeprint", handleBeforePrint);
@@ -271,6 +273,13 @@ export default function MiniApp({ portalFacilitator: initialPortalFacilitator }:
       setRegion("Душанбе");
     }
   }, [resolvedFacilitator.region, globalDict?.regions]);
+
+  // Set browser tab title clearly for Facilitator
+  useEffect(() => {
+    const facilitatorLabel = resolvedFacilitator.region || (resolvedFacilitator.name !== "Фасилитатор" ? resolvedFacilitator.name : "");
+    const titleSuffix = facilitatorLabel ? ` — ${facilitatorLabel}` : ' — Региональный Каталог';
+    document.title = `ФАСИЛИТАТОР${titleSuffix}`;
+  }, [resolvedFacilitator.region, resolvedFacilitator.name]);
 
   const getProductPriceForSupplierAndRegion = (
     p: Product,

@@ -1020,7 +1020,9 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
   }, []);
 
   useEffect(() => {
+    let previousTitle = document.title;
     const handleBeforePrint = () => {
+      previousTitle = document.title;
       const now = new Date();
       const datePart = now.toLocaleDateString("ru-RU", {
         day: "2-digit",
@@ -1032,7 +1034,7 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     };
 
     const handleAfterPrint = () => {
-      document.title = "Региональный Каталог";
+      document.title = previousTitle || "Региональный Каталог";
     };
 
     window.addEventListener("beforeprint", handleBeforePrint);
@@ -1476,6 +1478,20 @@ export default function App({ portalFacilitator }: { portalFacilitator?: string 
     () => localStorage.getItem("catalog_admin") === "true",
   );
   const isReallyAdmin = !activePortalFacilitator && currentRole === 'admin';
+
+  // Dynamically update browser tab title to clearly show ФАСИЛИТАТОР, ПОСТАВЩИК, or АДМИНИСТРАТОР
+  useEffect(() => {
+    if (isReallyAdmin) {
+      document.title = "АДМИНИСТРАТОР — Региональный Каталог";
+    } else if (currentRole === "supplier") {
+      document.title = "ПОСТАВЩИК — Региональный Каталог";
+    } else if (activePortalFacilitator || portalFacilitator || currentRole === "facilitator" || isFacilitatorAuthenticated) {
+      const facLabel = resolvedFacilitator.region || (resolvedFacilitator.name !== "Фасилитатор" ? resolvedFacilitator.name : "");
+      document.title = facLabel ? `ФАСИЛИТАТОР — ${facLabel}` : "ФАСИЛИТАТОР — Региональный Каталог";
+    } else {
+      document.title = "Региональный Каталог";
+    }
+  }, [isReallyAdmin, currentRole, activePortalFacilitator, portalFacilitator, isFacilitatorAuthenticated, resolvedFacilitator.region, resolvedFacilitator.name]);
 
   const handleFullLogout = useCallback(() => {
     try {

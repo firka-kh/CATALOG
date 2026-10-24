@@ -207,6 +207,7 @@ export function CartModal({
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [saveRequiredError, setSaveRequiredError] = useState(false);
   const [isConfirmSaveModalOpen, setIsConfirmSaveModalOpen] = useState(false);
+  const [saveHistoryError, setSaveHistoryError] = useState<string | null>(null);
   const [isSavedSuccessModalOpen, setIsSavedSuccessModalOpen] = useState(false);
   const [clientNameCharWarning, setClientNameCharWarning] = useState<string | null>(null);
 
@@ -864,6 +865,7 @@ export function CartModal({
   const executeSaveToHistory = async () => {
     if (displayedCart.length === 0) return;
     if (!validateAllRequiredFields()) return;
+    setSaveHistoryError(null);
     setIsSavingHistory(true);
     try {
       if (isEditingArchiveQuote && savedQuoteId) {
@@ -933,7 +935,7 @@ export function CartModal({
       setIsSavedSuccessModalOpen(true);
     } catch (err: any) {
       console.error("Error saving quote to history:", err);
-      alert(`Не удалось сохранить купон в архив: ${err?.message || "Ошибка подключения"}`);
+      setSaveHistoryError(err?.message || "Ошибка подключения к серверу");
     } finally {
       setIsSavingHistory(false);
     }
@@ -2385,6 +2387,13 @@ export function CartModal({
                 ? "Изменения будут записаны в историю версий купона, а корзина очистится."
                 : "После подтверждения данные будут зафиксированы в Архиве КП. Дальнейшие изменения будут доступны только через режим редактирования в Архиве КП."}
             </p>
+
+            {saveHistoryError && (
+              <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span className="font-medium leading-relaxed">{saveHistoryError}</span>
+              </div>
+            )}
 
             {/* Action buttons */}
             <div className="flex flex-col-reverse sm:flex-row items-center justify-end gap-2.5 mt-5 pt-4 border-t border-slate-100">

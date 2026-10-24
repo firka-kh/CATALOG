@@ -1,10 +1,12 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc, onSnapshot, query, enableIndexedDbPersistence } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence, collection, addDoc, onSnapshot, query } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { Product } from '../types';
 
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(app, {
+  ignoreUndefinedProperties: true,
+}, firebaseConfig.firestoreDatabaseId);
 
 if (typeof window !== 'undefined') {
   enableIndexedDbPersistence(db).catch((err) => {

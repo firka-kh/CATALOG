@@ -11,4 +11,4 @@ coverage/
 /apk-build/
 /apk/
 *.apk
-
+public/assets/aistudio/

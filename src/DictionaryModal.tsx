@@ -2,6 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, ChevronDown, ChevronRight, Save, Pencil, Check, Building2, User, Phone, Mail, MapPin, Key, Globe, Download, FileSpreadsheet, ShieldCheck } from 'lucide-react';
 import { downloadSuppliersRegistryExcel, SupplierExportEntry, downloadFacilitatorsRegistryExcel, FacilitatorExportEntry } from './lib/excelExport';
 import { formatSupplierCode } from './lib/supplierUtils';
+import {
+  DEFAULT_FACILITATORS,
+  DEFAULT_FACILITATOR_LEGAL_NAMES,
+  DEFAULT_FACILITATOR_REPRESENTATIVES,
+  DEFAULT_FACILITATOR_PHONES,
+  DEFAULT_FACILITATOR_EMAILS,
+  DEFAULT_FACILITATOR_REGIONS,
+  DEFAULT_FACILITATOR_CODES,
+} from './App';
 
 export function getNextSupplierCode(existingCodes: string[]): string {
   const usedNumbers = new Set<number>();
@@ -204,14 +213,15 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
         supplierAllRegions: allRegs,
         supplierRegions: regs,
         supplierDistricts: dists,
-        supplierCodes: pins,
-        facilitators: data.facilitators || [],
-        facilitatorLegalNames: data.facilitatorLegalNames || {},
-        facilitatorRepresentatives: data.facilitatorRepresentatives || {},
-        facilitatorPhones: data.facilitatorPhones || {},
-        facilitatorEmails: data.facilitatorEmails || {},
-        facilitatorRegions: rawFacilitatorRegions,
-        facilitatorCodes: data.facilitatorCodes || {},
+        facilitators: (data.facilitators && data.facilitators.length >= DEFAULT_FACILITATORS.length)
+          ? data.facilitators
+          : Array.from(new Set([...DEFAULT_FACILITATORS, ...(data.facilitators || [])])),
+        facilitatorLegalNames: { ...DEFAULT_FACILITATOR_LEGAL_NAMES, ...(data.facilitatorLegalNames || {}) },
+        facilitatorRepresentatives: { ...DEFAULT_FACILITATOR_REPRESENTATIVES, ...(data.facilitatorRepresentatives || {}) },
+        facilitatorPhones: { ...DEFAULT_FACILITATOR_PHONES, ...(data.facilitatorPhones || {}) },
+        facilitatorEmails: { ...DEFAULT_FACILITATOR_EMAILS, ...(data.facilitatorEmails || {}) },
+        facilitatorRegions: { ...DEFAULT_FACILITATOR_REGIONS, ...rawFacilitatorRegions },
+        facilitatorCodes: { ...DEFAULT_FACILITATOR_CODES, ...(data.facilitatorCodes || {}) },
       });
     }
   }, [isOpen, data]);
@@ -607,12 +617,23 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
       baseOrigin = baseOrigin.replace('ais-dev-', 'ais-pre-');
     }
 
-    const exportData: FacilitatorExportEntry[] = (localData.facilitators || []).map((f, idx) => {
-      const fKey = `facilitator${idx + 2}`;
+    const facKeys = Array.from(new Set([
+      "facilitator2",
+      "facilitator3",
+      "facilitator4",
+      "facilitator5",
+      "facilitator6",
+      "facilitator7",
+      ...Object.keys(localData.facilitatorRegions || {}),
+      ...Object.keys(localData.facilitatorLegalNames || {})
+    ])).sort();
+
+    const exportData: FacilitatorExportEntry[] = facKeys.map((fKey, idx) => {
+      const legalName = localData.facilitatorLegalNames?.[fKey] || localData.facilitators?.[idx] || fKey;
       return {
         key: fKey,
         code: `Фасилитатор ${idx + 1} (${fKey})`,
-        legalName: localData.facilitatorLegalNames?.[fKey] || f,
+        legalName,
         representative: localData.facilitatorRepresentatives?.[fKey] || '',
         phone: localData.facilitatorPhones?.[fKey] || '',
         email: localData.facilitatorEmails?.[fKey] || '',
@@ -1687,11 +1708,24 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                           Нет зарегистрированных фасилитаторов
                         </div>
                       )}
-                      {(localData.facilitators || []).map((f, idx) => {
-                         const fKey = `facilitator${idx + 2}`;
-                         const baseOrigin = window.location.origin;
-                         const portalUrl = `${baseOrigin}/?portal=${fKey}`;
-                         const isEditingThis = editingFacilitatorKey === fKey;
+                      {(() => {
+                        const allFacKeys = Array.from(new Set([
+                          "facilitator2",
+                          "facilitator3",
+                          "facilitator4",
+                          "facilitator5",
+                          "facilitator6",
+                          "facilitator7",
+                          ...(localData.facilitators || []).map((_, i) => `facilitator${i + 2}`),
+                          ...Object.keys(localData.facilitatorRegions || {}),
+                          ...Object.keys(localData.facilitatorLegalNames || {})
+                        ])).sort();
+
+                        return allFacKeys.map((fKey, idx) => {
+                          const f = localData.facilitatorLegalNames?.[fKey] || localData.facilitators?.[idx] || fKey;
+                          const baseOrigin = window.location.origin;
+                          const portalUrl = `${baseOrigin}/?portal=${fKey}`;
+                          const isEditingThis = editingFacilitatorKey === fKey;
                          
                          return (
                            <div key={fKey} className="border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-md transition-all bg-white">
@@ -1918,8 +1952,9 @@ export function DictionaryModal({ isOpen, onClose, data, onSave }: Props) {
                              )}
                            </div>
                          );
-                      })}
-                    </div>
+                       });
+                     })()}
+                   </div>
                   </div>
                 </div>
               )}

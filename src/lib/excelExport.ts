@@ -74,7 +74,12 @@ async function processImageForExcel(dataUrl: string): Promise<{ base64: string; 
   });
 }
 
-export async function downloadCatalogExcel(products: Product[], suppliers?: string[], selectedSupplierScope?: 'supplier2' | 'supplier3' | 'supplier4') {
+export async function downloadCatalogExcel(
+  products: Product[],
+  suppliers?: string[],
+  selectedSupplierScope?: 'supplier2' | 'supplier3' | 'supplier4',
+  globalDict?: any
+) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'AI Catalog Creator';
   workbook.created = new Date();
@@ -297,6 +302,160 @@ export async function downloadCatalogExcel(products: Product[], suppliers?: stri
         }
         rowIndex++;
     }
+  }
+
+  // If globalDict is provided (e.g. Full Dump), append the complete Facilitators Registry sheet
+  if (globalDict) {
+    const DEFAULT_FAC_FALLBACK: Record<string, { legalName: string; rep: string; phone: string; email: string; region: string; pin: string }> = {
+      facilitator2: {
+        legalName: "ОО Пешсаф",
+        rep: "Махмадмуродов Далер",
+        phone: "909191032",
+        email: "daler.mahmadmurodov@flagman.tj",
+        region: "Хатлон 1 (Бохтар)",
+        pin: "909191032"
+      },
+      facilitator3: {
+        legalName: "ОО Бонувони Хатлон",
+        rep: "Дилбар Шомуратова",
+        phone: "927758599",
+        email: "bonuvonikhatlon@gmail.com",
+        region: "Согдийская область",
+        pin: "927758599"
+      },
+      facilitator4: {
+        legalName: "ОО Умедбахш",
+        rep: "Курбонов Раҷабали",
+        phone: "931580301",
+        email: "umedbakhsh2018@mail.ru",
+        region: "Хатлон 2 (Куляб)",
+        pin: "931580301"
+      },
+      facilitator5: {
+        legalName: "ОО Шарикон барои рушд",
+        rep: "Қаламфурова Асел",
+        phone: "990040088",
+        email: "asel.potn@gmail.com",
+        region: "ГБАО",
+        pin: "990040088"
+      },
+      facilitator6: {
+        legalName: "ООО Академияи рушди иҷтимои",
+        rep: "Ахмадов Бахтиёр",
+        phone: "907387474",
+        email: "b.ahmadov.91@mail.ru",
+        region: "РРП",
+        pin: "907387474"
+      },
+      facilitator7: {
+        legalName: "ООО Академияи рушди иҷтимои",
+        rep: "Ахмадов Бахтиёр",
+        phone: "907387474",
+        email: "b.ahmadov.91@mail.ru",
+        region: "Душанбе",
+        pin: "907387474"
+      }
+    };
+
+    const facKeys = Array.from(new Set([
+      "facilitator2",
+      "facilitator3",
+      "facilitator4",
+      "facilitator5",
+      "facilitator6",
+      "facilitator7",
+      ...Object.keys(globalDict.facilitatorRegions || {}),
+      ...Object.keys(globalDict.facilitatorLegalNames || {})
+    ])).sort();
+
+    const facWs = workbook.addWorksheet('Реестр фасилитаторов');
+    facWs.mergeCells('A1:I1');
+    const fTitle = facWs.getCell('A1');
+    fTitle.value = 'РЕЕСТР ФАСИЛИТАТОРОВ И РЕГИОНАЛЬНЫХ ПРЕДСТАВИТЕЛЕЙ (ПОЛНЫЙ ДАМП)';
+    fTitle.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+    fTitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E293B' } };
+    fTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+    facWs.getRow(1).height = 32;
+
+    facWs.mergeCells('A2:I2');
+    const fSub = facWs.getCell('A2');
+    fSub.value = `Полный дамп системы • Всего фасилитаторов: ${facKeys.length} • Дата выгрузки: ${new Date().toLocaleString('ru-RU')}`;
+    fSub.font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF64748B' } };
+    fSub.alignment = { vertical: 'middle', horizontal: 'center' };
+    facWs.getRow(2).height = 22;
+
+    const fHeaders = [
+      '№',
+      'Ключ системы',
+      'Организация (Юр. название)',
+      'ФИО представителя',
+      'Телефон',
+      'Электронная почта (Email)',
+      'Закрепленный регион',
+      'Персональная ссылка на портал',
+      'PIN / Код доступа'
+    ];
+    const fHeaderRow = facWs.addRow(fHeaders);
+    fHeaderRow.height = 28;
+    fHeaderRow.eachCell((c) => {
+      c.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4338CA' } };
+      c.alignment = { vertical: 'middle', horizontal: 'center' };
+      c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'medium' }, right: { style: 'thin' } };
+    });
+
+    facWs.getColumn(1).width = 6;
+    facWs.getColumn(2).width = 16;
+    facWs.getColumn(3).width = 34;
+    facWs.getColumn(4).width = 26;
+    facWs.getColumn(5).width = 16;
+    facWs.getColumn(6).width = 28;
+    facWs.getColumn(7).width = 24;
+    facWs.getColumn(8).width = 44;
+    facWs.getColumn(9).width = 16;
+
+    const baseOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://catalog.tj';
+
+    facKeys.forEach((key, idx) => {
+      const def = DEFAULT_FAC_FALLBACK[key] || {
+        legalName: key,
+        rep: '',
+        phone: '',
+        email: '',
+        region: '',
+        pin: ''
+      };
+
+      const legalName = globalDict.facilitatorLegalNames?.[key] || globalDict.facilitators?.[idx] || def.legalName;
+      const rep = globalDict.facilitatorRepresentatives?.[key] || def.rep;
+      const phone = globalDict.facilitatorPhones?.[key] || def.phone;
+      const email = globalDict.facilitatorEmails?.[key] || def.email;
+      const region = globalDict.facilitatorRegions?.[key] || def.region;
+      const pin = globalDict.facilitatorCodes?.[key] || def.pin;
+      const portalUrl = `${baseOrigin}/?portal=${key}`;
+
+      const r = facWs.addRow([
+        idx + 1,
+        key,
+        legalName,
+        rep,
+        phone,
+        email,
+        region,
+        portalUrl,
+        pin
+      ]);
+      r.height = 22;
+      r.eachCell((c, colNum) => {
+        c.font = { name: 'Arial', size: 10 };
+        c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+        if (colNum === 1 || colNum === 2 || colNum === 5 || colNum === 9) {
+          c.alignment = { horizontal: 'center', vertical: 'middle' };
+        } else {
+          c.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+      });
+    });
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
